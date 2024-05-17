@@ -1,0 +1,219 @@
+syntax:
+
+ident -> (a-z 0-9)*
+number -> (0-9)*
+
+program -> [top_line]
+top_line -> <struct> struct_header <\n> struct_body 
+  | <enum> ident <\n> enum_body
+  | fn_header <\n> fn_body 
+
+generic_ident -> ident
+  | ident[type,]
+
+type -> ident 
+  | ident[type,] 
+  | type(type,) 
+  | type?
+  | type!
+  | type&
+
+struct_header -> type
+struct_body -> [<pub>? type ident]
+enum_body -> [type ident]
+
+fn_header -> type ident<(>[type ident<,>]<)>
+inst_body -> [inst]
+fn_call -> left_expr([expr,])
+
+inst -> <if> expr <\n> <inst_body>
+  | <elif> expr <\n> inst_body
+  | <else> <\n> inst_body
+  | <for> expr <\n> inst_body
+  | <for> ident <in> expr
+  | <break>
+  | <continue>
+  | <return> expr
+  | <return>
+  | <match> 
+  | fn_call
+  | type ident <=> expr
+  | left_expr <=> expr
+
+match_body -> [match_var]<\n>
+
+match_var -> ident<\n>inst_body
+
+left_expr -> left_expr.left_expr
+  | ident[expr]
+  | ident
+
+expr -> binop
+  | !expr
+  | ([ident <=> expr,])
+  | left_expr
+  | fn_call
+  | struct_init
+  | "*"
+  | number
+  | char
+
+struct_init -> {[ident = expr,]}
+
+# with precedence
+binop -> expr to expr
+  | expr || expr
+  | expr && expr
+  | expr == expr
+  | expr != expr | expr < expr | expr > expr | expr <= expr | expr >= expr
+  | expr + expr | expr - expr
+  | expr * expr | expr / expr | expr % expr
+
+
+compiler steps:
+- split into lines
+- split into symbols '(', ' ', ')', '[', ']', ',' creating source lines
+- recursive descent parse, log error and continue to next line
+- type check parsed structure
+- code gen / interpret parsed structure
+
+struct SourceLine
+  int source_line
+  List[str] tokens
+  int indent
+
+struct Program
+  List[Fn] fns
+  List[Struct] structs
+  List[Enum] enums
+
+struct GenericType
+  str name
+  List[Type] generics
+
+struct FnType
+  Type return_type
+  List[Type] param_types
+
+enum Type
+  str basic
+  GenericType generic
+  FnType fn
+  Type opt
+  Type err
+  Type link
+
+struct Param
+  Type t
+  str name
+
+struct Fn
+  Type return_type
+  str name
+  List[Param] params
+  List[InstMeta] body
+  int source_line
+
+struct VarDecl
+  Type t
+  str name
+  int source_line
+
+struct Struct
+  Type name
+  List[VarDecl] fields
+  int source_line
+
+struct Enum
+  Type name
+  List[Var] variants
+  int source_line
+
+# instruction structs
+struct CondBody
+  Expr cond
+  List[InstMeta] body
+
+struct ForIn
+  str var_name
+  Expr iter
+  List[InstMeta] body
+
+struct Declare
+  Type type
+  str name
+  Expr expr
+
+struct Assign
+  LeftExpr left
+  Expr expr
+
+struct MatchVar
+  str name
+  List[Inst] inst_body
+
+sturct Match
+  Expr expr
+  List[MatchVar] vars
+
+struct FnCall
+  LeftExpr fn
+  List[Expr] exprs
+
+enum InstMeta
+  Inst inst
+  int source_line
+
+enum Inst
+  CondBody inst_if
+  CondBody inst_elif
+  List[InstMeta] inst_else
+  CondBody inst_for
+  ForIn inst_for_in
+  void inst_break
+  void inst_continue
+  Expr inst_return
+  void inst_return_void
+  Match inst_match
+  FnCall fn_call
+  Declare inst_declare
+  Assign inst_assign
+
+
+# LeftExpr structs
+struct DotOp
+  LeftExpr expr1
+  LeftExpr expr2
+
+struct ArrOffset
+  LeftExpr name
+  Expr offset
+
+enum LeftExpr
+  DotOp dot
+  ArrOffset arr_offset
+  str var
+
+# Expr structs
+struct StructInitField
+  str name
+  Expr expr
+
+struct EnumInit
+  str name
+  Expr expr
+
+struct BinExpr
+  Expr expr1
+  Expr expr2
+  str op
+
+enum Expr
+  BinExpr bin_expr
+  Expr not
+  FnCall fn_call
+  List[StructInitField] struct_init
+  str str_const
+  char char_const
+  int integer
+  LeftExpr left_expr

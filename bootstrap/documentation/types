@@ -1,0 +1,50 @@
+type checking:
+type checking is done post parsing
+
+built in types include
+int (i64)
+bool
+range
+
+i8-i64
+u8-u64
+
+# the not mutable and mutable versions
+# of a slice into an array or list. 
+view[T]
+slice[T]
+
+T?
+T!
+errcode
+
+# functions such as push and allocations are implemented
+# in the std rather than the core library
+list[T]
+str
+
+# automatic conversions
+list -> slice
+str -> view
+slice -> view
+
+# functions can be used with format string easliy
+str s = str(f"let {a} = 24")
+print(f"let {b} = 24")
+
+each statement needs to be recursively checked
+each expression needs to be recusively checked
+
+this ensures that the program is actually valid
+
+
+
+
+
+
+
+
+
+
+
+
