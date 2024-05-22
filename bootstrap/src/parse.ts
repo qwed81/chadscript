@@ -1,0 +1,1060 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
+  let fullName;
+  if (parentModName == null) {
+    fullName = path.basename(dirPath);
+  } else {
+    fullName = parentModName + '.' + path.basename(dirPath);
+  }
+
+  let newProgramList: ProgramUnit[] = [];
+  for (let p of fs.readdirSync(dirPath)) {
+    let filePath = path.join(dirPath, p);
+    if (fs.lstatSync(filePath).isDirectory()) {
+      let progList = parseDir(filePath, fullName);
+      if (progList == null) {
+        return null;
+      }
+      for (let p of progList) {
+        newProgramList.push(p);
+      }
+    } else {
+      let u = parseFile(filePath, fullName);
+      if (u == null) {
+        return null;
+      }
+      newProgramList.push(u);
+    }
+  }
+
+  return newProgramList;
+}
+
+export {
+  SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, Enum, InstMeta, CondBody,
+  ForIn, Declare, Assign, MatchBranch, Match, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
+  BinExpr, Expr, parseDir
+}
+
+interface SourceLine {
+  sourceLine: number
+  indent: number
+  tokens: string[]
+}
+
+interface ProgramUnit {
+  fullName: string
+  uses: string[]
+  fns: Fn[]
+  structs: Struct[]
+  enums: Enum[]
+}
+
+interface GenericType {
+  name: string
+  generics: Type[]
+}
+
+interface FnType {
+  returnType: Type
+  paramTypes: Type[]
+}
+
+type Type = { tag: 'basic', val: string }
+  | { tag: 'generic', val: GenericType }
+  | { tag: 'fn', val: FnType }
+  | { tag: 'opt', val: Type }
+  | { tag: 'err', val: Type }
+  | { tag: 'link', val: Type }
+
+interface Fn {
+  t: FnType
+  paramNames: string[]
+  name: string
+  body: InstMeta[]
+  sourceLine: number
+}
+
+interface Var {
+  t: Type,
+  name: string
+  sourceLine: number
+}
+
+interface Struct {
+  t: Type
+  fields: Var[]
+  sourceLine: number
+}
+
+interface Enum {
+  t: Type
+  variants: Var[]
+  sourceLine: number
+}
+
+interface InstMeta {
+  inst: Inst,
+  sourceLine: number
+}
+
+interface CondBody {
+  cond: Expr,
+  body: InstMeta[]
+}
+
+interface ForIn {
+  varName: string
+  iter: Expr
+  body: InstMeta[]
+}
+
+interface Declare {
+  t: Type,
+  name: string,
+  expr: Expr
+}
+
+interface Assign {
+  to: LeftExpr
+  expr: Expr
+}
+
+interface MatchBranch {
+  enumVariant: string
+  body: InstMeta[]
+}
+
+interface Match {
+  var: Expr
+  branches: MatchBranch[]
+}
+
+interface FnCall {
+  fn: LeftExpr
+  exprs: Expr[]
+}
+
+type Inst = { tag: 'if', val: CondBody }
+  | { tag: 'elif', val: CondBody }
+  | { tag: 'else', val: InstMeta[] }
+  | { tag: 'for', val: CondBody }
+  | { tag: 'for_in', val: ForIn }
+  | { tag: 'break' }
+  | { tag: 'continue' }
+  | { tag: 'return_void' }
+  | { tag: 'return', val: Expr }
+  | { tag: 'match', val: Match }
+  | { tag: 'fn_call', val: FnCall }
+  | { tag: 'declare', val: Declare }
+  | { tag: 'assign', val: Assign }
+
+interface DotOp {
+  left: LeftExpr,
+  right: LeftExpr
+}
+
+interface ArrOffset {
+  var: LeftExpr,
+  index: Expr
+}
+
+type LeftExpr = { tag: 'dot', val: DotOp }
+  | { tag: 'arr_offset', val: ArrOffset }
+  | { tag: 'var', val: string }
+
+interface StructInitField {
+  name: string
+  expr: Expr
+}
+
+interface BinExpr {
+  left: Expr
+  right: Expr
+  op: string
+}
+
+type Expr = { tag: 'bin', val: BinExpr }
+  | { tag: 'not', val: Expr }
+  | { tag: 'linked', val: Expr }
+  | { tag: 'fn_call', val: FnCall }
+  | { tag: 'struct_init', val: StructInitField[] }
+  | { tag: 'str_const', val: string }
+  | { tag: 'char_const', val: string }
+  | { tag: 'int_const', val: number }
+  | { tag: 'left_expr', val: LeftExpr }
+
+const MAPPING: [[string, number]] = [
+  ['to', 0],
+  ['+',  4], ['-', 4], ['*', 5], ['&&', 2], ['||', 1],
+  ['/', 5], ['%', 5], ['==', 3], ['!=', 3], ['<', 3],
+  ['>', 3], ['>=', 3], ['<=', 3], ['is', 3]
+] as any; // idk why i need this lol
+
+// logs the error at the line number to the console
+function logError(line: number, message: string) {
+  console.error(`error line: ${line + 1} ${message}`);
+}
+
+function parseFile(filePath: string, progName: string): ProgramUnit | null {
+  let unitText;
+  try {
+    unitText = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+  
+  return parse(unitText, progName);
+}
+
+// returns the program, null if invalid syntax, and logs all errors to the console
+function parse(unitText: string, progName: string): ProgramUnit | null {
+  let lines = getLines(unitText);
+  let program: ProgramUnit = { fullName: progName, uses: [], fns: [], structs: [], enums: [] };
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (line.indent == 0) {
+      let body = getIndentedSegment(lines, i + 1, 1);
+      if (line.tokens[0] == 'struct') {
+        let struct = parseStruct(line, body);
+        if (struct == null) {
+          return null;
+        }
+        program.structs.push(struct);
+      } else if (line.tokens[0] == 'enum') {
+        let en = parseEnum(line, body);
+        if (en == null) {
+          return null;
+        }
+        program.enums.push(en);
+      } else if (line.tokens[0] == 'use') {
+        if (line.sourceLine != 0) {
+          logError(line.sourceLine, 'uses must be at top of file');
+          return null;
+        }
+        let uses = parseUses(line);
+        if (uses == null) {
+          return null;
+        }
+        program.uses = uses;
+      } else {
+        let fn = parseFn(line, body);
+        if (fn == null) {
+          return null;
+        }
+        program.fns.push(fn);
+        
+      }
+    }
+  }
+
+  return program;
+}
+
+// returns the segment of lines, starting from the start index until there
+// is a line with less indent than the bodyLevelIndent
+function getIndentedSegment(
+  lines: SourceLine[],
+  startIndex: number,
+  bodyLevelIndent: number
+): SourceLine[] {
+  let bodyLines = [];
+  for (let i = startIndex; i < lines.length; i++) {
+    let line = lines[i];
+    if (line.indent < bodyLevelIndent) {
+      break;
+    }
+    bodyLines.push(line);
+  }
+
+  return bodyLines;
+}
+
+// returns the index the first time the open character is
+// balanced (equal open as closed) starting from the end. -1 if it does not occur
+function getFirstBalanceIndexFromEnd(
+  tokens: string[],
+  openToken: string,
+  closeToken: string
+): number {
+  let balance = 0;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (tokens[i] == openToken) {
+      balance -= 1;
+    }
+    else if (tokens[i] == closeToken) {
+      balance += 1;
+    }
+
+    if (balance == 0 && tokens[i] == openToken) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+// returns the index the first time the close character is
+// balanced (equal open as closed). -1 if it does not occur
+function getFirstBalanceIndex(
+  tokens: string[],
+  openToken: string,
+  closeToken: string
+): number {
+  let balance = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] == openToken) {
+      balance -= 1;
+    }
+    else if (tokens[i] == closeToken) {
+      balance += 1;
+    }
+
+    if (balance == 0 && tokens[i] == closeToken) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+// returns two segments of tokens split by op, or the entire token stream
+// as the first element of the array if the operator does not exist at the 
+// current balance level
+function balancedSplitTwo(tokens: string[], op: string): string[][] {
+  let oParenCount = 0;
+  let oSquareCount = 0;
+  let oCurlyCount = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] == '(') {
+      oParenCount += 1;
+    } else if (tokens[i] == ')') {
+      oParenCount -= 1;
+    } else if (tokens[i] == '[') {
+      oSquareCount += 1;
+    } else if (tokens[i] == ']') {
+      oSquareCount -= 1;
+    } else if (tokens[i] == '{') {
+      oCurlyCount += 1;
+    } else if (tokens[i] == '}') {
+      oCurlyCount -= 1;
+    }
+
+    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+      return [tokens.slice(0, i), tokens.slice(i + 1)];
+    }
+  }
+
+  return [tokens];
+}
+
+// returns an array of token arrays which are a balanced split of the operator
+function balancedSplit(tokens: string[], op: string): string[][] {
+  let oParenCount = 0;
+  let oSquareCount = 0;
+  let oCurlyCount = 0;
+
+  let splits = [];
+  let tokenStart = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] == '(') {
+      oParenCount += 1;
+    }
+    else if (tokens[i] == ')') {
+      oParenCount -= 1;
+    }
+    else if (tokens[i] == '[') {
+      oSquareCount += 1;
+    }
+    else if (tokens[i] == ']') {
+      oSquareCount -= 1;
+    }
+    else if (tokens[i] == '{') {
+      oCurlyCount += 1;
+    }
+    else if (tokens[i] == '}') {
+      oCurlyCount -= 1;
+    }
+
+    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+      if (tokenStart != i) {
+        splits.push(tokens.slice(tokenStart, i));
+      }
+      tokenStart = i + 1;
+    }
+  }
+
+  splits.push(tokens.slice(tokenStart));
+  return splits;
+}
+
+function parseUses(header: SourceLine): string[] | null {
+  if (header.tokens[0] != 'use') {
+    return null;
+  }
+
+  let uses = [];
+  let splits = balancedSplit(header.tokens.slice(1), ',');
+  for (let modName of splits) {
+    if (modName.length == 0) {
+      return null;
+    }
+
+    uses.push(modName.join());
+  }
+
+  return uses;
+} 
+
+// returns the struct if it could valid parse from the header and the body, logs errors
+function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
+  if (header.tokens[0] != 'struct') {
+    return null;
+  }
+
+  let structType = tryParseType(header.tokens.slice(1));
+  if (structType == null) {
+    logError(header.sourceLine, 'invalid name in struct decl');
+    return null;
+  }
+
+  let structFields = [];
+  for (let line of body) {
+    let name = line.tokens[line.tokens.length - 1];
+    let t = tryParseType(line.tokens.slice(0, -1));
+    if (t == null) {
+      logError(line.sourceLine, 'field type not valid')
+      return null;
+    }
+    structFields.push({ t, name, sourceLine: line.sourceLine });
+  }
+
+  return { t: structType, fields: structFields, sourceLine: header.sourceLine };
+}
+
+// returns the enum if it could valid parse from the header and the body, logs errors
+function parseEnum(header: SourceLine, body: SourceLine[]): Enum | null {
+  let enumType = tryParseType(header.tokens.slice(1));
+  if (enumType == null) {
+    logError(header.sourceLine, 'variant type not valid');
+    return null;
+  }
+
+  let enumVariants = [];
+  for (let line of body) {
+    let name = line.tokens[line.tokens.length - 1];
+    let t = tryParseType(line.tokens.slice(0, -1));
+    if (t == null) {
+      logError(line.sourceLine, 'enum name not valid')
+      return null;
+    }
+    enumVariants.push({ t, name, sourceLine: line.sourceLine });
+  }
+
+  return { t: enumType, variants: enumVariants, sourceLine: header.sourceLine };
+}
+
+// returns the fn if it could valid parse from the header and the body, logs errors
+function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
+  let fnHeader = parseFnHeader(header);
+  if (fnHeader == null) {
+    return null;
+  }
+
+  let { paramNames, name, t } = fnHeader;
+  let fnBody = parseInstBody(body);
+  if (fnBody == null) {
+    return null;
+  }
+
+  return { name, paramNames, t, body: fnBody, sourceLine: header.sourceLine };
+}
+
+function tryParseType(tokens: string[]): Type | null {
+  if (tokens.length == 0) {
+    return null;
+  }
+
+  let lastToken = tokens[tokens.length - 1]; 
+  if (lastToken == '!' || lastToken == '&' || lastToken == '?') {
+    let innerType = tryParseType(tokens.slice(0, -1));
+    if (innerType == null) {
+      return null;
+    }
+    if (lastToken == '!') {
+      return { tag: 'err', val: innerType };
+    }
+    else if (lastToken == '?') {
+      return { tag: 'opt', val: innerType };
+    }
+    else {
+      return { tag: 'link', val: innerType };
+    }
+  }
+  else if (lastToken == ')') { // parse fn
+    let fnParamBegin = getFirstBalanceIndexFromEnd(tokens, '(', ')') + 1;
+
+    if (fnParamBegin == 0) {
+      return null;
+    }
+
+    let returnType = tryParseType(tokens.slice(0, fnParamBegin - 1));
+    if (returnType == null) {
+      return null;
+    }
+
+    let paramsStr = tokens.slice(fnParamBegin, -1);
+    let splits = balancedSplit(paramsStr, ',');
+    let paramTypes = [];
+    if (splits[0].length > 0) {
+      for (let split of splits) {
+        let paramType = tryParseType(split);
+        if (paramType == null) {
+          return null;
+        }
+        paramTypes.push(paramType);
+      }
+    }
+    return { tag: 'fn', val: { returnType, paramTypes } };
+  } else if (tokens[tokens.length - 1] == ']') { // parse generic
+    let inner = tokens.slice(2, -1);
+    let splits = balancedSplit(inner, ',');
+
+    let generics: Type[] = [];
+    for (let split of splits) {
+      let parseType = tryParseType(split);
+      if (parseType == null) {
+        return null;
+      }
+      generics.push(parseType);
+    }
+
+    return { tag: 'generic', val: { name: tokens[0], generics }};
+  }
+
+  return { tag: 'basic', val: tokens[0] };
+}
+
+function parseFnHeader(
+  header: SourceLine
+): { name: string, paramNames: string[], t: FnType } | null 
+{
+  let tokens = header.tokens;
+
+  let paramStart = tokens.indexOf('(');
+  if (paramStart == -1) {
+    return null;
+  }
+
+  let name = tokens[paramStart - 1];
+
+  let paramEnd = getFirstBalanceIndex(tokens.slice(paramStart), '(', ')');
+  if (paramEnd == -1) {
+    return null;
+  }
+  paramEnd = paramEnd + paramStart;
+
+  let innerTokens = tokens.slice(paramStart + 1, paramEnd);
+  let paramSplits = balancedSplit(innerTokens, ',');
+  let paramTypes: Type[] = [];
+  let paramNames = [];
+
+  if (paramSplits[0].length > 0) { // for () functions
+    for (let param of paramSplits) {
+      let name = param[param.length - 1];
+      let t = tryParseType(param.slice(0, -1));
+      if (t == null) {
+        return null;
+      }
+      paramTypes.push(t);
+      paramNames.push(name);
+    }
+  }
+
+  let returnTokens = tokens.slice(paramEnd + 1);
+  let returnType: Type | null = tryParseType(['void']);
+  if (returnTokens.length != 0) {
+    returnType = tryParseType(returnTokens);
+  }
+  if (returnType == null) {
+    return null;
+  }
+
+  return { name, paramNames, t: { returnType, paramTypes } };
+}
+
+function parseInstBody(lines: SourceLine[]): InstMeta[] | null {
+  if (lines.length == 0) {
+    return [];
+  }
+
+  let indent = lines[0].indent;
+  let insts = [];
+  let invalidInstruction = false;
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (line.indent != indent) {
+      continue;
+    }
+    let body = getIndentedSegment(lines, i + 1, line.indent + 1);
+    let inst = parseInst(line, body);
+    if (inst == null) {
+      invalidInstruction = true;
+    }
+
+    insts.push({ inst: inst!, sourceLine: line.sourceLine });
+  }
+
+  if (invalidInstruction) {
+    return null;
+  } else {
+    return insts;
+  }
+}
+
+function parseMatch(line: SourceLine, body: SourceLine[]): Inst | null {
+  if (line.tokens.length < 2) {
+    logError(line.sourceLine, 'expected expression');
+    return null;
+  }
+
+  let expr = tryParseExpr(line.tokens.slice(1));
+  if (expr == null) {
+    logError(line.sourceLine, 'expected expression');
+    return null;
+  }
+
+  let branches: MatchBranch[] = [];
+  for (let i = 0; i < body.length; i++) {
+    let bodyLine = body[i];
+    if (bodyLine.indent != line.indent + 1) {
+      continue;
+    }
+
+    if (bodyLine.tokens.length != 1) {
+      logError(bodyLine.sourceLine, 'expected enum variant');
+      return null;
+    }
+
+    let variantBodyLines = getIndentedSegment(body, i + 1, bodyLine.indent + 1);
+    let insts = parseInstBody(variantBodyLines);
+    if (insts == null) {
+      return null;
+    }
+
+    branches.push({ body: insts, enumVariant: bodyLine.tokens[0] });
+  }
+
+  return { tag: 'match', val: { var: expr, branches } };
+}
+
+function tryParseFnCall(tokens: string[]): FnCall | null {
+  if (tokens.length < 3 || tokens[tokens.length - 1] != ')') {
+    return null;
+  }
+
+  let paramStart = getFirstBalanceIndexFromEnd(tokens, '(', ')');
+  let leftExpr = tryParseLeftExpr(tokens.slice(0, paramStart));
+  if (leftExpr == null) {
+    return null;
+  }
+
+  let paramExprs = balancedSplit(tokens.slice(paramStart + 1, -1), ',');
+  let exprs = [];
+  if (tokens.length - paramStart != 2) {
+    for (let param of paramExprs) {
+      let expr = tryParseExpr(param);
+      if (expr == null) {
+        return null;
+      }
+      exprs.push(expr);
+    }
+  }
+
+  return { fn: leftExpr, exprs };
+}
+
+function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
+  let keyword = line.tokens[0];
+  let tokens = line.tokens;
+  if (keyword == 'if') {
+    let cond = tryParseExpr(tokens.slice(1));
+    if (cond == null) {
+      logError(line.sourceLine, 'expected expression');
+      return null;
+    }
+    let b = parseInstBody(body);
+    if (b == null) {
+      return null;
+    }
+    return { tag: 'if', val: { cond, body: b }};
+  } else if (keyword == 'elif') {
+    let cond = tryParseExpr(tokens.slice(1));
+    if (cond == null) {
+      logError(line.sourceLine, 'expected expression');
+      return null;
+    }
+    let b = parseInstBody(body);
+    if (b == null) {
+      return null;
+    }
+    return { tag: 'elif', val: { cond, body: b }};
+  } else if (keyword == 'else') {
+    let b = parseInstBody(body);
+    if (b == null) {
+      return null;
+    }
+    return { tag: 'else', val: b }
+  } else if (keyword == 'for') {
+    if (line.tokens.includes('in')) {
+      let splits = balancedSplitTwo(line.tokens.slice(1), 'in');
+      if (splits[0].length != 1) {
+        logError(line.sourceLine, 'expected var name');
+        return null;
+      }
+
+      let expr = tryParseExpr(splits[1]);
+      if (expr == null) {
+        return null;
+      }
+
+      let b = parseInstBody(body);
+      if (b == null) {
+        return b;
+      }
+      return { tag: 'for_in', val: { varName: splits[0][0], iter: expr, body: b }};
+    }
+    let cond = tryParseExpr(tokens.slice(1));
+    if (cond == null) {
+      logError(line.sourceLine, 'expected expression');
+      return null;
+    }
+
+    let b = parseInstBody(body);
+    if (b == null) {
+      return b;
+    }
+    return { tag: 'for', val: { cond, body: b }};
+  } else if (keyword == 'break') {
+    return { tag: 'break' };
+  } else if (keyword == 'continue') {
+    return { tag: 'continue' }
+  } else if (keyword == 'return') {
+    if (tokens.length == 1) {
+      return { tag: 'return_void' }
+    }
+    let val = tryParseExpr(tokens.slice(1));
+    if (val == null) {
+      logError(line.sourceLine, 'expected expression');
+      return null;
+    }
+    return { tag: 'return', val };
+  } else if (keyword == 'match') {
+    return parseMatch(line, body)
+  }
+
+  let fnCall = tryParseFnCall(tokens);
+  if (fnCall != null) {
+    return { tag: 'fn_call', val: fnCall };
+  }
+
+  let splits = balancedSplitTwo(tokens, '=');
+  if (splits.length != 2) {
+    logError(line.sourceLine, 'unexpected statement');
+    return null;
+  }
+
+  let expr = tryParseExpr(splits[1]);
+  if (expr == null) {
+    logError(line.sourceLine, 'expected expression')
+    return null;
+  }
+
+  // parse declare
+  let left = splits[0];
+  let type = tryParseType(left.slice(0, -1));
+  let name = left[left.length - 1];
+  if (left.length >= 2 && type != null) {
+    return { tag: 'declare', val: { t: type, name, expr } }
+  }
+
+  // assign
+  let leftExpr = tryParseLeftExpr(left);
+  if (leftExpr == null) {
+    return null;
+  }
+  return { tag: 'assign', val: { to: leftExpr, expr } };
+}
+
+function tryParseStructInit(tokens: string[]): Expr | null {
+  if (tokens.length < 2 || tokens[0] != '{' || tokens[tokens.length - 1] != '}') {
+    return null;
+  }
+
+  let props = [];
+  let splits = balancedSplit(tokens.slice(1, -1), ',');
+  if (splits[0].length != 0) {
+    for (let split of splits) {
+      if (split.length < 3) {
+        return null;
+      }
+
+      let newSplits = balancedSplit(split, '=');
+      if (newSplits.length != 2) {
+        return null;
+      }
+
+      if (newSplits[0].length != 1) {
+        return null;
+      }
+
+      let initExpr = tryParseExpr(newSplits[1])
+      if (initExpr == null) {
+        return null;
+      }
+
+      props.push({ name: newSplits[0][0], expr: initExpr });
+    }
+  }
+
+  return { tag: 'struct_init', val: props };
+}
+
+function tryParseDotOp(tokens: string[]): LeftExpr | null {
+  let splits = balancedSplitTwo(tokens, '.');
+  if (splits.length != 2) {
+    return null;
+  }
+
+  let left = tryParseLeftExpr(splits[0]);
+  let right = tryParseLeftExpr(splits[1]);
+  if (left == null || right == null) {
+    return null;
+  }
+
+  return { tag: 'dot', val: { left, right } };
+}
+
+function tryParseArrExpr(tokens: string[]): LeftExpr | null {
+  if (tokens[tokens.length - 1] != ']') {
+    return null;
+  }
+
+  let balanceIndex = getFirstBalanceIndexFromEnd(tokens, '[', ']');
+  if (balanceIndex == -1) {
+    return null;
+  }
+
+  let innerExpr = tryParseExpr(tokens.slice(balanceIndex + 1, -1));
+  if (innerExpr == null) {
+    return null;
+  }
+
+  let leftExpr = tryParseLeftExpr(tokens.slice(0, balanceIndex));
+  if (innerExpr == null || leftExpr == null) {
+    return null;
+  }
+
+  return { tag: 'arr_offset', val: { var: leftExpr, index: innerExpr }};
+}
+
+function tryParseLeftExpr(tokens: string[]): LeftExpr | null {
+  if (tokens.length == 1) {
+    return { tag: 'var', val: tokens[0] };
+  }
+
+  let dot = tryParseDotOp(tokens);
+  if (dot != null) {
+    return dot;
+  }
+
+  return tryParseArrExpr(tokens);
+}
+
+function tryParseExpr(tokens: string[]): Expr | null {
+  if (tokens.length == 0) {
+    return null;
+  }
+  
+  // parse all bin expr
+  for (let i = 0; i < 6; i++) {
+    for (let props of MAPPING) {
+      if (props[1] != i) {
+        continue;
+      }
+
+      let binOp = tryParseBinOp(tokens, props[0]);
+      if (binOp != null) {
+        return binOp;
+      }
+    }
+  }
+
+  // parse not
+  if (tokens.length >= 2 && tokens[0] == '!') {
+    let expr = tryParseExpr(tokens.slice(1));
+    if (expr == null) {
+      return null;
+    }
+    return { tag: 'not', val: expr };
+  }
+
+  // parse link
+  if (tokens.length >= 2 && tokens[0] == '&') {
+    let expr = tryParseExpr(tokens.slice(1));
+    if (expr == null) {
+      return null;
+    }
+    return { tag: 'linked', val: expr };
+  }
+
+  let fnCall = tryParseFnCall(tokens);
+  if (fnCall != null) {
+    return { tag: 'fn_call', val: fnCall };
+  }
+
+  let structInit = tryParseStructInit(tokens);
+  if (structInit != null) {
+    return structInit;
+  }
+
+  if (tokens.length == 1) {
+    let ident = tokens[0];
+    if (ident.length >= 2 && ident[0] == '"' && ident[ident.length - 1] == '"') {
+      return { tag: 'str_const', val: ident.slice(1, -1) };
+    }
+
+    if (ident.length >= 2 && ident[0] == '\'' && ident[ident.length - 1] == '\'') {
+      return { tag: 'char_const', val: ident.slice(1, -1) };
+    }
+
+    if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9') {
+      return { tag: 'int_const', val: parseInt(ident) };
+    }
+  }
+
+  let leftExpr = tryParseLeftExpr(tokens);
+  if (leftExpr != null) {
+    return { tag: 'left_expr', val: leftExpr };
+  }
+
+  return null;
+}
+
+function tryParseBinOp(tokens: string[], op: string): Expr | null {
+  let splits = balancedSplitTwo(tokens, op);
+  if (splits.length == 1) {
+    return null;
+  }
+
+  let left = tryParseExpr(splits[0]);
+  let right = tryParseExpr(splits[1]);
+
+  if (left == null || right == null) {
+    return null;
+  }
+
+  return { tag: 'bin', val: { op, left, right }};
+}
+
+function getLines(data: string): SourceLine[] {
+  let lines = data.split('\n');
+  let sourceLines: SourceLine[] = [];
+  // split lines based on spaces
+  for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+    let line = lines[lineNumber];
+    line = line.split('#')[0]; // ignore comments
+    let indent = 0;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] != ' ') {
+        break;
+      }
+      indent += 0.5;
+    }
+
+    line = line.trim();
+    if (indent != Math.floor(indent)) {
+      logError(lineNumber, 'invalid tab amount ' + indent);
+      continue;
+    }
+
+    if (line.trim().length == 0) {
+      continue;
+    }
+
+    // split tokens based on special characters
+    let tokens: string[] = [];
+    let tokenStart = 0;
+    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '!', '?'];
+    for (let i = 0; i < line.length; i++) {
+      // process string as a single token
+      if (line[i] == '"') {
+        let possibleSlice = line.slice(tokenStart, i);
+        if (possibleSlice.length != 0) {
+          tokens.push(possibleSlice);
+        }
+        tokenStart = i + 1;
+        i += 1;
+        while (i < line.length && line[i] != '"') {
+          i += 1;
+        }
+        tokens.push('"' + line.slice(tokenStart, i) + '"');
+        tokenStart = i + 1;
+      }
+
+      // process chars as a single token
+      if (line[i] == '\'') {
+        let possibleSlice = line.slice(tokenStart, i);
+        if (possibleSlice.length != 0) {
+          tokens.push(possibleSlice);
+        }
+        tokenStart = i + 1;
+        i += 1;
+        while (i < line.length && line[i] != '\'') {
+          i += 1;
+        }
+        tokens.push('\'' + line.slice(tokenStart, i) + '\'');
+        tokenStart = i + 1;
+      }
+
+      if (splitTokens.includes(line[i])) {
+        let possibleSlice = line.slice(tokenStart, i);
+        // protects against double space and spaces trailing other splits
+        if (possibleSlice.length != 0) {
+          tokens.push(possibleSlice);
+        }
+        tokenStart = i + 1;
+
+        if (line[i] != ' ') {
+          tokens.push(line[i]);
+        }
+      }
+    }
+
+    // push the last token if it does not follow a split token
+    if (!splitTokens.includes(line[line.length - 1]) && line[line.length - 1] != '"' && line[line.length - 1] != '\'') {
+      tokens.push(line.slice(tokenStart, line.length));
+    }
+
+    // combine the tokens that should not have been split
+    for (let i = tokens.length - 1; i >= 1; i--) {
+      if (tokens[i - 1] == '!' && tokens[i] == '=') {
+        tokens.splice(i, 1);
+        tokens[i - 1] = '!=';
+      }
+      else if (tokens[i - 1] == '&' && tokens[i] == '&') {
+        tokens.splice(i, 1);
+        tokens[i - 1] = '&&';
+      }
+    }
+
+    sourceLines.push({ sourceLine: lineNumber, indent, tokens });
+  }
+
+  return sourceLines;
+}

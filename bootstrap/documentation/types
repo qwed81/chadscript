@@ -38,13 +38,25 @@ each expression needs to be recusively checked
 this ensures that the program is actually valid
 
 
+ensuring a program is correct:
 
+- load the entire program into a tree like structure with struct/fn/enum names and their type
 
+- go through and ensure every struct is correct
+  - name is valid
+  - all generics are valid
+  - all types referenced are valid
+  - no cyclic structs
 
+- go through and ensure every enum is correct
+  - name is valid
+  - all generics are valid
+  - all types referenced are valid
+  - no repeating variant names
 
-
-
-
-
-
-
+- go through and check if every function is correct
+  - ensure all code paths return a value
+  - ensure the type of every statement is concrete and matches
+  - ensure the body of every statement has the same properties
+  - compute the type of every expression and ensure no ambiguous types
+  - add all used concrete structs/fns/enums to a "flattened" map
