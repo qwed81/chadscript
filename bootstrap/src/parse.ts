@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { logError } from './index';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let fullName;
@@ -33,7 +34,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 }
 
 export {
-  SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, Enum, InstMeta, CondBody,
+  SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, InstMeta, CondBody,
   ForIn, Declare, Assign, MatchBranch, Match, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
   BinExpr, Expr, parseDir
 }
@@ -49,7 +50,7 @@ interface ProgramUnit {
   uses: string[]
   fns: Fn[]
   structs: Struct[]
-  enums: Enum[]
+  enums: Struct[]
 }
 
 interface GenericType {
@@ -86,12 +87,6 @@ interface Var {
 interface Struct {
   t: Type
   fields: Var[]
-  sourceLine: number
-}
-
-interface Enum {
-  t: Type
-  variants: Var[]
   sourceLine: number
 }
 
@@ -137,6 +132,11 @@ interface FnCall {
   exprs: Expr[]
 }
 
+interface Macro {
+  name: string
+  body: string 
+}
+
 type Inst = { tag: 'if', val: CondBody }
   | { tag: 'elif', val: CondBody }
   | { tag: 'else', val: InstMeta[] }
@@ -150,10 +150,11 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'fn_call', val: FnCall }
   | { tag: 'declare', val: Declare }
   | { tag: 'assign', val: Assign }
+  | { tag: 'macro', val: Macro }
 
 interface DotOp {
   left: LeftExpr,
-  right: LeftExpr
+  varName: string
 }
 
 interface ArrOffset {
@@ -186,17 +187,12 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'int_const', val: number }
   | { tag: 'left_expr', val: LeftExpr }
 
-const MAPPING: [[string, number]] = [
+const MAPPING: [string, number][] = [
   ['to', 0],
   ['+',  4], ['-', 4], ['*', 5], ['&&', 2], ['||', 1],
   ['/', 5], ['%', 5], ['==', 3], ['!=', 3], ['<', 3],
   ['>', 3], ['>=', 3], ['<=', 3], ['is', 3]
-] as any; // idk why i need this lol
-
-// logs the error at the line number to the console
-function logError(line: number, message: string) {
-  console.error(`error line: ${line + 1} ${message}`);
-}
+]; 
 
 function parseFile(filePath: string, progName: string): ProgramUnit | null {
   let unitText;
@@ -226,7 +222,7 @@ function parse(unitText: string, progName: string): ProgramUnit | null {
         }
         program.structs.push(struct);
       } else if (line.tokens[0] == 'enum') {
-        let en = parseEnum(line, body);
+        let en = parseStruct(line, body);
         if (en == null) {
           return null;
         }
@@ -413,10 +409,6 @@ function parseUses(header: SourceLine): string[] | null {
 
 // returns the struct if it could valid parse from the header and the body, logs errors
 function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
-  if (header.tokens[0] != 'struct') {
-    return null;
-  }
-
   let structType = tryParseType(header.tokens.slice(1));
   if (structType == null) {
     logError(header.sourceLine, 'invalid name in struct decl');
@@ -435,28 +427,6 @@ function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
   }
 
   return { t: structType, fields: structFields, sourceLine: header.sourceLine };
-}
-
-// returns the enum if it could valid parse from the header and the body, logs errors
-function parseEnum(header: SourceLine, body: SourceLine[]): Enum | null {
-  let enumType = tryParseType(header.tokens.slice(1));
-  if (enumType == null) {
-    logError(header.sourceLine, 'variant type not valid');
-    return null;
-  }
-
-  let enumVariants = [];
-  for (let line of body) {
-    let name = line.tokens[line.tokens.length - 1];
-    let t = tryParseType(line.tokens.slice(0, -1));
-    if (t == null) {
-      logError(line.sourceLine, 'enum name not valid')
-      return null;
-    }
-    enumVariants.push({ t, name, sourceLine: line.sourceLine });
-  }
-
-  return { t: enumType, variants: enumVariants, sourceLine: header.sourceLine };
 }
 
 // returns the fn if it could valid parse from the header and the body, logs errors
@@ -693,6 +663,22 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
     return { tag: 'if', val: { cond, body: b }};
+  } else if (line.tokens[0] == '@') {
+    if (tokens.length != 2) {
+      logError(line.sourceLine, 'invalid macro');
+      return null;
+    }
+    let name = tokens.slice(1)[0];
+
+    let output = '';
+    for (let i = 0; i < body.length; i++) {
+      for (let j = 0; j < body[i].tokens.length; j++) {
+        output += body[i].tokens[j] + ' ';
+      }
+      output += '\n';
+    }
+
+    return { tag: 'macro', val: { name, body: output } };
   } else if (keyword == 'elif') {
     let cond = tryParseExpr(tokens.slice(1));
     if (cond == null) {
@@ -746,7 +732,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'continue' }
   } else if (keyword == 'return') {
     if (tokens.length == 1) {
-      return { tag: 'return_void' }
+      return { tag: 'return_void' };
     }
     let val = tryParseExpr(tokens.slice(1));
     if (val == null) {
@@ -832,12 +818,15 @@ function tryParseDotOp(tokens: string[]): LeftExpr | null {
   }
 
   let left = tryParseLeftExpr(splits[0]);
-  let right = tryParseLeftExpr(splits[1]);
-  if (left == null || right == null) {
+  if (left == null) {
     return null;
   }
 
-  return { tag: 'dot', val: { left, right } };
+  if (splits[1].length != 1) {
+    return null;
+  }
+
+  return { tag: 'dot', val: { left, varName: splits[1][0] } };
 }
 
 function tryParseArrExpr(tokens: string[]): LeftExpr | null {
@@ -880,7 +869,7 @@ function tryParseExpr(tokens: string[]): Expr | null {
   if (tokens.length == 0) {
     return null;
   }
-  
+
   // parse all bin expr
   for (let i = 0; i < 6; i++) {
     for (let props of MAPPING) {
@@ -893,6 +882,10 @@ function tryParseExpr(tokens: string[]): Expr | null {
         return binOp;
       }
     }
+  }
+
+  if (tokens.length >= 2 && tokens[0] == '(' && tokens[tokens.length - 1] == ')') {
+    return tryParseExpr(tokens.slice(1, -1));
   }
 
   // parse not
@@ -990,7 +983,7 @@ function getLines(data: string): SourceLine[] {
     // split tokens based on special characters
     let tokens: string[] = [];
     let tokenStart = 0;
-    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '!', '?'];
+    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '!', '?', '@'];
     for (let i = 0; i < line.length; i++) {
       // process string as a single token
       if (line[i] == '"') {

@@ -1,15 +1,16 @@
-import { Program,  } from './analysis';
-import { Fn, InstMeta, Expr, StructInitField, FnCall, LeftExpr } from './parse';
+import { Program  } from './analyze/analyze';
+import { Fn, Inst, Expr, StructInitField, FnCall } from './analyze/analyze';
+import { LeftExpr } from './parse';
 
 // generates the javascript output for the given program
 function codegen(prog: Program): string {
-  let programStr = '';
+  let programStr = `${prog.entry}();`;
   for (let fn of prog.fns) {
     let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1);
     programStr += fnCode;
   }
 
-  return programStr + "main();\n";
+  return programStr;
 }
 
 export {
@@ -17,8 +18,9 @@ export {
 }
 
 function codeGenFnHeader(fn: Fn) {
-  let headerStr = 'function ' + fn.name + '(';
+  let headerStr = '\nfunction ' + fn.ident + '(';
   let paramStr = '';
+
   for (let i = 0; i < fn.paramNames.length; i++) {
     paramStr += fn.paramNames[i];
     if (i != fn.paramNames.length - 1) {
@@ -28,7 +30,7 @@ function codeGenFnHeader(fn: Fn) {
   return headerStr + paramStr + ')';
 }
 
-function codeGenBody(body: InstMeta[], indent: number): string {
+function codeGenBody(body: Inst[], indent: number): string {
   let bodyStr = ' {\n'
   for (let i = 0; i < body.length; i++) {
     bodyStr += codeGenInst(body[i], indent);
@@ -39,13 +41,10 @@ function codeGenBody(body: InstMeta[], indent: number): string {
     tabs += '  ';
   }
 
-  return bodyStr + tabs + '}\n'
+  return bodyStr + tabs + '}'
 }
 
-function codeGenInst(instMeta: InstMeta, indent: number): string {
-  let sourceLine = instMeta.sourceLine;
-  let inst = instMeta.inst;
-
+function codeGenInst(inst: Inst, indent: number): string {
   let instText;
   if (inst.tag == 'declare') {
     instText = `let ${inst.val.name} = ${codeGenExpr(inst.val.expr)};`;
@@ -60,17 +59,21 @@ function codeGenInst(instMeta: InstMeta, indent: number): string {
   } else if (inst.tag == 'for') {
     instText = `while (${ codeGenExpr(inst.val.cond) }) ${ codeGenBody(inst.val.body, indent + 1) }`;
   } else if (inst.tag == 'return') {
-    instText = `return ${ codeGenExpr(inst.val) };`;
-  } else if (inst.tag == 'return_void') {
-    instText = 'return;'
-  }
+    if (inst.val == null) {
+      instText == 'return;'
+    } else {
+      instText = `return ${ codeGenExpr(inst.val) };`;
+    }
+  } else if (inst.tag == 'include') {
+    instText = inst.val;
+  } 
 
   let tabs = '';
   for (let i = 0; i < indent; i++) {
     tabs += '  ';
   }
 
-  return tabs + instText + ' //' + sourceLine + '\n';
+  return tabs + instText + '\n';
 }
 
 function codeGenExpr(expr: Expr): string {
@@ -128,7 +131,7 @@ function codeGenFnCall(fnCall: FnCall): string {
 
 function codeGenLeftExpr(leftExpr: LeftExpr): string {
   if (leftExpr.tag == 'dot') {
-    return `${codeGenLeftExpr(leftExpr.val.left)}.${codeGenLeftExpr(leftExpr.val.right)}`;
+    return `${codeGenLeftExpr(leftExpr.val.left)}.${leftExpr.val.varName}`;
   } else if (leftExpr.tag == 'arr_offset') {
     return `${codeGenLeftExpr(leftExpr.val.var)}[${codeGenExpr(leftExpr.val.index)}]`;
   } else {
