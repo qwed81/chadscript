@@ -64,10 +64,9 @@ interface FnType {
 }
 
 type Type = { tag: 'basic', val: string }
+  | { tag: 'slice', val: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
-  | { tag: 'opt', val: Type }
-  | { tag: 'err', val: Type }
   | { tag: 'link', val: Type }
 
 interface Fn {
@@ -120,6 +119,7 @@ interface Assign {
 interface MatchBranch {
   enumVariant: string
   body: InstMeta[]
+  sourceLine: number
 }
 
 interface Match {
@@ -140,7 +140,7 @@ interface Macro {
 type Inst = { tag: 'if', val: CondBody }
   | { tag: 'elif', val: CondBody }
   | { tag: 'else', val: InstMeta[] }
-  | { tag: 'for', val: CondBody }
+  | { tag: 'while', val: CondBody }
   | { tag: 'for_in', val: ForIn }
   | { tag: 'break' }
   | { tag: 'continue' }
@@ -185,6 +185,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'str_const', val: string }
   | { tag: 'char_const', val: string }
   | { tag: 'int_const', val: number }
+  | { tag: 'bool_const', val: boolean }
   | { tag: 'left_expr', val: LeftExpr }
 
 const MAPPING: [string, number][] = [
@@ -451,16 +452,19 @@ function tryParseType(tokens: string[]): Type | null {
   }
 
   let lastToken = tokens[tokens.length - 1]; 
-  if (lastToken == '!' || lastToken == '&' || lastToken == '?') {
+  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
     }
     if (lastToken == '!') {
-      return { tag: 'err', val: innerType };
+      return { tag: 'generic', val: { name: 'Res', generics: [innerType] } };
     }
     else if (lastToken == '?') {
-      return { tag: 'opt', val: innerType };
+      return { tag: 'generic', val: { name: 'Opt', generics: [innerType] } };
+    } 
+    else if (lastToken == '*') {
+      return { tag: 'slice', val: innerType };
     }
     else {
       return { tag: 'link', val: innerType };
@@ -617,7 +621,7 @@ function parseMatch(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
 
-    branches.push({ body: insts, enumVariant: bodyLine.tokens[0] });
+    branches.push({ body: insts, enumVariant: bodyLine.tokens[0], sourceLine: bodyLine.sourceLine });
   }
 
   return { tag: 'match', val: { var: expr, branches } };
@@ -696,25 +700,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
     return { tag: 'else', val: b }
-  } else if (keyword == 'for') {
-    if (line.tokens.includes('in')) {
-      let splits = balancedSplitTwo(line.tokens.slice(1), 'in');
-      if (splits[0].length != 1) {
-        logError(line.sourceLine, 'expected var name');
-        return null;
-      }
-
-      let expr = tryParseExpr(splits[1]);
-      if (expr == null) {
-        return null;
-      }
-
-      let b = parseInstBody(body);
-      if (b == null) {
-        return b;
-      }
-      return { tag: 'for_in', val: { varName: splits[0][0], iter: expr, body: b }};
-    }
+  } else if (keyword == 'while') {
     let cond = tryParseExpr(tokens.slice(1));
     if (cond == null) {
       logError(line.sourceLine, 'expected expression');
@@ -725,7 +711,24 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     if (b == null) {
       return b;
     }
-    return { tag: 'for', val: { cond, body: b }};
+    return { tag: 'while', val: { cond, body: b }};
+  } else if (keyword == 'for') {
+    let splits = balancedSplitTwo(line.tokens.slice(1), 'in');
+    if (splits[0].length != 1) {
+      logError(line.sourceLine, 'expected var name');
+      return null;
+    }
+
+    let expr = tryParseExpr(splits[1]);
+    if (expr == null) {
+      return null;
+    }
+
+    let b = parseInstBody(body);
+    if (b == null) {
+      return b;
+    }
+    return { tag: 'for_in', val: { varName: splits[0][0], iter: expr, body: b }};
   } else if (keyword == 'break') {
     return { tag: 'break' };
   } else if (keyword == 'continue') {
@@ -918,6 +921,12 @@ function tryParseExpr(tokens: string[]): Expr | null {
 
   if (tokens.length == 1) {
     let ident = tokens[0];
+    if (ident == 'true') {
+      return { tag: 'bool_const', val: true };
+    } else if (ident == 'false') {
+      return { tag: 'bool_const', val: false };
+    }
+
     if (ident.length >= 2 && ident[0] == '"' && ident[ident.length - 1] == '"') {
       return { tag: 'str_const', val: ident.slice(1, -1) };
     }
@@ -983,7 +992,7 @@ function getLines(data: string): SourceLine[] {
     // split tokens based on special characters
     let tokens: string[] = [];
     let tokenStart = 0;
-    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '!', '?', '@'];
+    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@'];
     for (let i = 0; i < line.length; i++) {
       // process string as a single token
       if (line[i] == '"') {

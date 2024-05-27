@@ -29,13 +29,24 @@ interface Assign {
   expr: Expr
 }
 
+interface MatchBranch {
+  enumVariant: string
+  body: Inst[]
+}
+
+interface Match {
+  var: Expr
+  branches: MatchBranch[]
+}
+
 type Inst = { tag: 'if', val: CondBody }
   | { tag: 'elif', val: CondBody }
-  | { tag: 'for', val: CondBody }
+  | { tag: 'while', val: CondBody }
   | { tag: 'else', val: Inst[] }
   | { tag: 'return', val: Expr | null }
   | { tag: 'break' }
   | { tag: 'continue' }
+  | { tag: 'match', val: Match }
   | { tag: 'declare', val: Declare}
   | { tag: 'assign', val: Assign }
   | { tag: 'include', val: string }
@@ -64,6 +75,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'str_const', val: string }
   | { tag: 'char_const', val: string }
   | { tag: 'int_const', val: number }
+  | { tag: 'bool_const', val: boolean }
   | { tag: 'left_expr', val: Parse.LeftExpr }
 
 export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr }
@@ -189,11 +201,16 @@ function verifyDataType(
     }
     let dataType = Resolve.resolveType(type, table, new Set(), sourceLine);
     if (dataType == null) {
-      logError(sourceLine, 'could not find type ' + type.val)
       return false;
     }
     return true;
-  } else if (type.tag == 'generic') {
+  } 
+
+  if (type.tag == 'slice') {
+    return verifyDataType(type.val, sourceLine, table, validGenerics);
+  }
+
+  if (type.tag == 'generic') {
     let dataType = Resolve.resolveType(type, table, new Set(), sourceLine);
     for (let g of type.val.generics) {
       if (verifyDataType(g, sourceLine, table, validGenerics) == false) {
@@ -204,9 +221,14 @@ function verifyDataType(
       return false;
     }
     return true;
-  } else if (type.tag == 'opt' || type.tag == 'err' || type.tag == 'link') {
-    return verifyDataType(type.val, sourceLine, table, validGenerics);
-  } else if (type.tag == 'fn') {
+  } 
+
+  if (type.tag == 'link') {
+    logError(sourceLine, 'link not allowed in struct definitions');
+    return false;
+  } 
+
+  if (type.tag == 'fn') {
     for (let i = 0; i < type.val.paramTypes.length; i++) {
       if (verifyDataType(type.val.paramTypes[i], sourceLine, table, validGenerics) == false) {
         return false;
@@ -249,15 +271,36 @@ function verifyStruct(struct: Parse.Struct, table: Resolve.UnitRefs): boolean {
   return !invalidField;
 }
 
+// recursively add all the generics to the set given the parse type
+function addGenerics(paramType: Parse.Type, generics: Set<string>) {
+  if (paramType.tag == 'basic' && paramType.val.length == 1) {
+    generics.add(paramType.val);
+  }
+
+  if (paramType.tag == 'slice' || paramType.tag == 'link') {
+    addGenerics(paramType.val, generics);
+  }
+
+  if (paramType.tag == 'generic') {
+    for (let generic of paramType.val.generics) {
+      addGenerics(generic, generics);
+    }
+  }
+
+  if (paramType.tag == 'fn') {
+    addGenerics(paramType.val.returnType, generics);
+    for (let g of paramType.val.paramTypes) {
+      addGenerics(g, generics);
+    }
+  }
+}
+
 function analyzeFn(fn: Parse.Fn, table: Resolve.UnitRefs): Fn | null {
   let generics: Set<string> = new Set();
 
-  // TODO nested generics
   for (let i = 0; i < fn.t.paramTypes.length; i++) {
     let paramType = fn.t.paramTypes[i]; 
-    if (paramType.tag == 'basic' && paramType.val.length == 1) {
-      generics.add(paramType.val);
-    }
+    addGenerics(paramType, generics);
   }
 
   let returnType = Resolve.resolveType(fn.t.returnType, table, generics, fn.sourceLine);
@@ -300,7 +343,7 @@ function analyzeFn(fn: Parse.Fn, table: Resolve.UnitRefs): Fn | null {
 
   let body: Inst[] | null = [];
   for (let instMeta of fn.body) {
-    let inst = analyzeInst(instMeta, table, scope, concreteReturn); 
+    let inst = analyzeInst(instMeta, table, scope); 
     if (inst == null) {
       body = null;
     } else if (body != null) {
@@ -321,13 +364,12 @@ function analyzeInstBody(
   body: Parse.InstMeta[],
   table: Resolve.UnitRefs,
   scope: Scope,
-  returnType: Type.ConcreteType,
 ): Inst[] | null {
   enterScope(scope);
 
   let newBody: Inst[] | null = [];
   for (let i = 0; i < body.length; i++) {
-    let inst = analyzeInst(body[i], table, scope, returnType);
+    let inst = analyzeInst(body[i], table, scope);
     if (inst == null) {
       newBody = null;
     } else if (newBody != null) {
@@ -343,20 +385,19 @@ function analyzeInst(
   instMeta: Parse.InstMeta,
   table: Resolve.UnitRefs,
   scope: Scope,
-  returnType: Type.ConcreteType,
 ): Inst | null {
   let inst = instMeta.inst;
-  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'for') {
+  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
     let expr = ensureExprValid(inst.val.cond, Type.BOOL, table, scope, instMeta.sourceLine);
     if (expr == null) {
       return null;
     }
 
-    if (inst.tag == 'for') {
+    if (inst.tag == 'while') {
       scope.inLoop = true;
     }
 
-    let body = analyzeInstBody(inst.val.body, table, scope, returnType);
+    let body = analyzeInstBody(inst.val.body, table, scope);
     if (body == null) {
       return null;
     }
@@ -365,12 +406,54 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'else') {
-    let body = analyzeInstBody(inst.val, table, scope, returnType);
+    let body = analyzeInstBody(inst.val, table, scope);
     if (body == null) {
       return null;
     }
 
     return { tag: 'else', val: body };
+  }
+
+  if (inst.tag == 'match') {
+    let exprTuple = ensureExprValid(inst.val.var, null, table, scope, instMeta.sourceLine);
+    if (exprTuple == null) {
+      return null;
+    }
+
+    if (exprTuple.type.tag != 'enum') {
+      logError(instMeta.sourceLine, 'match can only be done on enum');
+      return null;
+    }
+
+    let newBranches: MatchBranch[] = [];
+    let usedBranches = new Set<string>();
+    let fieldNames: string[] = exprTuple.type.val.fields.map(f => f.name);
+    for (let branch of inst.val.branches) {
+      if (fieldNames.includes(branch.enumVariant) == false) {
+        let errMsg = `'${branch.enumVariant}' is a not variant in enum ${Type.toStr(exprTuple.type)}`;
+        logError(branch.sourceLine, errMsg);
+        return null;
+      }
+
+      if (usedBranches.has(branch.enumVariant)) {
+        logError(branch.sourceLine, 'repeated branch ' + branch.enumVariant);
+        return null;
+      }
+      usedBranches.add(branch.enumVariant);
+
+      let newBody: Inst[] | null = analyzeInstBody(branch.body, table, scope);
+      if (newBody == null) {
+        return null;
+      }
+      newBranches.push({ enumVariant: branch.enumVariant, body: newBody });
+    }
+
+    if (usedBranches.size != fieldNames.length) {
+      logError(instMeta.sourceLine, `all variants not provided for enum ${Type.toStr(exprTuple.type)}`);
+      return null;
+    }
+
+    return { tag: 'match', val: { var: exprTuple.expr, branches: newBranches } };
   }
 
   if (inst.tag == 'macro' && inst.val.name == 'js') {
@@ -386,7 +469,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'return_void') {
-    if (!Type.typeEq(returnType, Type.VOID)) {
+    if (!Type.typeEq(scope.returnType, Type.VOID)) {
       logError(instMeta.sourceLine, 'returning from non-void fn without expression');
       return null;
     }
@@ -394,7 +477,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'return') {
-    let expr = ensureExprValid(inst.val, returnType, table, scope, instMeta.sourceLine);
+    let expr = ensureExprValid(inst.val, scope.returnType, table, scope, instMeta.sourceLine);
     if (expr == null) {
       return null;
     }
@@ -490,17 +573,24 @@ function ensureLeftExprValid(
       return null;
     }
 
-    if (arr.type.tag != 'view') {
-      logError(sourceLine, 'only view can index');
+    if (arr.type.tag != 'slice') {
+      logError(sourceLine, 'only slice can index');
       return null;
     }
 
-    let indexType = ensureExprValid(leftExpr.val.index, Type.INT, table, scope, sourceLine);
-    if (indexType == null) {
+    let index = ensureExprValid(leftExpr.val.index, Type.INT, table, scope, sourceLine);
+    if (index == null) {
       return null;
     }
 
-    return arr;
+    let newExpr: Parse.LeftExpr = { 
+      tag: 'arr_offset',
+      val: {
+        var: arr.expr,
+        index: index.expr
+      } 
+    };
+    return { expr: newExpr, type: arr.type.val };
   } else if (leftExpr.tag == 'var') {
     let v = getVarFromScope(scope, leftExpr.val);
     if (v == null) {
@@ -517,7 +607,7 @@ function ensureLeftExprValid(
 // modifies fnCall to have proper link
 function ensureFnCallValid(
   fnCall: Parse.FnCall,
-  expectedReturn: Type.ConcreteType,
+  expectedReturn: Type.ConcreteType | null,
   table: Resolve.UnitRefs, 
   scope: Scope,
   sourceLine: number
@@ -541,25 +631,42 @@ function ensureFnCallValid(
       return null;
     } 
 
-    // TODO typecheck
-    let fnCallExpr: Expr = { tag: 'fn_call', val: { fn: leftExpr.expr, exprs: paramExprs } };
-    return { expr: fnCallExpr, type: expectedReturn };
+    // TODO
+    return null;
   } else if (fnCall.fn.tag == 'var') {
     let v = getVarFromScope(scope, fnCall.fn.val); // first look in the scope for the value
     if (v == null) {
       // if you can't find the fn as a local variable lookup and try to find it in global scope
-      let foundId = Resolve.lookupFn(fnCall.fn.val, exprTypes, expectedReturn, table, sourceLine);
-      if (foundId == null) {
+      let lookupResult = Resolve.lookupFn(fnCall.fn.val, exprTypes, expectedReturn, table);
+      if (lookupResult.tag == 'ok') {
+        let newExpr: Expr = { 
+          tag: 'fn_call',
+          val: {
+            fn: {
+              tag: 'var',
+              val: lookupResult.val.name 
+            },
+            exprs: paramExprs  
+          }
+        };
+        return { expr: newExpr, type: lookupResult.val.returnType };
+      } 
+      else if (lookupResult.tag == 'no such function') {
         logError(sourceLine, `could not find function ${fnCall.fn.val}`);
         return null;
-      } 
-
-      let newExpr: Expr = { tag: 'fn_call', val: { fn: { tag: 'var', val: foundId }, exprs: paramExprs  } };
-      return { expr: newExpr, type: expectedReturn };
+      }
+      else if (lookupResult.tag == 'incorrect function type') {
+        let fnTypes = JSON.stringify(lookupResult.val, null, 2);
+        logError(sourceLine, `incorrect function type. did you mean ${fnTypes}`);
+        return null;
+      }
+      else if (lookupResult.tag == 'ambiguous function') {
+        let fnTypes = JSON.stringify(lookupResult.val, null, 2);
+        logError(sourceLine, `ambiguous function. provide types for ${fnTypes}`);
+        return null;
+      }
     } 
 
-    console.log(fnCall.fn.val);
-    
     // TODO type check
     return null;
   }
@@ -586,12 +693,12 @@ const OP_MAPPING: [string, Type.ConcreteType, Type.ConcreteType, Type.ConcreteTy
   ['==', Type.INT, Type.INT, Type.BOOL],
   ['==', Type.CHAR, Type.CHAR, Type.BOOL],
   ['==', Type.BOOL, Type.BOOL, Type.BOOL],
-  ['==', Type.STR, Type.STR, Type.BOOL],
+  ['==', Type.CHAR_SLICE, Type.CHAR_SLICE, Type.BOOL],
 
   ['!=', Type.INT, Type.INT, Type.BOOL],
   ['!=', Type.CHAR, Type.CHAR, Type.BOOL],
   ['!=', Type.BOOL, Type.BOOL, Type.BOOL],
-  ['!=', Type.STR, Type.STR, Type.BOOL],
+  ['!=', Type.CHAR_SLICE, Type.CHAR_SLICE, Type.BOOL],
 ];
 
 interface ExprTuple {
@@ -611,12 +718,12 @@ function ensureExprValid(
   let computedExpr: ExprTuple | null = null; 
 
   if (expr.tag == 'bin') {
-    let exprLeft = ensureExprValid(expr.val.left, null, table, scope, sourceLine);
-    if (exprLeft == null) {
-      return null;
-    }
-
     if (expr.val.op == 'is') {
+      let exprLeft = ensureExprValid(expr.val.left, null, table, scope, sourceLine);
+      if (exprLeft == null) {
+        return null;
+      }
+
       if (exprLeft.expr.tag != 'left_expr') {
         logError(sourceLine, 'is operator only valid on enums');
         return null;
@@ -662,6 +769,10 @@ function ensureExprValid(
 
       computedExpr = { expr: convertedExpr, type: Type.BOOL };
     } else {
+      let exprLeft = ensureExprValid(expr.val.left, null, table, scope, sourceLine);
+      if (exprLeft == null) {
+        return null;
+      }
 
       let exprRight = ensureExprValid(expr.val.right, null, table, scope, sourceLine);
       if (exprRight == null) {
@@ -697,17 +808,17 @@ function ensureExprValid(
     if (exprTuple == null) {
       return null;
     }
-    computedExpr = { expr: exprTuple.expr, type: Type.BOOL };
+    computedExpr = { expr: { tag: 'not', val: exprTuple.expr }, type: Type.BOOL };
   } 
 
   if (expr.tag == 'fn_call') {
-    if (expectedReturn == null) {
-      logError(sourceLine, 'function call return type must be known');
-      return null;
-    }
-
     // check if initialization of enum
-    if (expectedReturn.tag == 'enum' && expr.val.fn.tag == 'var' && expr.val.exprs.length == 1) {
+    if (expectedReturn != null
+      && expectedReturn.tag == 'enum' 
+      && expr.val.fn.tag == 'var' 
+      && expr.val.exprs.length == 1
+    ) {
+
       let fieldIndex = expectedReturn.val.fields.map(f => f.name).indexOf(expr.val.fn.val);
       if (fieldIndex != -1) {
         let fieldType: Type.ConcreteType = expectedReturn.val.fields[fieldIndex].type;
@@ -727,8 +838,10 @@ function ensureExprValid(
         };
         computedExpr = { expr: createdExpr, type: expectedReturn };
       } 
+    } 
 
-    } else {
+    // if there was no enum variant treat it as a normal function call
+    if (computedExpr == null) {
       let fnExpr = ensureFnCallValid(expr.val, expectedReturn, table, scope, sourceLine);
       if (fnExpr == null) {
         return null;
@@ -749,49 +862,56 @@ function ensureExprValid(
       return null;
     }
 
-    let fieldMap = new Map<string, Type.ConcreteType>();
-    let fieldExprs: Map<string, Expr> = new Map();
+    let exprFieldTypes = new Map<string, Type.ConcreteType>();
+    let exprFieldExprs: Map<string, Expr> = new Map();
     for (let initField of expr.val) {
       let exprTuple = ensureExprValid(initField.expr, null, table, scope, sourceLine);
       if (exprTuple == null) {
         return null;
       }
 
-      if (fieldMap.has(initField.name)) {
+      if (exprFieldTypes.has(initField.name)) {
         logError(sourceLine, 'double initialization of field');
         return null;
       }
 
-      fieldMap.set(initField.name, exprTuple.type);
-      fieldExprs.set(initField.name, exprTuple.expr);
+      exprFieldTypes.set(initField.name, exprTuple.type);
+      exprFieldExprs.set(initField.name, exprTuple.expr);
     }
 
-    if (fieldMap.size != expectedReturn.val.fields.length) {
-      for (let field of expectedReturn.val.fields) {
-        if (!fieldMap.has(field.name)) {
-          logError(sourceLine, `required field ${field.name}`);
-          return null;
-        }
+    if (exprFieldTypes.size != expectedReturn.val.fields.length) {
+      logError(sourceLine, 'missing fields');
+      return null;
+    }
 
-        let fieldType = fieldMap.get(field.name)!;
-        if (fieldType) {
-          logError(sourceLine, `improper type for ${field.name}`);
-          return null;
-        }
+    for (let field of expectedReturn.val.fields) {
+      if (!exprFieldTypes.has(field.name)) {
+        logError(sourceLine, `required field ${field.name}`);
+        return null;
+      }
+
+      let exprFieldType = exprFieldTypes.get(field.name)!;
+      if (Type.typeEq(exprFieldType, field.type) == false) {
+        logError(sourceLine, `improper type for ${Type.toStr(expectedReturn)}.${field.name}`);
+        return null;
       }
     }
 
     let fieldInits: StructInitField[] = [];
-    for (let fName of fieldMap.keys()) {
-      let fieldExpr = fieldExprs.get(fName)!;
+    for (let fName of exprFieldTypes.keys()) {
+      let fieldExpr = exprFieldExprs.get(fName)!;
       fieldInits.push({ name: fName, expr: fieldExpr });
     }
     let newExpr: Expr = { tag: 'struct_init', val: fieldInits };
     computedExpr = { type: expectedReturn, expr: newExpr }; 
   } 
 
+  if (expr.tag == 'bool_const') {
+    computedExpr = { expr: { tag: 'bool_const', val: expr.val }, type: Type.BOOL };
+  }
+
   if (expr.tag == 'str_const') {
-    computedExpr = { expr: { tag: 'str_const', val: expr.val }, type: Type.STR };
+    computedExpr = { expr: { tag: 'str_const', val: expr.val }, type: Type.CHAR_SLICE };
   } 
 
   if (expr.tag == 'char_const') {
@@ -829,7 +949,7 @@ function ensureExprValid(
 
   if (expectedReturn != null) {
     if (computedExpr == null) {
-      logError(sourceLine, 'compiler bug');
+      logError(sourceLine, 'ensureExprValid compiler bug');
       return null;
     }
 

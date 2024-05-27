@@ -33,8 +33,11 @@ function compile() {
 
   let analyzedProgram = analyze(parsedProgram);
   if (analyzedProgram == null) {
-    console.log('parse tree: ')
-    console.log(JSON.stringify(parsedProgram, null, 2));
+    if (args['-v']) {
+      console.log('parse tree: ')
+      console.log(JSON.stringify(parsedProgram, null, 2));
+    }
+    console.log('invalid program');
     return;
   } 
 
@@ -47,6 +50,8 @@ function compile() {
   }
 
   fs.writeFileSync(outputPath, output);
-  console.log(output);
+  if (args['-v']) {
+    console.log(output);
+  }
 }
 

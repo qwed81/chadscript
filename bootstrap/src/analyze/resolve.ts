@@ -3,7 +3,7 @@ import {
   Type as ParseType, FnType as ParseFnType, Fn as ParseFn
 } from '../parse';
 import { logError } from '../index';
-import { Type, GenericType, ConcreteType, VOID, STR, typeApplicable, typeEq } from './types';
+import { Type, GenericType, ConcreteType, typeApplicable, replaceGenerics, typeEq, toStr } from './types';
 
 export {
   UnitRefs, unitRefs, resolveType, lookupFn, getFnUniqueId
@@ -49,7 +49,7 @@ function lookupStructOrEnum(
           return null;
         }
 
-        possibleType = { tag: 'struct', val: struct, unit: thisUnit  };
+        possibleType = { tag, val: struct, unit: thisUnit  };
         typeUnit = unit.fullName;
       } else if (struct.t.tag == 'basic' && genericCount == 0) {
         if (struct.t.val != name) {
@@ -74,46 +74,6 @@ function lookupStructOrEnum(
   }
 
   return possibleType;
-}
-
-function resolveOptErr(
-  subType: ParseType,
-  table: UnitRefs,
-  ctxGenerics: Set<string>,
-  sourceLine: number
-): Type | null {
-    let t = resolveType(subType, table, ctxGenerics, sourceLine);
-    if (t == null) {
-      return null;
-    }
-
-    let fields: { name: string, type: ConcreteType }[];
-    if (subType.tag == 'opt') {
-      fields = [ { name: 'some', type: t as any }, { name: 'none', type: VOID } ];
-    } else {
-      fields = [ { name: 'ok', type: t as any }, { name: 'err', type: STR } ];
-    }
-
-    if (t.tag == 'generic') {
-      let thisGeneric: GenericType = t.val;
-      return { tag: 'generic', val: { tag: 'enum', val: { generics: [thisGeneric], id: subType.tag } } };
-    } else if (t.tag == 'concrete'){
-      let thisConcrete: ConcreteType = t.val;
-      return { 
-        tag: 'concrete',
-        val: {
-          tag: 'enum',
-          val: { 
-            generics: [thisConcrete],
-            id: subType.tag ,
-            fields: fields
-          }
-        } 
-      }
-    } 
-
-    logError(-1, 'complier error resolveType');
-    return null;
 }
 
 function resolveFnType(
@@ -166,12 +126,21 @@ function resolveType(
     return resolveType(type.val, table, ctxGenerics, sourceLine);
   }
 
-  if (type.tag == 'opt' || type.tag == 'err') {
-    return resolveOptErr(type.val, table, ctxGenerics, sourceLine);
-  } 
-
   if (type.tag == 'fn') {
     return resolveFnType(type.val, table, ctxGenerics, sourceLine);
+  }
+
+  if (type.tag == 'slice') {
+    let innerType = resolveType(type.val, table, ctxGenerics, sourceLine);
+    if (innerType == null) {
+      return null;
+    }
+
+    if (innerType.tag == 'concrete') {
+      return { tag: 'concrete', val: { tag: 'slice', val: innerType.val } };
+    } else {
+      return { tag: 'generic', val: { tag: 'slice', val: innerType.val } };
+    }
   }
 
   // resolve struct type
@@ -182,11 +151,17 @@ function resolveType(
   let localGenerics: ParseType[];
   let name: string = '';
   if (type.tag == 'basic') {
-    if (type.val == 'bool' || type.val == 'void' || type.val == 'int' || type.val == 'str' || type.val == 'char') {
+    if (type.val == 'bool' || type.val == 'void' || type.val == 'int' || type.val == 'char') {
       return { tag: 'concrete', val: { tag: 'primative', val: type.val } };
     }
 
     if (type.val.length == 1) {
+      // if it is used with a generic mapping, create a blank struct
+      if (ctxGenerics.has(type.val)) {
+        let concreteStruct = { fields: [], generics: [], id: type.val };
+        return { tag: 'concrete', val: { tag: 'struct', val: concreteStruct } };
+      } 
+
       return { tag: 'generic', val: { tag: 'generic', val: type.val } };
     }
 
@@ -226,12 +201,33 @@ function resolveType(
     return null;
   }
 
-  if (localGenericTypes.length > 0) { // the struct can not fully be resolved so it is still generic (list[list[T]] or list[T])
-    return { tag: 'generic', val: { tag: structDef.tag, val: { generics: localGenericTypes, id: name } } };
+  let template: ParseStruct = structDef.val;
+  // the struct can not fully be resolved so it is still generic (list[list[T]] or list[T])
+  if (localGenericTypes.length > 0) { 
+    let fields: { name: string, type: Type }[] = [];
+    for (let i = 0; i < template.fields.length; i++) {
+      let templateFieldType = resolveType(template.fields[i].t, structDef.unit, new Set(), sourceLine);
+      if (templateFieldType == null) {
+        logError(template.sourceLine, 'invalid generic struct, could not resolve types');
+        return null;
+      }
+      fields.push({ type: templateFieldType, name: template.fields[i].name });
+    }
+
+    return { 
+      tag: 'generic',
+      val: {
+        tag: structDef.tag,
+        val: {
+          fields,
+          generics: localGenericTypes,
+          id: name 
+        } 
+      } 
+    };
   }
 
   // every type of the struct is not generic so it can be used as a concrete type
-  let template: ParseStruct = structDef.val;
   let defGenericMap: Map<string, ConcreteType> = new Map();
 
   // build out a mapping so generic fields can get their concrete type
@@ -251,8 +247,8 @@ function resolveType(
 
   let concreteFields: { name: string, type: ConcreteType }[] = [];
   for (let field of template.fields) {
-    if (defGenericMap.has(field.name)) { // resolve generic fields according to local generics
-      concreteFields.push({ name: field.name, type: defGenericMap.get(field.name)! });
+    if (field.t.tag == 'basic' && defGenericMap.has(field.t.val)) { // resolve generic fields according to local generics
+      concreteFields.push({ name: field.name, type: defGenericMap.get(field.t.val)! });
     } else {
       // resolve using the struct's definitions unit
       // additionally none of the local generics should interfere
@@ -271,7 +267,8 @@ function resolveType(
     }
   }
 
-  let concreteType = { tag: structDef.tag,
+  let concreteType = { 
+    tag: structDef.tag,
     val: { 
       fields: concreteFields,
       generics: localGenericConcreteTypes,
@@ -283,15 +280,18 @@ function resolveType(
 
 // given the function name and it's type, lookup in all units and find the matching function
 // if it exists
+type LookupFnError = { tag: 'no such function' } 
+  | { tag: 'incorrect function type', val: Type[] }
+  | { tag: 'ambiguous function', val: ConcreteType[] };
+
 function lookupFn(
   name: string,
   paramTypes: ConcreteType[],
-  returnType: ConcreteType,
+  returnType: ConcreteType | null,
   units: UnitRefs,
-  calleeLine: number
-): string | null {
-  let possibleFnId: string | null = null;
-  let possibleFnUnit: string | null = null;
+): { tag: 'ok', val: { name: string, returnType: ConcreteType } } | LookupFnError {
+  let possibleFns: { unit: string, type: ConcreteType, fnDef: ParseFn }[] = [];
+  let possibleFnsWrongType: Type[] = [];
 
   for (let fnDefUnit of units.units) {
     if (fnDefUnit.fullName != units.unitName && !units.uses.includes(fnDefUnit.fullName)) {
@@ -312,42 +312,86 @@ function lookupFn(
         continue;
       }
 
-      if (fnDefType.tag == 'generic' && !typeApplicable(returnType, fnDefType.val.val.returnType)) {
-        continue;
-      } else if (fnDefType.tag == 'concrete' && !typeEq(returnType, fnDefType.val.val.returnType)) {
-        continue;
+      let genericMap: Map<string, ConcreteType> = new Map<string, ConcreteType>();
+
+      // can disambig based on return type if provided
+      if (returnType != null) {
+        if (fnDefType.tag == 'generic') {
+          if (!typeApplicable(returnType, fnDefType.val.val.returnType, genericMap)) {
+            possibleFnsWrongType.push(fnDefType);
+            continue;
+          } 
+        } else if (fnDefType.tag == 'concrete' && !typeEq(returnType, fnDefType.val.val.returnType)) {
+          possibleFnsWrongType.push(fnDefType);
+          continue;
+        }
       }
 
       if (paramTypes.length != fnDefType.val.val.paramTypes.length) {
+        possibleFnsWrongType.push(fnDefType);
         continue;
       }
+
       // ensure all paremeters are allows to be converted
       let allValid = true;
       for (let i = 0; i < paramTypes.length; i++) {
-        if (fnDefType.tag == 'generic' && !typeApplicable(returnType, fnDefType.val.val.returnType)) {
+        if (fnDefType.tag == 'generic' && !typeApplicable(paramTypes[i], fnDefType.val.val.paramTypes[i], genericMap)) {
           allValid = false;
           break;
-        } else if (fnDefType.tag == 'concrete' && !typeEq(returnType, fnDefType.val.val.returnType)) {
+        } else if (fnDefType.tag == 'concrete' && !typeEq(paramTypes[i], fnDefType.val.val.paramTypes[i])) {
           allValid = false;
           break;
         }
       }
 
       if (allValid == false) {
+        possibleFnsWrongType.push(fnDefType);
         continue;
       }
 
-      if (possibleFnId != null) {
-        logError(calleeLine, `ambiguous function call ${possibleFnUnit}.name and ${fnDefUnit.fullName}.name`)
-        return null;
+      let calculatedType: ConcreteType = null!;
+      if (fnDefType.tag == 'concrete' && fnDefType.val.tag == 'fn') {
+        calculatedType = fnDefType.val;
+      } else if (fnDefType.tag == 'generic' && fnDefType.val.tag == 'fn') {
+        let newType = replaceGenerics(fnDefType.val, genericMap);
+        if (newType == null) {
+          possibleFnsWrongType.push(fnDefType);
+          continue;
+        }
+        calculatedType = newType;
+      } else {
+        logError(-1, 'compiler bug lookupFn');
+        return null as any; // this should never happen
       }
 
-      possibleFnId = getFnUniqueId(fnDefUnit.fullName, fnDef);
-      possibleFnUnit = fnDefUnit.fullName;
+      possibleFns.push({ unit: fnDefUnit.fullName, fnDef, type: calculatedType });
     }
   }
 
-  return possibleFnId;
+  if (possibleFns.length == 1) {
+    if (possibleFns[0].type.tag != 'fn') {
+      logError(-1, 'compiler error expected fn tag');
+      return null as any; // this should never happen so its ok to break it
+    }
+
+    return { 
+      tag: 'ok',
+      val: {
+        name: getFnUniqueId(possibleFns[0].unit, possibleFns[0].fnDef),
+        returnType: possibleFns[0].type.val.returnType
+      }
+    };
+  }
+
+  if (possibleFns.length > 1) {
+    return { tag: 'ambiguous function', val: possibleFns.map(x => x.type) };
+  }
+
+  if (possibleFnsWrongType.length == 0) {
+    return { tag: 'no such function' };
+  }
+
+  return { tag: 'incorrect function type', val: possibleFnsWrongType };
 }
 
 // java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
