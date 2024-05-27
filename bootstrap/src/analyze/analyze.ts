@@ -25,7 +25,7 @@ interface Declare {
 }
 
 interface Assign {
-  to: Parse.LeftExpr,
+  to: LeftExpr,
   expr: Expr
 }
 
@@ -39,9 +39,16 @@ interface Match {
   branches: MatchBranch[]
 }
 
+interface ForIn {
+  varName: string,
+  iter: Expr
+  body: Inst[]
+}
+
 type Inst = { tag: 'if', val: CondBody }
   | { tag: 'elif', val: CondBody }
   | { tag: 'while', val: CondBody }
+  | { tag: 'for_in', val: ForIn }
   | { tag: 'else', val: Inst[] }
   | { tag: 'return', val: Expr | null }
   | { tag: 'break' }
@@ -52,7 +59,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'include', val: string }
 
 interface FnCall {
-  fn: Parse.LeftExpr
+  fn: LeftExpr
   exprs: Expr[]
 }
 
@@ -76,9 +83,31 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'char_const', val: string }
   | { tag: 'int_const', val: number }
   | { tag: 'bool_const', val: boolean }
-  | { tag: 'left_expr', val: Parse.LeftExpr }
+  | { tag: 'left_expr', val: LeftExpr }
 
-export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr }
+interface DotOp {
+  left: Expr
+  varName: string
+}
+
+interface ArrOffsetInt {
+  var: LeftExpr
+  index: Expr
+}
+
+interface ArrOffsetSlice {
+  var: LeftExpr
+  start: Expr
+  end: Expr
+}
+
+type LeftExpr = { tag: 'dot', val: DotOp }
+  | { tag: 'arr_offset_int', val: ArrOffsetInt }
+  | { tag: 'arr_offset_slice', val: ArrOffsetSlice }
+  | { tag: 'var', val: string }
+
+
+export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let entryName: string | null = null;
@@ -322,7 +351,6 @@ function analyzeFn(fn: Parse.Fn, table: Resolve.UnitRefs): Fn | null {
   let scope: Scope = { 
     varTypes: [],
     generics,
-    validEnumVariants: [],
     returnType: concreteReturn,
     inLoop: false,
     varCounter: 0
@@ -404,6 +432,29 @@ function analyzeInst(
 
     return { tag: inst.tag, val: { cond: expr.expr, body: body } };
   } 
+
+  if (inst.tag == 'for_in') {
+    let iterExpr = ensureExprValid(inst.val.iter, Type.RANGE, table, scope, instMeta.sourceLine);
+    if (iterExpr == null) {
+      return null;
+    }
+
+    scope.inLoop = true;
+    enterScope(scope);
+    setTypeToScope(scope, inst.val.varName, Type.INT);
+    let body = analyzeInstBody(inst.val.body, table, scope);
+    exitScope(scope);
+    if (body == null) {
+      return null;
+    }
+
+    return {
+      tag: 'for_in',
+      val: {
+        varName: inst.val.varName, iter: iterExpr.expr, body: body 
+      }
+    };
+  }
 
   if (inst.tag == 'else') {
     let body = analyzeInstBody(inst.val, table, scope);
@@ -490,7 +541,7 @@ function analyzeInst(
       return null;
     }
 
-    let to: Parse.LeftExpr =  { tag: 'var', val: '_' };
+    let to: LeftExpr =  { tag: 'var', val: '_' };
     return { tag: 'assign', val: { to, expr: exprTuple.expr } };
   } 
 
@@ -522,6 +573,11 @@ function analyzeInst(
       return null;
     }
 
+    if (to.expr.tag == 'arr_offset_slice') {
+      logError(instMeta.sourceLine, 'can not assign to a slice');
+      return null;
+    }
+
     let expr = ensureExprValid(inst.val.expr, to.type, table, scope, instMeta.sourceLine);
     if (expr == null) {
       return null;
@@ -535,7 +591,7 @@ function analyzeInst(
 }
 
 interface LeftExprTuple {
-  expr: Parse.LeftExpr,
+  expr: LeftExpr,
   type: Type.ConcreteType
 }
 
@@ -546,7 +602,7 @@ function ensureLeftExprValid(
   sourceLine: number
 ): LeftExprTuple | null {
   if (leftExpr.tag == 'dot') {
-    let leftExprTuple = ensureLeftExprValid(leftExpr.val.left, table, scope, sourceLine);
+    let leftExprTuple = ensureExprValid(leftExpr.val.left, null, table, scope, sourceLine);
     if (leftExprTuple == null) {
       return null;
     }
@@ -558,7 +614,7 @@ function ensureLeftExprValid(
 
     for (let field of leftExprTuple.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
-        let dotOp: Parse.LeftExpr = { tag: 'dot', val: { left: leftExprTuple.expr, varName: field.name } };
+        let dotOp: LeftExpr = { tag: 'dot', val: { left: leftExprTuple.expr, varName: field.name } };
         return { expr: dotOp, type: field.type };
       }
     }
@@ -578,26 +634,61 @@ function ensureLeftExprValid(
       return null;
     }
 
-    let index = ensureExprValid(leftExpr.val.index, Type.INT, table, scope, sourceLine);
+    let index = ensureExprValid(leftExpr.val.index, null, table, scope, sourceLine);
     if (index == null) {
       return null;
     }
 
-    let newExpr: Parse.LeftExpr = { 
-      tag: 'arr_offset',
-      val: {
-        var: arr.expr,
-        index: index.expr
-      } 
-    };
-    return { expr: newExpr, type: arr.type.val };
+    if (Type.typeEq(index.type, Type.INT)) {
+      let newExpr: LeftExpr = { 
+        tag: 'arr_offset_int',
+        val: {
+          var: arr.expr,
+          index: index.expr
+        } 
+      };
+      return { expr: newExpr, type: arr.type.val };
+    } else if (Type.typeEq(index.type, Type.RANGE)) {
+      let start: Expr = {
+        tag: 'left_expr',
+        val: {
+          tag: 'dot',
+          val: {
+            left: index.expr,
+            varName: 'start'
+          } 
+        } 
+      };
+      let end: Expr = {
+        tag: 'left_expr',
+        val: {
+          tag: 'dot',
+          val: {
+            left: index.expr,
+            varName: 'end'
+          }
+        }
+      };
+      let newExpr: LeftExpr = { 
+        tag: 'arr_offset_slice',
+        val: {
+          var: arr.expr,
+          start,
+          end
+        } 
+      };
+      return { expr: newExpr, type: arr.type };
+    }
+
+    logError(sourceLine, 'slice must be indexed with range or int');
+    return null;
   } else if (leftExpr.tag == 'var') {
-    let v = getVarFromScope(scope, leftExpr.val);
-    if (v == null) {
+    let type = getType(scope, leftExpr.val);
+    if (type == null) {
       logError(sourceLine, `${leftExpr.val} not declared`);
       return null;
     }
-    return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
+    return { expr: { tag: 'var', val: leftExpr.val }, type: type };
   }
 
   logError(-1, 'compiler bug ensureLeftExprValid');
@@ -634,7 +725,7 @@ function ensureFnCallValid(
     // TODO
     return null;
   } else if (fnCall.fn.tag == 'var') {
-    let v = getVarFromScope(scope, fnCall.fn.val); // first look in the scope for the value
+    let v = getType(scope, fnCall.fn.val); // first look in the scope for the value
     if (v == null) {
       // if you can't find the fn as a local variable lookup and try to find it in global scope
       let lookupResult = Resolve.lookupFn(fnCall.fn.val, exprTypes, expectedReturn, table);
@@ -718,6 +809,24 @@ function ensureExprValid(
   let computedExpr: ExprTuple | null = null; 
 
   if (expr.tag == 'bin') {
+    if (expr.val.op == 'to') {
+      let leftTuple = ensureExprValid(expr.val.left, Type.INT, table, scope, sourceLine);
+      let rightTuple = ensureExprValid(expr.val.right, Type.INT, table, scope, sourceLine);
+      if (leftTuple == null || rightTuple == null) {
+        return null;
+      }
+
+      let rangeInitExpr: Expr = {
+        tag: 'struct_init',
+        val: [
+          { name: 'start', expr: leftTuple.expr },
+          { name: 'end', expr: rightTuple.expr }
+        ]
+      };
+
+      computedExpr = { expr: rangeInitExpr, type: Type.RANGE };
+    }
+
     if (expr.val.op == 'is') {
       let exprLeft = ensureExprValid(expr.val.left, null, table, scope, sourceLine);
       if (exprLeft == null) {
@@ -755,7 +864,7 @@ function ensureExprValid(
             val: {
               tag: 'dot',
               val: {
-                left: exprLeft.expr.val,
+                left: exprLeft.expr,
                 varName: 'tag'
               }
             }
@@ -962,15 +1071,9 @@ function ensureExprValid(
   return computedExpr;
 }
 
-interface Var {
-  type: Type.ConcreteType
-  ident: number
-}
-
 interface Scope {
-  varTypes: Map<string, Var>[]
+  varTypes: Map<string, Type.ConcreteType>[]
   generics: Set<string>, 
-  validEnumVariants: Map<string, string[]>[]
   returnType: Type.ConcreteType
   inLoop: boolean
   varCounter: number
@@ -978,29 +1081,18 @@ interface Scope {
 
 function enterScope(scope: Scope) {
   scope.varTypes.push(new Map());
-  scope.validEnumVariants.push(new Map());
 }
 
 function exitScope(scope: Scope) {
   scope.varTypes.pop();
-  scope.validEnumVariants.pop();
-}
-
-function allowEnumVariant(scope: Scope, name: string, variant: string) {
-  let list = scope.validEnumVariants[scope.validEnumVariants.length - 1].get(name);
-  if (list == null) {
-    list = [];
-    scope.validEnumVariants[scope.validEnumVariants.length - 1].set(name, list);
-  }
-  list.push(variant);
 }
 
 function setTypeToScope(scope: Scope, name: string, type: Type.ConcreteType) {
-  scope.varTypes[scope.varTypes.length - 1].set(name, { type, ident: scope.varCounter });
+  scope.varTypes[scope.varTypes.length - 1].set(name, type);
   scope.varCounter += 1;
 }
 
-function getVarFromScope(scope: Scope, name: string): Var | null {
+function getType(scope: Scope, name: string): Type.ConcreteType | null {
   for (let i = scope.varTypes.length - 1; i >= 0; i--) {
     if (scope.varTypes[i].has(name)) {
       return scope.varTypes[i].get(name)!;

@@ -1,0 +1,85 @@
+# required by the compiler
+enum Opt[T]
+  T some
+  void none
+
+enum Res[T]
+  T ok
+  char* err
+
+struct Range
+  int start
+  int end
+
+# stdlib
+pub trim(char* str) char*
+  int start = 0
+  for i in 0 to len(str)
+    if str[i] != ' '
+      start = i
+      break
+
+  int end = len(str) - 1
+  for i in len(str) - 1 to -1
+    if str[i] != ' '
+      end = i
+      break
+
+  return str[start to end]
+  
+pub contains(char* a, char* b) bool
+  for i in 0 to len(a)
+    bool allValid = true
+    for j in 0 to len(b)
+      if a[i + j] != b[j]
+        allValid = false
+        break
+
+    if allValid
+      return true
+
+  return false
+
+print(T s)
+  @js 
+    console.log(_s);
+
+len(T* s) int
+  @js
+    return _s.length;
+
+input() char*
+  char* output = ""
+  @js
+    const readline = require('readline');
+    function input() {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+        return new Promise(resolve => rl.question('', ans => {
+            rl.close();
+            resolve(ans);
+        }));
+    }
+    _output = await input();
+  return output
+
+parse(char* s) Res[int]
+  @js
+    let a = parseInt(_s);
+    if (isNaN(a)) {
+      return { _tag: 'err', _err: 'invalid parse' };
+    } else {
+      return { _tag: 'ok', _ok: a };
+    }
+  return err("invalid parse")
+
+parse(char* s) Res[bool]
+  if s == "true"
+    return ok(true)
+  elif s == "false"
+    return ok(false)
+  else
+    return err("invalid parse")
+

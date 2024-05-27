@@ -1,10 +1,9 @@
 import { Program  } from './analyze/analyze';
-import { Fn, Inst, Expr, StructInitField, FnCall } from './analyze/analyze';
-import { LeftExpr } from './parse';
+import { Fn, Inst, LeftExpr, Expr, StructInitField, FnCall } from './analyze/analyze';
 
 // generates the javascript output for the given program
 function codegen(prog: Program): string {
-  let programStr = `${prog.entry}();`;
+  let programStr = `_${prog.entry}();`;
   for (let fn of prog.fns) {
     let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1, false);
     programStr += fnCode;
@@ -18,11 +17,11 @@ export {
 }
 
 function codeGenFnHeader(fn: Fn) {
-  let headerStr = '\nasync function ' + fn.ident + '(';
+  let headerStr = '\nasync function _' + fn.ident + '(';
   let paramStr = '';
 
   for (let i = 0; i < fn.paramNames.length; i++) {
-    paramStr += fn.paramNames[i];
+    paramStr += '_' + fn.paramNames[i];
     if (i != fn.paramNames.length - 1) {
       paramStr += ', ';
     }
@@ -56,34 +55,50 @@ function codeGenInst(inst: Inst, indent: number): string {
 
   let instText;
   if (inst.tag == 'declare') {
-    instText = `let ${inst.val.name} = ${codeGenExpr(inst.val.expr)};`;
-  } else if (inst.tag == 'assign') {
+    instText = `var _${inst.val.name} = ${codeGenExpr(inst.val.expr)};`;
+  } 
+  else if (inst.tag == 'assign') {
     instText = `${codeGenLeftExpr(inst.val.to)} = ${codeGenExpr(inst.val.expr)};`;
-  } else if (inst.tag == 'if') {
+  } 
+  else if (inst.tag == 'if') {
     instText = `if (${ codeGenExpr(inst.val.cond) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
-  } else if (inst.tag == 'elif') {
+  } 
+  else if (inst.tag == 'elif') {
     instText = `else if (${ codeGenExpr(inst.val.cond) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
-  } else if (inst.tag == 'else') {
+  }
+  else if (inst.tag == 'else') {
     instText = `else ${ codeGenBody(inst.val, indent + 1, false) }`;
-  } else if (inst.tag == 'while') {
+  }
+  else if (inst.tag == 'while') {
     instText = `while (${ codeGenExpr(inst.val.cond) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
-  } else if (inst.tag == 'return') {
+  }
+  else if (inst.tag == 'return') {
     if (inst.val == null) {
       instText == 'return;'
     } else {
       instText = `return ${ codeGenExpr(inst.val) };`;
     }
-  } else if (inst.tag == 'include') {
+  }
+  else if (inst.tag == 'include') {
     instText = inst.val;
-  } else if (inst.tag == 'match') {
-    instText = `switch (${codeGenExpr(inst.val.var)}.tag) {\n`;
+  }
+  else if (inst.tag == 'match') {
+    instText = `switch (${codeGenExpr(inst.val.var)}._tag) {\n`;
     for (let branch of inst.val.branches) {
       instText += `${tabs}case \'${branch.enumVariant}\':${ codeGenBody(branch.body, indent + 1, true) }\n`;
     }
     instText += tabs + '}\n';
-  } else if (inst.tag == 'continue' || inst.tag == 'break') {
+  }
+  else if (inst.tag == 'continue' || inst.tag == 'break') {
     instText = inst.tag + ';';
   } 
+  else if (inst.tag == 'for_in') {
+    let name = inst.val.varName;
+    let inner = `for (let _${name} = __range_${name}._start; _${name} < __range_${name}._end; _${name}++)`;
+    inner += '' + codeGenBody(inst.val.body, indent + 2, false);
+    instText = `{\n${tabs}  var __range_${name} = `
+    instText += `${codeGenExpr(inst.val.iter)};\n${tabs}  ${inner}\n${tabs}}`;
+  }
 
   return tabs + instText + '\n';
 }
@@ -122,7 +137,7 @@ function codeGenStructInit(structInit: StructInitField[]): string {
   let output = '{ ';
   for (let i = 0; i < structInit.length; i++) {
     let initField = structInit[i];
-    output += `${initField.name}: ${codeGenExpr(initField.expr)}`;
+    output += `_${initField.name}: ${codeGenExpr(initField.expr)}`;
     if (i != structInit.length - 1) {
       output += ', ';
     }
@@ -145,10 +160,17 @@ function codeGenFnCall(fnCall: FnCall): string {
 
 function codeGenLeftExpr(leftExpr: LeftExpr): string {
   if (leftExpr.tag == 'dot') {
-    return `${codeGenLeftExpr(leftExpr.val.left)}.${leftExpr.val.varName}`;
-  } else if (leftExpr.tag == 'arr_offset') {
+    return `${codeGenExpr(leftExpr.val.left)}._${leftExpr.val.varName}`;
+  } 
+  else if (leftExpr.tag == 'arr_offset_int') {
     return `${codeGenLeftExpr(leftExpr.val.var)}[${codeGenExpr(leftExpr.val.index)}]`;
-  } else {
-    return leftExpr.val;
+  } 
+  else if (leftExpr.tag == 'arr_offset_slice') {
+    let start = codeGenExpr(leftExpr.val.start);
+    let end = codeGenExpr(leftExpr.val.end);
+    return `${codeGenLeftExpr(leftExpr.val.var)}.slice(${start}, ${end})`;
+  }
+  else {
+    return '_' + leftExpr.val;
   }
 }

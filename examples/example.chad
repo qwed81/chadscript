@@ -1,0 +1,12 @@
+use std
+
+main() int
+  print("hello world!")
+  int! a = parse(input())
+  if a is ok
+    print(a.ok)
+  else
+    print("you did not put a valid int :(")
+
+
+  return 0

@@ -153,7 +153,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'macro', val: Macro }
 
 interface DotOp {
-  left: LeftExpr,
+  left: Expr,
   varName: string
 }
 
@@ -764,20 +764,21 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return null;
   }
 
-  // parse declare
   let left = splits[0];
+  // try parse assign
+  let leftExpr = tryParseLeftExpr(left);
+  if (leftExpr != null) {
+    return { tag: 'assign', val: { to: leftExpr, expr } };
+  }
+
+  // parse declare
   let type = tryParseType(left.slice(0, -1));
   let name = left[left.length - 1];
   if (left.length >= 2 && type != null) {
     return { tag: 'declare', val: { t: type, name, expr } }
   }
 
-  // assign
-  let leftExpr = tryParseLeftExpr(left);
-  if (leftExpr == null) {
-    return null;
-  }
-  return { tag: 'assign', val: { to: leftExpr, expr } };
+  return null;
 }
 
 function tryParseStructInit(tokens: string[]): Expr | null {
@@ -820,7 +821,7 @@ function tryParseDotOp(tokens: string[]): LeftExpr | null {
     return null;
   }
 
-  let left = tryParseLeftExpr(splits[0]);
+  let left = tryParseExpr(splits[0]);
   if (left == null) {
     return null;
   }
@@ -935,7 +936,8 @@ function tryParseExpr(tokens: string[]): Expr | null {
       return { tag: 'char_const', val: ident.slice(1, -1) };
     }
 
-    if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9') {
+    if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9'
+      || ident.length >= 2 && ident[0] == '-' && ident[1] >= '0' && ident[1] <= '9') {
       return { tag: 'int_const', val: parseInt(ident) };
     }
   }

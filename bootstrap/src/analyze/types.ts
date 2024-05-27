@@ -1,13 +1,15 @@
 import { logError } from '../index'
 
 export {
-  INT, BOOL, VOID, CHAR, CHAR_SLICE, Type, ConcreteType, GenericType,
+  INT, BOOL, VOID, CHAR, CHAR_SLICE, RANGE, Type, ConcreteType, GenericType,
   GenericStruct, ConcreteStruct, ConcreteField,
   typeEq, typeApplicable, toStr, replaceGenerics
 }
 
 const CHAR_SLICE: ConcreteType = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
 const INT: ConcreteType = { tag: 'primative', val: 'int' };
+const RANGE_FIELDS: ConcreteField[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
+const RANGE: ConcreteType = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'Range' } };
 const BOOL: ConcreteType = { tag: 'primative', val: 'bool' };
 const VOID: ConcreteType = { tag: 'primative', val: 'void' }
 const CHAR: ConcreteType = { tag: 'primative', val: 'char' };
