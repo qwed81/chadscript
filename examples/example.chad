@@ -1,12 +1,45 @@
 use std
 
+struct Point
+  int x
+  int y
+
+enum State
+  int stateX
+  int stateY
+
 main() int
-  print("hello world!")
-  int! a = parse(input())
-  if a is ok
-    print(a.ok)
-  else
-    print("you did not put a valid int :(")
+  
+  print("how many points would you like to create?")
+  int! pointCount = parse(input())
+  if pointCount is err
+    print("expected int")
+    return -1
 
+  List[Point] list = list()
+  for i in 0 to pointCount.ok
+    Point p = { x = i, y = i * 2 } 
+    push(&list, p)
 
+  print("would you like to sum X or Y")
+  char* choseState = input()
+  State state = stateX(0)
+  if choseState == "Y"
+    state = stateY(0)
+  if choseState != "X"
+    print("invalid state")
+
+  for i in 0 to len(list) 
+    if state is stateX
+      state.stateX = state.stateX + list[i].x
+    else
+      state.stateY = state.stateY + list[i].y 
+
+  if state is stateX
+    print("sum X: ")
+    print(state.stateX)
+  elif state is stateY
+    print("sum Y: ")
+    print(state.stateY)
+  
   return 0

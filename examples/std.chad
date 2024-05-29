@@ -12,7 +12,21 @@ struct Range
   int end
 
 # stdlib
-pub trim(char* str) char*
+struct List[T]
+
+list() List[T]
+  include
+    return []
+
+push(List[T]& list, T val)
+  include
+    _list.push(_val)
+
+pop(List[T]& list) T
+  include
+    return _list.pop()
+
+trim(char* str) char*
   int start = 0
   for i in 0 to len(str)
     if str[i] != ' '
@@ -27,7 +41,7 @@ pub trim(char* str) char*
 
   return str[start to end]
   
-pub contains(char* a, char* b) bool
+contains(char* a, char* b) bool
   for i in 0 to len(a)
     bool allValid = true
     for j in 0 to len(b)
