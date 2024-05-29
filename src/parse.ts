@@ -3,18 +3,18 @@ import path from 'node:path';
 import { logError } from './index';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
-  let fullName;
+  let modName;
   if (parentModName == null) {
-    fullName = path.basename(dirPath);
+    modName = '';
   } else {
-    fullName = parentModName + '.' + path.basename(dirPath);
+    modName = parentModName + path.basename(dirPath) + '.';
   }
 
   let newProgramList: ProgramUnit[] = [];
   for (let p of fs.readdirSync(dirPath)) {
     let filePath = path.join(dirPath, p);
     if (fs.lstatSync(filePath).isDirectory()) {
-      let progList = parseDir(filePath, fullName);
+      let progList = parseDir(filePath, modName);
       if (progList == null) {
         return null;
       }
@@ -22,7 +22,11 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
         newProgramList.push(p);
       }
     } else {
-      let u = parseFile(filePath, fullName);
+      if (p.endsWith('.chad') == false) {
+        continue;
+      }
+      let fileName = modName + path.basename(p).slice(0, -5);
+      let u = parseFile(filePath, fileName);
       if (u == null) {
         return null;
       }

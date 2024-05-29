@@ -223,7 +223,7 @@ function verifyDataType(
   } 
 
   if (type.tag == 'link') {
-    logError(sourceLine, 'link not allowed in struct definitions');
+    logError(sourceLine, 'ref not allowed in struct definitions');
     return false;
   } 
 
@@ -317,11 +317,25 @@ function analyzeFn(
 
   enterScope(scope);
   for (let i = 0; i < fn.paramNames.length; i++) {
-    let paramType = Type.resolveType(fn.t.paramTypes[i], table, fn.sourceLine);
-    if (paramType == null) {
+    let paramType = fn.t.paramTypes[i];
+    let mut = false;
+    if (paramType.tag == 'link') {
+      paramType = paramType.val;
+      mut = true;
+    }
+
+    let resolvedParamType = Type.resolveType(fn.t.paramTypes[i], table, fn.sourceLine);
+    if (resolvedParamType == null) {
       return null;
     }
-    setTypeToScope(scope, fn.paramNames[i], paramType);
+
+    let isRefable = (resolvedParamType.tag == 'struct' || resolvedParamType.tag == 'enum' || resolvedParamType.tag == 'slice');
+    if (fn.t.paramTypes[i].tag == 'link' && !isRefable) {
+      logError(fn.sourceLine, 'type can not be used as referece');
+      return null;
+    }
+
+    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut);
   }
 
   let body: Inst[] | null = [];
@@ -400,7 +414,7 @@ function analyzeInst(
 
     scope.inLoop = true;
     enterScope(scope);
-    setTypeToScope(scope, inst.val.varName, Type.INT);
+    setValToScope(scope, inst.val.varName, Type.INT, false);
     let body = analyzeInstBody(inst.val.body, table, scope);
     exitScope(scope);
     if (body == null) {
@@ -501,6 +515,11 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'declare') {
+    if (inst.val.t.tag == 'link') {
+      logError(instMeta.sourceLine, 'ref not supported variable declaration');
+      return null;
+    }
+
     let declareType = Type.resolveType(inst.val.t, table, instMeta.sourceLine);
     if (declareType == null) {
       return null;
@@ -511,7 +530,7 @@ function analyzeInst(
       return null;
     }
 
-    setTypeToScope(scope, inst.val.name, declareType);
+    setValToScope(scope, inst.val.name, declareType, true);
 
     let expr = ensureExprValid(inst.val.expr, declareType, table, scope, instMeta.sourceLine);
     if (expr == null) {
@@ -532,6 +551,11 @@ function analyzeInst(
       return null;
     }
 
+    if (canMutate(to.expr, scope) == false) {
+      logError(instMeta.sourceLine, 'value can not be mutated');
+      return null;
+    }
+
     let expr = ensureExprValid(inst.val.expr, to.type, table, scope, instMeta.sourceLine);
     if (expr == null) {
       return null;
@@ -542,6 +566,29 @@ function analyzeInst(
 
   logError(instMeta.sourceLine, 'compiler error analyzeInst');
   return null;
+}
+
+function canMutate(leftExpr: LeftExpr, scope: Scope): boolean {
+  if (leftExpr.tag == 'dot') {
+    if (leftExpr.val.left.tag != 'left_expr') {
+      return false;
+    }
+    return canMutate(leftExpr.val.left.val, scope);
+  } 
+  else if (leftExpr.tag == 'var') {
+    let v = getVar(scope, leftExpr.val);
+    if (v == null) {
+      return false;
+    }
+    return v.mut;
+  } 
+  else if (leftExpr.tag == 'arr_offset_int') {
+    return canMutate(leftExpr.val.var, scope);
+  }
+  else if (leftExpr.tag == 'arr_offset_slice')  {
+    return canMutate(leftExpr.val.var, scope);
+  }
+  return false;
 }
 
 interface LeftExprTuple {
@@ -583,8 +630,9 @@ function ensureLeftExprValid(
       return null;
     }
 
-    if (arr.type.tag != 'slice') {
-      logError(sourceLine, 'only slice can index');
+    let innerType = Type.canIndex(arr.type); 
+    if (innerType == null) {
+      logError(sourceLine, 'index not defined on type');
       return null;
     }
 
@@ -601,7 +649,7 @@ function ensureLeftExprValid(
           index: index.expr
         } 
       };
-      return { expr: newExpr, type: arr.type.val };
+      return { expr: newExpr, type: innerType };
     } else if (Type.typeApplicable(index.type, Type.RANGE)) {
       let start: Expr = {
         tag: 'left_expr',
@@ -637,12 +685,12 @@ function ensureLeftExprValid(
     logError(sourceLine, 'slice must be indexed with range or int');
     return null;
   } else if (leftExpr.tag == 'var') {
-    let type = getType(scope, leftExpr.val);
-    if (type == null) {
+    let v = getVar(scope, leftExpr.val);
+    if (v == null) {
       logError(sourceLine, `${leftExpr.val} not declared`);
       return null;
     }
-    return { expr: { tag: 'var', val: leftExpr.val }, type: type };
+    return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
   }
 
   logError(-1, 'compiler bug ensureLeftExprValid');
@@ -660,10 +708,27 @@ function ensureFnCallValid(
 
   let exprTypes: Type.Type[] = [];
   let paramExprs: Expr[] = [];
+  let linked: boolean[] = []
   for (let i = 0; i < fnCall.exprs.length; i++) {
-    let exprTuple = ensureExprValid(fnCall.exprs[i], null, table, scope, sourceLine);
+    let expr: Parse.Expr = fnCall.exprs[i] ;
+    if (expr.tag == 'linked') {
+      expr = expr.val;
+      linked.push(true);
+    } else {
+      linked.push(false);
+    }
+
+    let exprTuple = ensureExprValid(expr, null, table, scope, sourceLine);
     if (exprTuple == null) {
       return null;
+    }
+
+    if (fnCall.exprs[i].tag == 'linked') {
+      let t = exprTuple.type.tag;
+      if ((t == 'slice' || t == 'enum' || t == 'struct') == false) {
+        logError(sourceLine, 'type can not be turned into a reference');
+        return null;
+      }
     }
 
     exprTypes.push(exprTuple.type);
@@ -672,14 +737,25 @@ function ensureFnCallValid(
 
   let fnType;
   if (fnCall.fn.tag == 'var') {
-    let t = getType(scope, fnCall.fn.val); // first look in the scope for the value
-    if (t != null && t.tag == 'fn') {
+    let t = getVar(scope, fnCall.fn.val); // first look in the scope for the value
+    if (t != null && t.type.tag == 'fn') {
       fnType = t;
     }
     else { // if you can't find the fn as a local variable lookup and try to find it in global scope
       let fnName = fnCall.fn.val;
       let fnResult = Type.resolveFn(fnName, expectedReturn, exprTypes, table, sourceLine);
       if (fnResult != null) {
+        for (let i = 0; i < linked.length; i++) {
+          if (linked[i] == false && fnResult.linkedParams[i] == true) {
+            logError(sourceLine, 'expected ref');
+            return null;
+          }
+          else if (linked[i] == true && fnResult.linkedParams[i] == false) {
+            logError(sourceLine, 'unexpected ref');
+            return null;
+          }
+        }
+
         let newExpr: Expr = { 
           tag: 'fn_call',
           val: {
@@ -868,6 +944,9 @@ function ensureExprValid(
 
   if (expr.tag == 'bin') {
     computedExpr = ensureBinOpValid(expr.val, expectedReturn, table, scope, sourceLine);
+    if (computedExpr == null) {
+      return null;
+    }
   } 
 
   if (expr.tag == 'not') {
@@ -1029,8 +1108,13 @@ function ensureExprValid(
   return computedExpr;
 }
 
+interface Var {
+  type: Type.Type
+  mut: boolean
+}
+
 interface Scope {
-  varTypes: Map<string, Type.Type>[]
+  varTypes: Map<string, Var>[]
   generics: Set<string>, 
   returnType: Type.Type
   inLoop: boolean
@@ -1045,12 +1129,12 @@ function exitScope(scope: Scope) {
   scope.varTypes.pop();
 }
 
-function setTypeToScope(scope: Scope, name: string, type: Type.Type) {
-  scope.varTypes[scope.varTypes.length - 1].set(name, type);
+function setValToScope(scope: Scope, name: string, type: Type.Type, mut: boolean) {
+  scope.varTypes[scope.varTypes.length - 1].set(name, { type, mut });
   scope.varCounter += 1;
 }
 
-function getType(scope: Scope, name: string): Type.Type | null {
+function getVar(scope: Scope, name: string): Var | null {
   for (let i = scope.varTypes.length - 1; i >= 0; i--) {
     if (scope.varTypes[i].has(name)) {
       return scope.varTypes[i].get(name)!;

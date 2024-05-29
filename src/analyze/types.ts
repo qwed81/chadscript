@@ -46,9 +46,24 @@ function toStr(t: Type | null): string {
   if (t.tag == 'slice') {
     return `${toStr(t.val)}*`;
   }
+  
+  if (t.tag == 'generic') {
+    return t.val;
+  }
 
   if (t.tag == 'struct' || t.tag == 'enum') {
-    return t.val.id;
+    let generics: string = '[';
+    for (let i = 0; i < t.val.generics.length; i++) {
+      generics += toStr(t.val.generics[i]);
+      if (i != t.val.generics.length - 1) {
+        generics += ', ';
+      }     
+    }
+    if (t.val.generics.length == 0) {
+      return t.val.id;
+    } else {
+      return t.val.id + generics + ']';
+    }
   }
 
   if (t.tag == 'fn') {
@@ -72,6 +87,11 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
     }
     genericMap.set(supa.val, sub);
     return true;
+  }
+
+  // convert List[T] to T*
+  if (sub.tag == 'struct' && sub.val.id == 'std.List' && supa.tag == 'slice') {
+    return typeApplicableStateful(sub.val.generics[0], supa.val, genericMap);
   }
 
   if (sub.tag != supa.tag) {
@@ -131,8 +151,8 @@ function typeApplicable(sub: Type, supa: Type): boolean {
 
 function applyGenericMap(input: Type, map: Map<string, Type>): Type {
   if (input.tag == 'generic') {
-    if (map.has(input.tag)) {
-      return map.get(input.tag)!;
+    if (map.has(input.val)) {
+      return map.get(input.val)!;
     }
   }
   else if (input.tag == 'primative') {
@@ -226,7 +246,14 @@ function canEq(a: Type, b: Type): Type | null {
 }
 
 function canIndex(a: Type): Type | null {
-  // TODO
+  if (a.tag == 'slice') {
+    return a.val;
+  }
+
+  if (a.tag == 'struct' && a.val.id == 'std.List') {
+    return a.val.generics[0];
+  }
+
   return null;
 }
 
@@ -279,6 +306,11 @@ function resolveType(
   else if (def.tag == 'generic') {
     let resolvedGenerics: Type[] = [];
     for (let generic of def.val.generics) {
+      if (generic.tag == 'link') {
+        logError(sourceLine, 'ref not supported in generics');
+        return null;
+      }
+
       let resolvedGeneric = resolveType(generic, refTable, sourceLine);
       if (resolvedGeneric == null) {
         return null;
@@ -375,6 +407,7 @@ function resolveStruct(
 interface FnResult {
   returnType: Type,
   uniqueName: string
+  linkedParams: boolean[]
 }
 
 function resolveFn(
@@ -411,8 +444,15 @@ function resolveFn(
         wrongTypeFns.push(fnDef);
         continue;
       }
+      let linkedParams: boolean[] = [];
       let allParamsOk = true;
       for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
+        if (fnDef.t.paramTypes[i].tag == 'link') {
+          linkedParams.push(true);
+        } else {
+          linkedParams.push(false);
+        }
+
         let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleeLine);
         if (defParamType == null) {
           logError(calleeLine, 'compiler error param type invalid (checked before)');
@@ -439,7 +479,7 @@ function resolveFn(
 
       let uniqueName = getFnUniqueId(unit.fullName, fnDef);
       let concreteReturnType = applyGenericMap(defReturnType, genericMap);
-      possibleFns.push({ uniqueName, returnType: concreteReturnType });
+      possibleFns.push({ uniqueName, returnType: concreteReturnType, linkedParams });
     }
   }
 
