@@ -83,8 +83,13 @@ interface Var {
   sourceLine: number
 }
 
+interface StructHeader {
+  name: string,
+  generics: string[]
+}
+
 interface Struct {
-  t: Type
+  header: StructHeader
   fields: Var[]
   sourceLine: number
 }
@@ -411,12 +416,30 @@ function parseUses(header: SourceLine): string[] | null {
 
 // returns the struct if it could valid parse from the header and the body, logs errors
 function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
-  let structType = tryParseType(header.tokens.slice(1));
-  if (structType == null) {
-    logError(header.sourceLine, 'invalid name in struct decl');
+  if (header.tokens.length < 2) {
+    logError(header.sourceLine, 'expected struct name');
     return null;
   }
 
+  let generics = [];
+  if (header.tokens.length > 3 && header.tokens[2] == '[' && header.tokens[header.tokens.length - 1] == ']') {
+    let genericTokens = balancedSplit(header.tokens.slice(3, -1), ',');
+    for (let i = 0; i < genericTokens.length; i++) {
+      if (genericTokens[i][0].length != 1 || genericTokens[i][0].length != 1) {
+        logError(header.sourceLine, 'generics must be 1 letter long');
+        return null;
+      }
+
+      let letter = genericTokens[i][0];
+      if (letter > 'Z' || letter < 'A') {
+        logError(header.sourceLine, 'generics must be captial letter');
+        return null;
+      }
+      generics.push(letter);
+    }
+  }
+
+  let structName: StructHeader = { name: header.tokens[1], generics };
   let structFields = [];
   for (let line of body) {
     let name = line.tokens[line.tokens.length - 1];
@@ -428,7 +451,7 @@ function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
     structFields.push({ t, name, sourceLine: line.sourceLine });
   }
 
-  return { t: structType, fields: structFields, sourceLine: header.sourceLine };
+  return { header: structName, fields: structFields, sourceLine: header.sourceLine };
 }
 
 // returns the fn if it could valid parse from the header and the body, logs errors

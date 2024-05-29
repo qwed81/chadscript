@@ -1,105 +1,40 @@
 import { logError } from '../index'
+import * as Parse from '../parse';
 
 export {
-  INT, BOOL, VOID, CHAR, CHAR_SLICE, RANGE, Type, ConcreteType, GenericType,
-  GenericStruct, ConcreteStruct, ConcreteField,
-  typeEq, typeApplicable, toStr, replaceGenerics
+  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR,
+  Field, Struct, Type, toStr, typeApplicable, isGeneric,
+  canMath, canOrder, canEq, canIndex, canDot, RefTable,
+  getUnitReferences, resolveType, resolveFn, getFnUniqueId
 }
 
-const CHAR_SLICE: ConcreteType = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
-const INT: ConcreteType = { tag: 'primative', val: 'int' };
-const RANGE_FIELDS: ConcreteField[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
-const RANGE: ConcreteType = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'Range' } };
-const BOOL: ConcreteType = { tag: 'primative', val: 'bool' };
-const VOID: ConcreteType = { tag: 'primative', val: 'void' }
-const CHAR: ConcreteType = { tag: 'primative', val: 'char' };
+const CHAR_SLICE: Type = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
+const INT: Type = { tag: 'primative', val: 'int' };
+const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'Range' } };
+const BOOL: Type = { tag: 'primative', val: 'bool' };
+const VOID: Type = { tag: 'primative', val: 'void' }
+const CHAR: Type = { tag: 'primative', val: 'char' };
 
-interface ConcreteField {
-  name: string
-  type: ConcreteType
-}
-
-interface ConcreteStruct {
-  fields: ConcreteField[]
-  generics: ConcreteType[]
-  id: string
-}
-
-type ConcreteType = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' }
-  | { tag: 'slice', val: ConcreteType }
-  | { tag: 'struct', val: ConcreteStruct }
-  | { tag: 'enum', val: ConcreteStruct }
-  | { tag: 'fn', val: { returnType: ConcreteType, paramTypes: ConcreteType[] } }
-
-interface GenericField {
+interface Field {
   name: string
   type: Type
 }
 
-interface GenericStruct {
-  fields: GenericField[]
-  generics: GenericType[]
+interface Struct {
+  fields: Field[]
+  generics: Type[]
   id: string
 }
 
-type GenericType = { tag: 'generic', val: string }
-  | { tag: 'slice', val: GenericType }
-  | { tag: 'struct', val: GenericStruct }
-  | { tag: 'enum', val: GenericStruct }
+type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' }
+  | { tag: 'generic', val: string }
+  | { tag: 'slice', val: Type }
+  | { tag: 'struct', val: Struct }
+  | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[] } }
 
-type Type = { tag: 'concrete', val: ConcreteType } | { tag: 'generic', val: GenericType }
-
-/*
-function genericEq(a: GenericType, b: GenericType): boolean {
-  if (a.tag != b.tag) {
-    return false
-  }
-
-  if (a.tag == 'generic') {
-    return true;
-  }
-
-  if (a.tag == 'slice' && b.tag == 'slice') {
-    return genericEq(a.val, b.val);
-  }
-
-  if (a.tag == 'struct' && b.tag == 'struct' || a.tag == 'enum' && b.tag == 'enum') {
-    if (a.val.generics.length != b.val.generics.length) {
-      return false;
-    }
-
-    if (a.val.id != b.val.id) {
-      return false;
-    }
-
-    for (let i = 0; i < a.val.generics.length; i++) {
-      if (genericEq(a.val.generics[i], b.val.generics[i]) == false) {
-        return false;
-      }
-    }
-  }
-
-  // TODO
-  if (a.tag == 'fn' && b.tag == 'fn') {
-    if (a.val.returnType != b.val.returnType) {
-      return false;
-    }
-    if (a.val.paramTypes.length != b.val.paramTypes.length) {
-      return false;
-    }
-    for (let i = 0; i < a.val.paramTypes.length; i++) {
-      if (genericEq(a.val.paramTypes[i], b.val.paramTypes[i]) == false) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-*/
-
-function toStr(t: ConcreteType | null): string {
+function toStr(t: Type | null): string {
   if (t == null) {
     return 'null';
   }
@@ -127,47 +62,41 @@ function toStr(t: ConcreteType | null): string {
     return `(${s})${toStr(t.val.returnType)}`;
   }
 
-  return '???';
+  return JSON.stringify(t);
 }
 
-function typeEq(a: ConcreteType, b: ConcreteType): boolean {
-  if (a.tag != b.tag) {
+function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, Type>): boolean {
+  if (supa.tag == 'generic') {
+    if (genericMap.has(supa.val)) {
+      return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap);
+    }
+    genericMap.set(supa.val, sub);
+    return true;
+  }
+
+  if (sub.tag != supa.tag) {
     return false;
   }
 
-  if (a.tag == 'primative') {
-    return a.val == b.val;
+  if (sub.tag == 'primative') {
+    return sub.val == supa.val;
   }
 
-  if (a.tag == 'slice' && b.tag == 'slice') {
-    return typeEq(a.val, b.val);
+  if (sub.tag == 'slice' && supa.tag == 'slice') {
+    return typeApplicableStateful(sub.val, supa.val, genericMap);
   }
 
-  if (a.tag == 'enum' && b.tag == 'enum' || a.tag == 'struct' && b.tag == 'struct') {
-    if (a.val.id != b.val.id) {
+  if (sub.tag == 'enum' && supa.tag == 'enum' || sub.tag == 'struct' && supa.tag == 'struct') {
+    if (sub.val.id != supa.val.id) {
       return false;
     }
 
-    if (a.val.fields.length != b.val.fields.length) {
+    if (sub.val.generics.length != supa.val.generics.length) {
       return false;
     }
 
-    for (let i = 0; i < a.val.fields.length; i++) {
-      if (typeEq(a.val.fields[i].type, b.val.fields[i].type) == false) {
-        return false;
-      }
-
-      if (a.val.fields[i].name != b.val.fields[i].name) {
-        return false;
-      }
-    }
-
-    if (a.val.generics.length != b.val.generics.length) {
-      return false;
-    }
-
-    for (let i = 0; i < a.val.generics.length; i++) {
-      if (typeEq(a.val.generics[i], b.val.generics[i]) == false) {
+    for (let i = 0; i < sub.val.generics.length; i++) {
+      if (typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap) == false) {
         return false;
       }
     }
@@ -175,16 +104,16 @@ function typeEq(a: ConcreteType, b: ConcreteType): boolean {
     return true;
   }
 
-  if (a.tag == 'fn' && b.tag == 'fn') {
-    if (typeEq(a.val.returnType, b.val.returnType) == false) {
+  if (sub.tag == 'fn' && supa.tag == 'fn') {
+    if (typeApplicableStateful(sub.val.returnType, supa.val.returnType, genericMap) == false) {
       return false;
     }
 
-    if (a.val.paramTypes.length != b.val.paramTypes.length) {
+    if (sub.val.paramTypes.length != supa.val.paramTypes.length) {
       return false;
     }
-    for (let i = 0; i < a.val.paramTypes.length; i++) {
-      if (typeEq(a.val.paramTypes[i], b.val.paramTypes[i]) == false) {
+    for (let i = 0; i < sub.val.paramTypes.length; i++) {
+      if (typeApplicableStateful(sub.val.paramTypes[i], supa.val.paramTypes[i], genericMap) == false) {
         return false;
       }
     }
@@ -195,159 +124,357 @@ function typeEq(a: ConcreteType, b: ConcreteType): boolean {
   return false;
 }
 
-function typeApplicable(
-  sub: ConcreteType,
-  supa: Type,
-  // used for successive calls of typeApplicable
-  // if the generic is already mapped a check of the same time will be performed, otherwise
-  // it will be mapped so that nested generics are the same across a function
-  // T(T, T) -> int(int, int) and can not be int(int, char)
-  genericMap: Map<string, ConcreteType> | null
-): boolean {
-  if (supa.tag == 'generic') {
-    return typeApplicableGeneric(sub, supa.val, genericMap);
-  } else if (supa.tag == 'concrete' ){
-    return typeEq(sub, supa.val);
+function typeApplicable(sub: Type, supa: Type): boolean {
+  let genericMap = new Map<string, Type>();
+  return typeApplicableStateful(sub, supa, genericMap);
+}
+
+function applyGenericMap(input: Type, map: Map<string, Type>): Type {
+  if (input.tag == 'generic') {
+    if (map.has(input.tag)) {
+      return map.get(input.tag)!;
+    }
+  }
+  else if (input.tag == 'primative') {
+    return input;
+  }
+  else if (input.tag == 'struct' || input.tag == 'enum') {
+    let newGenerics: Type[] = [];
+    let newFields: Field[] = [];
+    for (let field of input.val.fields) {
+      let fieldType = applyGenericMap(field.type, map);
+      newFields.push({ name: field.name, type: fieldType });
+    }
+    for (let generic of input.val.generics) {
+      newGenerics.push(applyGenericMap(generic, map));
+    }
+    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
+  }
+  else if (input.tag == 'slice') {
+    return { tag: 'slice', val: applyGenericMap(input.val, map) };
+  }
+  else if (input.tag == 'fn') {
+    let newReturnType: Type = applyGenericMap(input.val.returnType, map);
+    let newParamTypes: Type[] = []
+    for (let paramType of input.val.paramTypes) {
+      newParamTypes.push(applyGenericMap(paramType, map));
+    }
+    return { tag: 'fn', val: { returnType: newReturnType, paramTypes: newParamTypes } };
   }
 
+  return input;
+}
+
+function isGeneric(a: Type) {
+  if (a.tag == 'generic') {
+    return true;
+  }
+  else if (a.tag == 'primative') {
+    return false;
+  }
+  else if (a.tag == 'struct' || a.tag == 'enum') {
+    for (let generic of a.val.generics) {
+      if (isGeneric(generic)) {
+        return false;
+      }
+    }
+  }
+  else if (a.tag == 'slice') {
+    return isGeneric(a.val);
+  }
+  else if (a.tag == 'fn') {
+    if (isGeneric(a.val.returnType)) {
+      return true;
+    }
+    for (let paramType of a.val.paramTypes) {
+      if (isGeneric(paramType)) {
+        return true;
+      }
+    }
+  }
   return false;
-} 
+}
 
-function replaceGenerics(
-  type: GenericType,
-  genericMap: Map<string, ConcreteType>
-): ConcreteType | null {
-  if (type.tag == 'generic') {
-    if (genericMap.has(type.val) == false) {
-      logError(-1, 'no generic');
-      return null;
-    }
-    return genericMap.get(type.val)!;
+function canMath(a: Type, b: Type): Type | null {
+  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+    return INT;
   }
-
-  if (type.tag == 'slice') {
-    let replaced = replaceGenerics(type.val, genericMap);
-    if (replaced == null) {
-      return null;
-    }
-    return { tag: 'slice', val: replaced };
-  }
-
-  if (type.tag == 'struct' || type.tag == 'enum') {
-    let concreteFields: ConcreteField[] = [];
-    let concreteGenerics: ConcreteType[] = [];
-    for (let i = 0; i < type.val.fields.length; i++) {
-      let concreteFieldType;
-      let fieldType = type.val.fields[i].type;
-      if (fieldType.tag == 'generic') {
-        let newField = replaceGenerics(fieldType.val, genericMap);
-        if (newField == null) {
-          return null;
-        }
-        concreteFieldType = newField;
-      } else if (fieldType.tag == 'concrete') {
-        concreteFieldType = fieldType.val;
-      } else {
-        return null;
-      }
-
-      concreteFields.push({ name: type.val.fields[i].name, type: concreteFieldType });
-    }
-
-    for (let i = 0; i < type.val.generics.length; i++) {
-      let newGeneric = replaceGenerics(type.val.generics[i], genericMap);
-      if (newGeneric == null) {
-        return null;
-      }
-      concreteGenerics.push(newGeneric);
-    }
-
-    return { tag: 'struct', val: { id: type.val.id, generics: concreteGenerics, fields: concreteFields } };
-  }
-
-  if (type.tag == 'fn') {
-    let returnType: ConcreteType;
-    let paramTypes: ConcreteType[] = [];
-    if (type.val.returnType.tag == 'generic') {
-      let newType = replaceGenerics(type.val.returnType.val, genericMap);
-      if (newType == null) {
-        return null;
-      }
-      returnType = newType;
-    } else if (type.val.returnType.tag == 'concrete') {
-      returnType = type.val.returnType.val;
-    } else {
-      logError(-1, 'replaceGenerics compiler bug');
-      return null;
-    }
-
-    for (let i = 0; i < type.val.paramTypes.length; i++) {
-      let paramType = type.val.paramTypes[i];
-      if (paramType.tag == 'generic') {
-        let newType = replaceGenerics(paramType.val, genericMap);
-        if (newType == null) {
-          return null;
-        }
-        paramTypes.push(newType);
-      } else if (paramType.tag == 'concrete') {
-        paramTypes.push(paramType.val);
-      } else {
-        logError(-1, 'replaceGenerics compiler bug');
-        return null;
-      }
-    }
-
-    return { tag: 'fn', val: { returnType, paramTypes } };
-  }
-
-  logError(-1, 'replaceGenerics compiler bug');
   return null;
 }
 
-function typeApplicableGeneric(
-  sub: ConcreteType,
-  supa: GenericType,
-  genericMap: Map<string, ConcreteType> | null
-): boolean {
-  // any -> T
-  if (supa.tag == 'generic') {
-    if (genericMap != null) {
-      if (genericMap.has(supa.val) && !typeEq(sub, genericMap.get(supa.val)!)) {
-        return false;
-      }
-      genericMap.set(supa.val, sub);
+function canOrder(a: Type, b: Type): Type | null {
+  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+    return BOOL;
+  }
+  return null;
+}
+
+function canEq(a: Type, b: Type): Type | null {
+  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+    return BOOL;
+  }
+  if (typeApplicable(a, CHAR) && typeApplicable(b, CHAR)) {
+    return BOOL;
+  }
+  if (typeApplicable(a, BOOL) && typeApplicable(b, BOOL)) {
+    return BOOL;
+  }
+  if (typeApplicable(a, CHAR_SLICE) && typeApplicable(b, CHAR_SLICE)) {
+    return BOOL;
+  }
+  return null;
+}
+
+function canIndex(a: Type): Type | null {
+  // TODO
+  return null;
+}
+
+function canDot(a: Type, field: string): Type | null {
+  // TODO
+  return null;
+}
+
+interface RefTable {
+  units: Parse.ProgramUnit[]
+}
+
+function getUnitReferences(
+  thisUnit: Parse.ProgramUnit,
+  allUnits: Parse.ProgramUnit[]
+): RefTable {
+  let newUnits: Parse.ProgramUnit[] = [thisUnit];
+  for (let i = 0; i < allUnits.length; i++) {
+    if (thisUnit.uses.includes(allUnits[i].fullName)) {
+      newUnits.push(thisUnit);
     }
-    return true;
+  }
+  return { units: newUnits };
+}
+
+function resolveType(
+  def: Parse.Type,
+  refTable: RefTable,
+  sourceLine: number
+): Type | null {
+  if (def.tag == 'basic') {
+    if (def.val == 'int' || def.val == 'bool' || def.val == 'char' || def.val == 'void') {
+      return { tag: 'primative', val: def.val };
+    }
+    if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
+      return { tag: 'generic', val: def.val };
+    }
+    return resolveStruct(def.val, [],  refTable, sourceLine);
   } 
-
-  // view[any] -> view[T]
-  if (sub.tag == 'slice') {
-    if (supa.tag != 'slice') {
-      return false;
-    }
-
-    return typeApplicableGeneric(sub.val, supa.val, genericMap);
+  else if (def.tag == 'link') {
+    return resolveType(def.val, refTable, sourceLine);
   }
-
-  if (sub.tag == 'struct' && supa.tag == 'struct' || sub.tag == 'enum' && supa.tag == 'enum') {
-    if (sub.val.generics.length != supa.val.generics.length) {
-      return false;
+  else if (def.tag == 'slice') {
+    let slice = resolveType(def.val, refTable, sourceLine);
+    if (slice == null) {
+      return null;
     }
-    for (let i = 0; i < sub.val.generics.length; i++) {
-      if (typeApplicableGeneric(sub.val.generics[i], supa.val.generics[i], genericMap) == false) {
-        return false;
+    return { tag: 'slice', val: slice };
+  }
+  else if (def.tag == 'generic') {
+    let resolvedGenerics: Type[] = [];
+    for (let generic of def.val.generics) {
+      let resolvedGeneric = resolveType(generic, refTable, sourceLine);
+      if (resolvedGeneric == null) {
+        return null;
       }
+      resolvedGenerics.push(resolvedGeneric);
     }
-    // list[any] -> list[t]
-    return sub.val.id == supa.val.id;
+    return resolveStruct(def.val.name, resolvedGenerics, refTable, sourceLine);
+  } 
+  else if (def.tag == 'fn') {
+    let paramTypes: Type[] = [];
+    for (let parseParam of def.val.paramTypes) {
+      let resolvedParam = resolveType(parseParam, refTable, sourceLine);
+      if (resolvedParam == null) {
+        return null;
+      }
+      paramTypes.push(resolvedParam);
+    }
+    let returnType = resolveType(def.val.returnType, refTable, sourceLine);
+    if (returnType != null) {
+      return { tag: 'fn', val: { paramTypes, returnType } };
+    }
   }
 
-  if (sub.tag == 'fn') {
-    logError(-1, 'compilerError not implemented');
-    return false;
+  return null;
+}
+
+function resolveStruct(
+  name: string,
+  generics: Type[],
+  refTable: RefTable,
+  sourceLine: number
+): Type | null {
+  let possibleStructs: Type[] = [];
+  for (let unit of refTable.units) {
+    let unitRefTable = getUnitReferences(unit, refTable.units);
+
+    let items: ['struct' | 'enum', Parse.Struct][] = Array.from(unit.structs).map(x => ['struct', x]);
+    items.push(...Array.from(unit.enums).map(x => ['enum', x]) as ['enum', Parse.Struct][]);
+    for (let item of items) {
+      let structDef = item[1];
+      if (structDef.header.name != name) {
+        continue;
+      }
+
+      if (structDef.header.generics.length != generics.length) {
+        continue;
+      }
+
+      let genericMap = new Map<string, Type>();
+      for (let i = 0; i < generics.length; i++) {
+        let genericName = structDef.header.generics[i]
+        genericMap.set(genericName, generics[i]);
+      }
+
+      let fields: Field[] = [];
+      for (let field of structDef.fields) {
+        let fieldType = resolveType(field.t, unitRefTable, sourceLine);
+        if (fieldType == null) {
+          logError(field.sourceLine, 'compiler error, field should have been checked prior');
+          return null;
+        }
+
+        if (fieldType.tag == 'generic') {
+          let t = genericMap.get(fieldType.val);
+          if (t) {
+            fieldType = t;
+          } else {
+            logError(field.sourceLine, 'compiler error, field generic should exist in struct');
+          }
+        }
+
+        fields.push({ name: field.name, type: fieldType });
+      }
+
+      let thisStructId = unit.fullName + '.' + structDef.header.name;
+      let thisStruct: Type = { tag: item[0], val: { fields, generics, id: thisStructId } };
+      possibleStructs.push(thisStruct);
+    }
   }
 
-  logError(-1, 'typeApplicable compiler bug');
-  return false;
+  if (possibleStructs.length > 1) {
+    logError(sourceLine, 'ambiguous struct');
+    return null;
+  }
+
+  if (possibleStructs.length == 0) {
+    logError(sourceLine, 'struct could not be found');
+    return null;
+  }
+
+  return possibleStructs[0];
+}
+
+interface FnResult {
+  returnType: Type,
+  uniqueName: string
+}
+
+function resolveFn(
+  name: string,
+  returnType: Type | null,
+  paramTypes: Type[],
+  refTable: RefTable,
+  calleeLine: number
+): FnResult | null {
+
+  // ensure that the types presented can actually disambiguate the fucntion
+  if (returnType != null && isGeneric(returnType)) {
+    logError(calleeLine, 'compiler error generic return type is generic');
+    return null;
+  }
+  for (let paramType of paramTypes) {
+    if (isGeneric(paramType)) {
+      logError(calleeLine, 'compiler error parameter is generic');
+      return null;
+    }
+  }
+
+  let possibleFns: FnResult[] = [];
+  let wrongTypeFns: Parse.Fn[] = [];
+  for (let unit of refTable.units) {
+    let unitRefTable = getUnitReferences(unit, refTable.units);
+    for (let fnDef of unit.fns) {
+      if (fnDef.name != name) {
+        continue;
+      }
+      
+      let genericMap = new Map<string, Type>();
+      if (fnDef.t.paramTypes.length != paramTypes.length) {
+        wrongTypeFns.push(fnDef);
+        continue;
+      }
+      let allParamsOk = true;
+      for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
+        let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleeLine);
+        if (defParamType == null) {
+          logError(calleeLine, 'compiler error param type invalid (checked before)');
+          return null;
+        }
+        if (!typeApplicableStateful(paramTypes[i], defParamType, genericMap)) {
+          wrongTypeFns.push(fnDef);
+          allParamsOk = false;
+          break;
+        }
+      }
+      if (!allParamsOk) {
+        continue;
+      }
+      let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleeLine);
+      if (defReturnType == null) {
+        logError(calleeLine, 'compiler error return type invalid (checked before)');
+        return null;
+      }
+      if (returnType != null && !typeApplicableStateful(returnType, defReturnType, genericMap)) {
+        wrongTypeFns.push(fnDef);
+        continue;
+      }
+
+      let uniqueName = getFnUniqueId(unit.fullName, fnDef);
+      let concreteReturnType = applyGenericMap(defReturnType, genericMap);
+      possibleFns.push({ uniqueName, returnType: concreteReturnType });
+    }
+  }
+
+  if (possibleFns.length == 1) {
+    return possibleFns[0];
+  }
+
+  // give a useful error about why it can't resolve the function
+  if (possibleFns.length > 1) {
+    logError(calleeLine, 'function call is ambiguous');
+    return null;
+  }
+
+  if (wrongTypeFns.length > 0) {
+    logError(calleeLine, 'function does not match type signature');
+    return null;
+  }
+
+  logError(calleeLine, 'could not find function');
+  return null;
+}
+
+// java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
+function getFnUniqueId(fnUnitName: string, fn: Parse.Fn): string {
+  let str = JSON.stringify({fnUnitName, fn: fn.name, t: fn.t });
+
+  let hash = 0;
+  for (let i = 0, len = str.length; i < len; i++) {
+    let chr = str.charCodeAt(i);
+    hash = (hash << 5) - hash + chr;
+  }
+
+  if (hash < 0) {
+    hash = hash * -1;
+  }
+  return '$' + hash;
 }
 
