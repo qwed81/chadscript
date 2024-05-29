@@ -2,7 +2,7 @@
 "    finish
 "endif
 
-syn keyword chadKeyword while pub if elif else match for in struct enum return break continue use val
+syn keyword chadKeyword while pub if elif else match for in struct enum return break continue use trait include
 syn keyword chadType void int char bool
 
 syn keyword chadBool false true

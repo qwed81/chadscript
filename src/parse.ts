@@ -151,6 +151,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'declare', val: Declare }
   | { tag: 'assign', val: Assign }
   | { tag: 'macro', val: Macro }
+  | { tag: 'include', val: string[] }
 
 interface DotOp {
   left: Expr,
@@ -667,7 +668,8 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
     return { tag: 'if', val: { cond, body: b }};
-  } else if (line.tokens[0] == '@') {
+  } 
+  else if (line.tokens[0] == '@') {
     if (tokens.length != 2) {
       logError(line.sourceLine, 'invalid macro');
       return null;
@@ -683,7 +685,15 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
 
     return { tag: 'macro', val: { name, body: output } };
-  } else if (keyword == 'elif') {
+  }
+  else if(keyword == 'include') {
+    let val: string[] = [];
+    for (let line of body) {
+      val.push(line.tokens[0]);
+    }
+    return { tag: 'include', val }
+  }
+  else if (keyword == 'elif') {
     let cond = tryParseExpr(tokens.slice(1));
     if (cond == null) {
       logError(line.sourceLine, 'expected expression');
@@ -700,7 +710,8 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
     return { tag: 'else', val: b }
-  } else if (keyword == 'while') {
+  } 
+  else if (keyword == 'while') {
     let cond = tryParseExpr(tokens.slice(1));
     if (cond == null) {
       logError(line.sourceLine, 'expected expression');
@@ -712,7 +723,8 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return b;
     }
     return { tag: 'while', val: { cond, body: b }};
-  } else if (keyword == 'for') {
+  } 
+  else if (keyword == 'for') {
     let splits = balancedSplitTwo(line.tokens.slice(1), 'in');
     if (splits[0].length != 1) {
       logError(line.sourceLine, 'expected var name');
@@ -729,11 +741,14 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return b;
     }
     return { tag: 'for_in', val: { varName: splits[0][0], iter: expr, body: b }};
-  } else if (keyword == 'break') {
+  } 
+  else if (keyword == 'break') {
     return { tag: 'break' };
-  } else if (keyword == 'continue') {
+  }
+  else if (keyword == 'continue') {
     return { tag: 'continue' }
-  } else if (keyword == 'return') {
+  }
+  else if (keyword == 'return') {
     if (tokens.length == 1) {
       return { tag: 'return_void' };
     }
@@ -743,7 +758,8 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
     return { tag: 'return', val };
-  } else if (keyword == 'match') {
+  } 
+  else if (keyword == 'match') {
     return parseMatch(line, body)
   }
 
@@ -988,6 +1004,38 @@ function getLines(data: string): SourceLine[] {
     }
 
     if (line.trim().length == 0) {
+      continue;
+    }
+
+    // parse the include block without processing tokens
+    if (line == 'include') {
+      let startingIndent = indent;
+      sourceLines.push({ tokens: [line], indent, sourceLine: lineNumber });
+      for (let blockLineNumber = lineNumber + 1; blockLineNumber < lines.length; blockLineNumber++) {
+        let line = lines[blockLineNumber];
+        let indent = 0;
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] != ' ') {
+            break;
+          }
+          indent += 0.5;
+        }
+
+        if (indent != Math.floor(indent)) {
+          logError(blockLineNumber, 'invalid tab amount ' + indent);
+          continue;
+        }
+
+        if (indent <= startingIndent) {
+          if (blockLineNumber > lineNumber + 1) { // guard against include without body
+            lineNumber = blockLineNumber - 1; // don't skip this line
+          }
+          break;
+        }
+
+        sourceLines.push({ tokens: [line], indent: startingIndent + 1, sourceLine: blockLineNumber });
+      }
+
       continue;
     }
 

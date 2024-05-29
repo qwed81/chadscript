@@ -41,16 +41,16 @@ pub contains(char* a, char* b) bool
   return false
 
 print(T s)
-  @js 
+  include 
     console.log(_s);
 
 len(T* s) int
-  @js
+  include
     return _s.length;
 
 input() char*
   char* output = ""
-  @js
+  include
     const readline = require('readline');
     function input() {
         const rl = readline.createInterface({
@@ -65,8 +65,8 @@ input() char*
     _output = await input();
   return output
 
-parse(char* s) Res[int]
-  @js
+parse(char* s) int!
+  include
     let a = parseInt(_s);
     if (isNaN(a)) {
       return { _tag: 'err', _err: 'invalid parse' };
@@ -75,11 +75,10 @@ parse(char* s) Res[int]
     }
   return err("invalid parse")
 
-parse(char* s) Res[bool]
+parse(char* s) bool!
   if s == "true"
     return ok(true)
   elif s == "false"
     return ok(false)
   else
     return err("invalid parse")
-

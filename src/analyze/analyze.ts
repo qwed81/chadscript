@@ -56,7 +56,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'match', val: Match }
   | { tag: 'declare', val: Declare}
   | { tag: 'assign', val: Assign }
-  | { tag: 'include', val: string }
+  | { tag: 'include', val: string[] }
 
 interface FnCall {
   fn: LeftExpr
@@ -433,6 +433,10 @@ function analyzeInst(
     return { tag: inst.tag, val: { cond: expr.expr, body: body } };
   } 
 
+  if (inst.tag == 'include') {
+    return { tag: 'include', val: inst.val };
+  }
+
   if (inst.tag == 'for_in') {
     let iterExpr = ensureExprValid(inst.val.iter, Type.RANGE, table, scope, instMeta.sourceLine);
     if (iterExpr == null) {
@@ -505,10 +509,6 @@ function analyzeInst(
     }
 
     return { tag: 'match', val: { var: exprTuple.expr, branches: newBranches } };
-  }
-
-  if (inst.tag == 'macro' && inst.val.name == 'js') {
-    return { tag: 'include', val: inst.val.body };
   }
 
   if (inst.tag == 'break' || inst.tag == 'continue') {

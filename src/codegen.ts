@@ -80,7 +80,11 @@ function codeGenInst(inst: Inst, indent: number): string {
     }
   }
   else if (inst.tag == 'include') {
-    instText = inst.val;
+    let instText: string = tabs + '// include\n';
+    for (let i = 0; i < inst.val.length; i++) {
+      instText += inst.val[i] + '\n';
+    }
+    return instText + tabs + '// end include\n';
   }
   else if (inst.tag == 'match') {
     instText = `switch (${codeGenExpr(inst.val.var)}._tag) {\n`;
