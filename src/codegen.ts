@@ -115,6 +115,11 @@ function codeGenExpr(expr: Expr): string {
     if (expr.val.op == 'to') {
       return 'undefined';
     }
+
+    if (expr.val.op == '/' && expr.type.tag == 'primative' && expr.type.val == 'int') {
+      return `(${ codeGenExpr(expr.val.left) } / ${ codeGenExpr(expr.val.right) } | 0)`
+    }
+
     return `${ codeGenExpr(expr.val.left) } ${ expr.val.op } ${ codeGenExpr(expr.val.right) }`;
   } else if (expr.tag == 'not') {
     return '!' + codeGenExpr(expr.val);

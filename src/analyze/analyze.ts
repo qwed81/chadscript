@@ -73,16 +73,16 @@ interface BinExpr {
   op: string
 }
 
-type Expr = { tag: 'bin', val: BinExpr }
-  | { tag: 'not', val: Expr }
-  | { tag: 'linked', val: Expr }
-  | { tag: 'fn_call', val: FnCall }
-  | { tag: 'struct_init', val: StructInitField[] }
-  | { tag: 'str_const', val: string }
-  | { tag: 'char_const', val: string }
-  | { tag: 'int_const', val: number }
-  | { tag: 'bool_const', val: boolean }
-  | { tag: 'left_expr', val: LeftExpr }
+type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
+  | { tag: 'not', val: Expr, type: Type.Type }
+  | { tag: 'linked', val: Expr, type: Type.Type }
+  | { tag: 'fn_call', val: FnCall, type: Type.Type }
+  | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
+  | { tag: 'str_const', val: string, type: Type.Type }
+  | { tag: 'char_const', val: string, type: Type.Type }
+  | { tag: 'int_const', val: number, type: Type.Type }
+  | { tag: 'bool_const', val: boolean, type: Type.Type }
+  | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
 
 interface DotOp {
   left: Expr
@@ -399,7 +399,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: inst.tag, val: { cond: expr.expr, body: body } };
+    return { tag: inst.tag, val: { cond: expr, body: body } };
   } 
 
   if (inst.tag == 'include') {
@@ -424,7 +424,7 @@ function analyzeInst(
     return {
       tag: 'for_in',
       val: {
-        varName: inst.val.varName, iter: iterExpr.expr, body: body 
+        varName: inst.val.varName, iter: iterExpr, body: body 
       }
     };
   }
@@ -477,7 +477,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'match', val: { var: exprTuple.expr, branches: newBranches } };
+    return { tag: 'match', val: { var: exprTuple, branches: newBranches } };
   }
 
   if (inst.tag == 'break' || inst.tag == 'continue') {
@@ -501,7 +501,7 @@ function analyzeInst(
     if (expr == null) {
       return null;
     }
-    return { tag: 'return', val: expr.expr };
+    return { tag: 'return', val: expr };
   } 
 
   if (inst.tag == 'fn_call') {
@@ -511,12 +511,12 @@ function analyzeInst(
     }
 
     let to: LeftExpr =  { tag: 'var', val: '_' };
-    return { tag: 'assign', val: { to, expr: exprTuple.expr } };
+    return { tag: 'assign', val: { to, expr: exprTuple } };
   } 
 
   if (inst.tag == 'declare') {
     if (inst.val.t.tag == 'link') {
-      logError(instMeta.sourceLine, 'ref not supported variable declaration');
+      logError(instMeta.sourceLine, 'ref not supported ');
       return null;
     }
 
@@ -537,7 +537,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'declare', val: { name: inst.val.name, expr: expr.expr } };
+    return { tag: 'declare', val: { name: inst.val.name, expr: expr } };
   } 
 
   if (inst.tag == 'assign') {
@@ -561,7 +561,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'assign', val: { to: to.expr , expr: expr.expr }};
+    return { tag: 'assign', val: { to: to.expr , expr: expr }};
   } 
 
   logError(instMeta.sourceLine, 'compiler error analyzeInst');
@@ -603,24 +603,24 @@ function ensureLeftExprValid(
   sourceLine: number
 ): LeftExprTuple | null {
   if (leftExpr.tag == 'dot') {
-    let leftExprTuple = ensureExprValid(leftExpr.val.left, null, table, scope, sourceLine);
-    if (leftExprTuple == null) {
+    let validLeftExpr = ensureExprValid(leftExpr.val.left, null, table, scope, sourceLine);
+    if (validLeftExpr == null) {
       return null;
     }
 
-    if (leftExprTuple.type.tag != 'struct' && leftExprTuple.type.tag != 'enum') {
+    if (validLeftExpr.type.tag != 'struct' && validLeftExpr.type.tag != 'enum') {
       logError(sourceLine, 'dot op only supported on structs and enums');
       return null;
     }
 
-    for (let field of leftExprTuple.type.val.fields) {
+    for (let field of validLeftExpr.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
-        let dotOp: LeftExpr = { tag: 'dot', val: { left: leftExprTuple.expr, varName: field.name } };
+        let dotOp: LeftExpr = { tag: 'dot', val: { left: validLeftExpr, varName: field.name } };
         return { expr: dotOp, type: field.type };
       }
     }
 
-    logError(sourceLine, `field ${leftExpr.val.varName} not in ${Type.toStr(leftExprTuple.type)}`);
+    logError(sourceLine, `field ${leftExpr.val.varName} not in ${Type.toStr(validLeftExpr.type)}`);
     return null;
   } 
 
@@ -646,7 +646,7 @@ function ensureLeftExprValid(
         tag: 'arr_offset_int',
         val: {
           var: arr.expr,
-          index: index.expr
+          index: index
         } 
       };
       return { expr: newExpr, type: innerType };
@@ -656,20 +656,22 @@ function ensureLeftExprValid(
         val: {
           tag: 'dot',
           val: {
-            left: index.expr,
+            left: index,
             varName: 'start'
           } 
-        } 
+        },
+        type: Type.INT
       };
       let end: Expr = {
         tag: 'left_expr',
         val: {
           tag: 'dot',
           val: {
-            left: index.expr,
+            left: index,
             varName: 'end'
           }
-        }
+        },
+        type: Type.INT
       };
       let newExpr: LeftExpr = { 
         tag: 'arr_offset_slice',
@@ -704,7 +706,7 @@ function ensureFnCallValid(
   table: Type.RefTable, 
   scope: Scope,
   sourceLine: number
-): ExprTuple | null {
+): Expr | null {
 
   let exprTypes: Type.Type[] = [];
   let paramExprs: Expr[] = [];
@@ -732,7 +734,7 @@ function ensureFnCallValid(
     }
 
     exprTypes.push(exprTuple.type);
-    paramExprs.push(exprTuple.expr);
+    paramExprs.push(exprTuple);
   }
 
   let fnType;
@@ -764,10 +766,11 @@ function ensureFnCallValid(
               val: fnResult.uniqueName 
             },
             exprs: paramExprs  
-          }
+          },
+          type: fnResult.returnType
         };
         
-        return { expr: newExpr, type: fnResult.returnType };
+        return newExpr;
       } 
       return null;
     } 
@@ -786,20 +789,15 @@ function ensureFnCallValid(
   return null;
 }
 
-interface ExprTuple {
-  expr: Expr,
-  type: Type.Type
-}
-
 function ensureBinOpValid(
   expr: Parse.BinExpr,
   expectedReturn: Type.Type | null,
   table: Type.RefTable,
   scope: Scope,
   sourceLine: number
-): ExprTuple | null {
+): Expr | null {
 
-  let computedExpr: ExprTuple | null = null; 
+  let computedExpr: Expr | null = null; 
   if (expr.op == 'to') {
     let leftTuple = ensureExprValid(expr.left, Type.INT, table, scope, sourceLine);
     let rightTuple = ensureExprValid(expr.right, Type.INT, table, scope, sourceLine);
@@ -810,12 +808,13 @@ function ensureBinOpValid(
     let rangeInitExpr: Expr = {
       tag: 'struct_init',
       val: [
-        { name: 'start', expr: leftTuple.expr },
-        { name: 'end', expr: rightTuple.expr }
-      ]
+        { name: 'start', expr: leftTuple },
+        { name: 'end', expr: rightTuple }
+      ],
+      type: Type.RANGE
     };
 
-    computedExpr = { expr: rangeInitExpr, type: Type.RANGE };
+    computedExpr = rangeInitExpr;
   }
   else if (expr.op == 'is') {
     let exprLeft = ensureExprValid(expr.left, null, table, scope, sourceLine);
@@ -823,7 +822,7 @@ function ensureBinOpValid(
       return null;
     }
 
-    if (exprLeft.expr.tag != 'left_expr') {
+    if (exprLeft.tag != 'left_expr') {
       logError(sourceLine, 'is operator only valid on enums');
       return null;
     }
@@ -854,19 +853,22 @@ function ensureBinOpValid(
           val: {
             tag: 'dot',
             val: {
-              left: exprLeft.expr,
+              left: exprLeft,
               varName: 'tag'
             }
-          }
+          },
+          type: Type.CHAR_SLICE // TODO? not sure if this is right
         },
         right: {
           tag: 'str_const',
-          val: fieldName
+          val: fieldName,
+          type: Type.CHAR_SLICE
         }
-      }
+      },
+      type: Type.BOOL
     };
 
-    computedExpr = { expr: convertedExpr, type: Type.BOOL };
+    computedExpr = convertedExpr;
   } else {
     let exprLeft = ensureExprValid(expr.left, null, table, scope, sourceLine);
     if (exprLeft == null) {
@@ -904,17 +906,15 @@ function ensureBinOpValid(
       return null;
     }
 
-    computedExpr = { 
-      expr: {
-        tag: 'bin',
-        val: {
-          op,
-          left: exprLeft.expr,
-          right: exprRight.expr 
-        }
+    computedExpr = {
+      tag: 'bin',
+      val: {
+        op,
+        left: exprLeft,
+        right: exprRight
       },
       type: exprType 
-    };
+    }
   }
 
   if (expectedReturn != null) {
@@ -939,8 +939,8 @@ function ensureExprValid(
   table: Type.RefTable,
   scope: Scope,
   sourceLine: number
-): ExprTuple | null {
-  let computedExpr: ExprTuple | null = null; 
+): Expr | null {
+  let computedExpr: Expr | null = null; 
 
   if (expr.tag == 'bin') {
     computedExpr = ensureBinOpValid(expr.val, expectedReturn, table, scope, sourceLine);
@@ -954,7 +954,7 @@ function ensureExprValid(
     if (exprTuple == null) {
       return null;
     }
-    computedExpr = { expr: { tag: 'not', val: exprTuple.expr }, type: Type.BOOL };
+    computedExpr = { tag: 'not', val: exprTuple, type: Type.BOOL };
   } 
 
   if (expr.tag == 'fn_call') {
@@ -970,19 +970,20 @@ function ensureExprValid(
         let fieldType: Type.Type = expectedReturn.val.fields[fieldIndex].type;
         let fieldName: string = expectedReturn.val.fields[fieldIndex].name;
 
-        let exprTuple = ensureExprValid(expr.val.exprs[0], fieldType, table, scope, sourceLine);
-        if (exprTuple == null) {
+        let fieldExpr = ensureExprValid(expr.val.exprs[0], fieldType, table, scope, sourceLine);
+        if (fieldExpr == null) {
           return null;
         }
 
         let createdExpr: Expr = {
           tag: 'struct_init',
           val: [
-            { name: 'tag', expr: { tag: 'str_const', val: fieldName } },
-            { name: fieldName, expr: exprTuple.expr }
-          ]
+            { name: 'tag', expr: { tag: 'str_const', val: fieldName, type: Type.CHAR_SLICE } },
+            { name: fieldName, expr: fieldExpr }
+          ],
+          type: expectedReturn
         };
-        computedExpr = { expr: createdExpr, type: expectedReturn };
+        computedExpr = createdExpr;
       } 
     } 
 
@@ -1011,8 +1012,8 @@ function ensureExprValid(
     let exprFieldTypes = new Map<string, Type.Type>();
     let exprFieldExprs: Map<string, Expr> = new Map();
     for (let initField of expr.val) {
-      let exprTuple = ensureExprValid(initField.expr, null, table, scope, sourceLine);
-      if (exprTuple == null) {
+      let expr = ensureExprValid(initField.expr, null, table, scope, sourceLine);
+      if (expr == null) {
         return null;
       }
 
@@ -1021,8 +1022,8 @@ function ensureExprValid(
         return null;
       }
 
-      exprFieldTypes.set(initField.name, exprTuple.type);
-      exprFieldExprs.set(initField.name, exprTuple.expr);
+      exprFieldTypes.set(initField.name, expr.type);
+      exprFieldExprs.set(initField.name, expr);
     }
 
     if (exprFieldTypes.size != expectedReturn.val.fields.length) {
@@ -1048,24 +1049,24 @@ function ensureExprValid(
       let fieldExpr = exprFieldExprs.get(fName)!;
       fieldInits.push({ name: fName, expr: fieldExpr });
     }
-    let newExpr: Expr = { tag: 'struct_init', val: fieldInits };
-    computedExpr = { type: expectedReturn, expr: newExpr }; 
+    let newExpr: Expr = { tag: 'struct_init', val: fieldInits, type: expectedReturn };
+    computedExpr = newExpr; 
   } 
 
   if (expr.tag == 'bool_const') {
-    computedExpr = { expr: { tag: 'bool_const', val: expr.val }, type: Type.BOOL };
+    computedExpr = { tag: 'bool_const', val: expr.val, type: Type.BOOL };
   }
 
   if (expr.tag == 'str_const') {
-    computedExpr = { expr: { tag: 'str_const', val: expr.val }, type: Type.CHAR_SLICE };
+    computedExpr = { tag: 'str_const', val: expr.val, type: Type.CHAR_SLICE };
   } 
 
   if (expr.tag == 'char_const') {
-    computedExpr = { expr: { tag: 'char_const', val: expr.val }, type: Type.CHAR };
+    computedExpr = { tag: 'char_const', val: expr.val, type: Type.CHAR };
   } 
 
   if (expr.tag == 'int_const') {
-    computedExpr = { expr: { tag: 'int_const', val: expr.val }, type: Type.INT };
+    computedExpr = { tag: 'int_const', val: expr.val, type: Type.INT };
   } 
 
   if (expr.tag == 'left_expr') {
@@ -1078,10 +1079,11 @@ function ensureExprValid(
           let createdExpr: Expr = {
             tag: 'struct_init',
             val: [
-              { name: 'tag', expr: { tag: 'str_const', val: fieldName } }
-            ]
+              { name: 'tag', expr: { tag: 'str_const', val: fieldName, type: Type.BOOL } }
+            ],
+            type: expectedReturn
           };
-          computedExpr = { expr: createdExpr, type: expectedReturn };
+          computedExpr = createdExpr;
         } 
       } 
     } else { // normal left expr parsing
@@ -1089,7 +1091,7 @@ function ensureExprValid(
       if (exprTuple == null) {
         return null;
       }
-      computedExpr = { expr: { tag: 'left_expr', val: exprTuple.expr }, type: exprTuple.type };
+      computedExpr = { tag: 'left_expr', val: exprTuple.expr, type: exprTuple.type };
     } 
   }
 
