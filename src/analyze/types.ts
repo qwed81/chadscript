@@ -69,12 +69,12 @@ function toStr(t: Type | null): string {
   if (t.tag == 'fn') {
     let s = '';
     for (let i = 0; i < t.val.paramTypes.length; i++) {
-      s += toStr(t);
+      s += toStr(t.val.paramTypes[i]);
       if (i != t.val.paramTypes.length - 1) {
         s += ', ';
       }
     }
-    return `(${s})${toStr(t.val.returnType)}`;
+    return `${s}(${toStr(t.val.returnType)})`;
   }
 
   return JSON.stringify(t);
@@ -369,20 +369,12 @@ function resolveStruct(
       for (let field of structDef.fields) {
         let fieldType = resolveType(field.t, unitRefTable, sourceLine);
         if (fieldType == null) {
-          logError(field.sourceLine, 'compiler error, field should have been checked prior');
+          logError(sourceLine, 'compiler error, should have been checked prior');
           return null;
         }
 
-        if (fieldType.tag == 'generic') {
-          let t = genericMap.get(fieldType.val);
-          if (t) {
-            fieldType = t;
-          } else {
-            logError(field.sourceLine, 'compiler error, field generic should exist in struct');
-          }
-        }
-
-        fields.push({ name: field.name, type: fieldType });
+        let concreteFieldType = applyGenericMap(fieldType, genericMap);
+        fields.push({ name: field.name, type: concreteFieldType });
       }
 
       let thisStructId = unit.fullName + '.' + structDef.header.name;
@@ -405,7 +397,7 @@ function resolveStruct(
 }
 
 interface FnResult {
-  returnType: Type,
+  fnType: Type,
   uniqueName: string
   linkedParams: boolean[]
 }
@@ -444,7 +436,9 @@ function resolveFn(
         wrongTypeFns.push(fnDef);
         continue;
       }
+
       let linkedParams: boolean[] = [];
+      let concreteParamTypes: Type[] = [];
       let allParamsOk = true;
       for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
         if (fnDef.t.paramTypes[i].tag == 'link') {
@@ -463,6 +457,7 @@ function resolveFn(
           allParamsOk = false;
           break;
         }
+        concreteParamTypes.push(applyGenericMap(defParamType, genericMap));
       }
       if (!allParamsOk) {
         continue;
@@ -476,10 +471,17 @@ function resolveFn(
         wrongTypeFns.push(fnDef);
         continue;
       }
-
+      let concreteReturnType: Type = applyGenericMap(defReturnType, genericMap);
       let uniqueName = getFnUniqueId(unit.fullName, fnDef);
-      let concreteReturnType = applyGenericMap(defReturnType, genericMap);
-      possibleFns.push({ uniqueName, returnType: concreteReturnType, linkedParams });
+
+      let fnType: Type = {
+        tag: 'fn',
+        val: {
+          returnType: concreteReturnType,
+          paramTypes: concreteParamTypes 
+        }
+      };
+      possibleFns.push({ uniqueName, fnType, linkedParams });
     }
   }
 

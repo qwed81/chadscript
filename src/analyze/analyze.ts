@@ -541,7 +541,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'assign') {
-    let to = ensureLeftExprValid(inst.val.to, table, scope, instMeta.sourceLine);
+    let to = ensureLeftExprValid(inst.val.to, null, table, scope, instMeta.sourceLine);
     if (to == null) {
       return null;
     }
@@ -596,12 +596,21 @@ interface LeftExprTuple {
   type: Type.Type
 }
 
+interface FnTypeHint {
+  paramTypes: Type.Type[]
+  returnType: Type.Type | null
+}
+
 function ensureLeftExprValid(
   leftExpr: Parse.LeftExpr,
+  // gives the leftExpr permission to do a search in the global scope
+  // to find the correct function
+  fnTypeHint: FnTypeHint | null,
   table: Type.RefTable,
   scope: Scope,
   sourceLine: number
 ): LeftExprTuple | null {
+
   if (leftExpr.tag == 'dot') {
     let validLeftExpr = ensureExprValid(leftExpr.val.left, null, table, scope, sourceLine);
     if (validLeftExpr == null) {
@@ -625,7 +634,7 @@ function ensureLeftExprValid(
   } 
 
   if (leftExpr.tag == 'arr_offset') {
-    let arr = ensureLeftExprValid(leftExpr.val.var, table, scope, sourceLine);
+    let arr = ensureLeftExprValid(leftExpr.val.var, null, table, scope, sourceLine);
     if (arr == null) {
       return null;
     }
@@ -688,11 +697,28 @@ function ensureLeftExprValid(
     return null;
   } else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
-    if (v == null) {
-      logError(sourceLine, `${leftExpr.val} not declared`);
-      return null;
+    if (v != null) {
+      return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
     }
-    return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
+
+    if (fnTypeHint != null) {
+      let fn = Type.resolveFn(
+        leftExpr.val,
+        fnTypeHint.returnType,
+        fnTypeHint.paramTypes,
+        table,
+        sourceLine
+      );
+
+      if (fn == null) {
+        return null;
+      }
+
+      return { expr: { tag: 'var', val: fn.uniqueName}, type: fn.fnType };
+    }
+
+    logError(sourceLine, `could not find ${leftExpr.val}`);
+    return null;
   }
 
   logError(-1, 'compiler bug ensureLeftExprValid');
@@ -708,7 +734,8 @@ function ensureFnCallValid(
   sourceLine: number
 ): Expr | null {
 
-  let exprTypes: Type.Type[] = [];
+  // setup check the types of params for use later
+  let paramTypes: Type.Type[] = [];
   let paramExprs: Expr[] = [];
   let linked: boolean[] = []
   for (let i = 0; i < fnCall.exprs.length; i++) {
@@ -720,73 +747,79 @@ function ensureFnCallValid(
       linked.push(false);
     }
 
-    let exprTuple = ensureExprValid(expr, null, table, scope, sourceLine);
-    if (exprTuple == null) {
+    let validExpr = ensureExprValid(expr, null, table, scope, sourceLine);
+    if (validExpr == null) {
       return null;
     }
 
     if (fnCall.exprs[i].tag == 'linked') {
-      let t = exprTuple.type.tag;
+      let t = validExpr.type.tag;
       if ((t == 'slice' || t == 'enum' || t == 'struct') == false) {
         logError(sourceLine, 'type can not be turned into a reference');
         return null;
       }
     }
 
-    exprTypes.push(exprTuple.type);
-    paramExprs.push(exprTuple);
+    paramTypes.push(validExpr.type);
+    paramExprs.push(validExpr);
   }
 
-  let fnType;
-  if (fnCall.fn.tag == 'var') {
-    let t = getVar(scope, fnCall.fn.val); // first look in the scope for the value
-    if (t != null && t.type.tag == 'fn') {
-      fnType = t;
-    }
-    else { // if you can't find the fn as a local variable lookup and try to find it in global scope
-      let fnName = fnCall.fn.val;
-      let fnResult = Type.resolveFn(fnName, expectedReturn, exprTypes, table, sourceLine);
-      if (fnResult != null) {
-        for (let i = 0; i < linked.length; i++) {
-          if (linked[i] == false && fnResult.linkedParams[i] == true) {
-            logError(sourceLine, 'expected ref');
-            return null;
-          }
-          else if (linked[i] == true && fnResult.linkedParams[i] == false) {
-            logError(sourceLine, 'unexpected ref');
-            return null;
-          }
-        }
+  let fnTypeHint: FnTypeHint = { returnType: expectedReturn , paramTypes };
+  let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, table, scope, sourceLine);
+  if (fnResult == null) {
+    return null;
+  } 
 
-        let newExpr: Expr = { 
-          tag: 'fn_call',
-          val: {
-            fn: {
-              tag: 'var',
-              val: fnResult.uniqueName 
-            },
-            exprs: paramExprs  
-          },
-          type: fnResult.returnType
-        };
-        
-        return newExpr;
-      } 
-      return null;
-    } 
-  }
-  else if (fnCall.fn.tag == 'dot' || fnCall.fn.tag == 'arr_offset') {
-    let leftExpr = ensureLeftExprValid(fnCall.fn, table, scope, sourceLine);
-    if (leftExpr == null) {
-      return null;
-    } 
+  let fnType = fnResult.type;
 
-    // TODO
+  // it is a function declared in the scope, ensure that fnType fits the params and return type
+  if (fnType.tag != 'fn') {
+    logError(sourceLine, 'type is not a function');
     return null;
   }
 
-  logError(-1, 'compiler bug ensureFnCallValid');
-  return null;
+  if (fnType.val.paramTypes.length != paramTypes.length) {
+    logError(sourceLine, 'invalid parameter number');
+    return null;
+  }
+
+  for (let i = 0; i < paramTypes.length; i++) {
+    /*
+    if (linked[i] == false && fnResult.linkedParams[i] == true) {
+      logError(sourceLine, 'expected ref');
+      return null;
+    }
+    else if (linked[i] == true && fnResult.linkedParams[i] == false) {
+      logError(sourceLine, 'unexpected ref');
+      return null;
+    }
+    */
+
+    if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i]) == false) {
+      logError(sourceLine, `invalid type for parameter ${i}`);
+      return null;
+    }
+  }
+
+  if (expectedReturn != null && Type.typeApplicable(fnType.val.returnType, expectedReturn) == false) {
+    if (Type.typeApplicable(expectedReturn, Type.VOID)) {
+      logError(sourceLine, 'return value must be handled');
+      return null;
+    }
+
+    logError(sourceLine, 'invalid return type');
+    return null;
+  }
+
+  let newExpr: Expr = { 
+    tag: 'fn_call',
+    val: {
+      fn: fnResult.expr,
+      exprs: paramExprs  
+    },
+    type: fnType.val.returnType
+  };
+  return newExpr;
 }
 
 function ensureBinOpValid(
@@ -1012,7 +1045,8 @@ function ensureExprValid(
     let exprFieldTypes = new Map<string, Type.Type>();
     let exprFieldExprs: Map<string, Expr> = new Map();
     for (let initField of expr.val) {
-      let expr = ensureExprValid(initField.expr, null, table, scope, sourceLine);
+      let fieldType = expectedReturn.val.fields.filter(x => x.name == initField.name)[0].type;
+      let expr = ensureExprValid(initField.expr, fieldType, table, scope, sourceLine);
       if (expr == null) {
         return null;
       }
@@ -1087,7 +1121,15 @@ function ensureExprValid(
         } 
       } 
     } else { // normal left expr parsing
-      let exprTuple = ensureLeftExprValid(expr.val, table, scope, sourceLine);
+      let fnTypeHint: FnTypeHint | null = null;
+      if (expectedReturn != null && expectedReturn.tag == 'fn') {
+        fnTypeHint = {
+          paramTypes: expectedReturn.val.paramTypes,
+          returnType: expectedReturn.val.returnType
+        };
+      }
+
+      let exprTuple = ensureLeftExprValid(expr.val, fnTypeHint, table, scope, sourceLine);
       if (exprTuple == null) {
         return null;
       }
