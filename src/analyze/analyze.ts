@@ -707,7 +707,7 @@ function ensureLeftExprValid(
     return null;
   } else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
-    if (v != null) {
+    if (v != null && fnTypeHint == null) { // possible bug? seems fine
       return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
     }
 
