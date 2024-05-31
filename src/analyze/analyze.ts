@@ -24,6 +24,7 @@ interface Declare {
 }
 
 interface Assign {
+  op: string
   to: LeftExpr,
   expr: Expr
 }
@@ -513,7 +514,7 @@ function analyzeInst(
     }
 
     let to: LeftExpr =  { tag: 'var', val: '_' };
-    return { tag: 'assign', val: { to, expr: exprTuple } };
+    return { tag: 'assign', val: { to, expr: exprTuple, op: '=' } };
   } 
 
   if (inst.tag == 'declare') {
@@ -563,7 +564,14 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'assign', val: { to: to.expr , expr: expr }};
+    if (inst.val.op == '+=' || inst.val.op == '-=') {
+      if (Type.canMath(to.type, expr.type) == null) {
+        logError(instMeta.sourceLine, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);
+        return null;
+      }
+    }
+
+    return { tag: 'assign', val: { to: to.expr , expr: expr, op: inst.val.op }};
   } 
 
   logError(instMeta.sourceLine, 'compiler error analyzeInst');

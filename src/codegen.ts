@@ -80,7 +80,7 @@ function codeGenInst(inst: Inst, indent: number): string {
       rightExpr = codeGenExpr(inst.val.expr, addInst);
     }
 
-    instText = `${codeGenLeftExpr(inst.val.to, addInst)} = ${rightExpr};`;
+    instText = `${codeGenLeftExpr(inst.val.to, addInst)} ${inst.val.op} ${rightExpr};`;
   } 
   else if (inst.tag == 'if') {
     instText = `if (${ codeGenExpr(inst.val.cond, addInst) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;

@@ -121,6 +121,7 @@ interface Declare {
 }
 
 interface Assign {
+  op: string
   to: LeftExpr
   expr: Expr
 }
@@ -797,7 +798,14 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'fn_call', val: fnCall };
   }
 
-  let splits = balancedSplitTwo(tokens, '=');
+  let assignOp: string = '='; 
+  if (tokens.includes('+=')) {
+    assignOp = '+=';
+  } else if (tokens.includes('-=')) {
+    assignOp = '-=';
+  }
+
+  let splits = balancedSplitTwo(tokens, assignOp);
   if (splits.length != 2) {
     logError(line.sourceLine, 'unexpected statement');
     return null;
@@ -813,7 +821,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
   // try parse assign
   let leftExpr = tryParseLeftExpr(left);
   if (leftExpr != null) {
-    return { tag: 'assign', val: { to: leftExpr, expr } };
+    return { tag: 'assign', val: { to: leftExpr, expr, op: assignOp } };
   }
 
   // parse declare
