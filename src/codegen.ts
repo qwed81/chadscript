@@ -55,10 +55,30 @@ function codeGenInst(inst: Inst, indent: number): string {
 
   let instText;
   if (inst.tag == 'declare') {
-    instText = `var _${inst.val.name} = ${codeGenExpr(inst.val.expr)};`;
+    let typeTag = inst.val.expr.type.tag;
+    let rightExpr;
+
+    // perform a copy on assignment of objects
+    if (typeTag == 'struct' || typeTag == 'enum') {
+      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr)})`;
+    } else {
+      rightExpr = codeGenExpr(inst.val.expr);
+    }
+
+    instText = `var _${inst.val.name} = ${rightExpr};`;
   } 
   else if (inst.tag == 'assign') {
-    instText = `${codeGenLeftExpr(inst.val.to)} = ${codeGenExpr(inst.val.expr)};`;
+    let typeTag = inst.val.expr.type.tag;
+    let rightExpr;
+
+    // perform a copy on assignment of objects
+    if (typeTag == 'struct' || typeTag == 'enum') {
+      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr)}`;
+    } else {
+      rightExpr = codeGenExpr(inst.val.expr);
+    }
+
+    instText = `${codeGenLeftExpr(inst.val.to)} = ${rightExpr};`;
   } 
   else if (inst.tag == 'if') {
     instText = `if (${ codeGenExpr(inst.val.cond) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
@@ -115,11 +135,9 @@ function codeGenExpr(expr: Expr): string {
     if (expr.val.op == 'to') {
       return 'undefined';
     }
-
     if (expr.val.op == '/' && expr.type.tag == 'primative' && expr.type.val == 'int') {
       return `(${ codeGenExpr(expr.val.left) } / ${ codeGenExpr(expr.val.right) } | 0)`
     }
-
     return `${ codeGenExpr(expr.val.left) } ${ expr.val.op } ${ codeGenExpr(expr.val.right) }`;
   } else if (expr.tag == 'not') {
     return '!' + codeGenExpr(expr.val);
