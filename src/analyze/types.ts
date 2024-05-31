@@ -5,7 +5,8 @@ export {
   CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR,
   Field, Struct, Type, toStr, typeApplicable, isGeneric,
   canMath, canOrder, canEq, canIndex, canDot, RefTable,
-  getUnitReferences, resolveType, resolveFn, getFnUniqueId
+  getUnitReferences, resolveType, resolveFn, getFnUniqueId,
+  isRes, createRes
 }
 
 const CHAR_SLICE: Type = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
@@ -33,6 +34,20 @@ type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[] } }
+
+function createRes(genericType: Type): Type {
+  return {
+    tag: 'enum',
+    val: {
+      id: 'std.Res',
+      fields: [
+        { name: 'ok', type: genericType },
+        { name: 'err', type: CHAR_SLICE }
+      ],
+      generics: [genericType]
+    }
+  }
+}
 
 function toStr(t: Type | null): string {
   if (t == null) {
@@ -78,6 +93,10 @@ function toStr(t: Type | null): string {
   }
 
   return JSON.stringify(t);
+}
+
+function isRes(type: Type): boolean {
+  return type.tag == 'enum' && type.val.id == 'std.Res';
 }
 
 function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, Type>): boolean {

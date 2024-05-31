@@ -189,6 +189,8 @@ interface BinExpr {
 
 type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'not', val: Expr }
+  | { tag: 'try', val: Expr }
+  | { tag: 'assert', val: Expr }
   | { tag: 'linked', val: Expr }
   | { tag: 'fn_call', val: FnCall }
   | { tag: 'struct_init', val: StructInitField[] }
@@ -933,6 +935,19 @@ function tryParseExpr(tokens: string[]): Expr | null {
 
   if (tokens.length >= 2 && tokens[0] == '(' && tokens[tokens.length - 1] == ')') {
     return tryParseExpr(tokens.slice(1, -1));
+  }
+
+  // parse assert and try
+  if (tokens[tokens.length - 1] == '?' || tokens[tokens.length - 1] == '!') {
+    let parsed = tryParseExpr(tokens.slice(0, -1));
+    if (parsed == null) {
+      return null;
+    }
+    if (tokens[tokens.length -1 ] == '?') {
+      return { tag: 'try', val: parsed };
+    } else {
+      return { tag: 'assert', val: parsed };
+    }
   }
 
   // parse not

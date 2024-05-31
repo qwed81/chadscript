@@ -75,6 +75,8 @@ interface BinExpr {
 
 type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'not', val: Expr, type: Type.Type }
+  | { tag: 'try', val: Expr, type: Type.Type }
+  | { tag: 'assert', val: Expr, type: Type.Type }
   | { tag: 'linked', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
@@ -981,6 +983,34 @@ function ensureExprValid(
       return null;
     }
   } 
+
+  if (expr.tag == 'try' || expr.tag == 'assert') {
+    if (Type.isRes(scope.returnType) == false) {
+      logError(sourceLine, `${expr.tag} operator can only be used in a function returning result`);
+      return null;
+    }
+
+    let newExpectedType = null;
+    if (expectedReturn != null) {
+      newExpectedType = Type.createRes(expectedReturn);
+    }
+    let validExpr = ensureExprValid(expr.val, newExpectedType, table, scope, sourceLine);
+    if (validExpr == null) {
+      return null;
+    }
+    if (Type.isRes(validExpr.type) == false) {
+      logError(sourceLine, `${expr.tag} operator can only be used on results`);
+      return null;
+    }
+
+    if (validExpr.type.tag != 'enum') {
+      logError(sourceLine, 'compiler error');
+      return null;
+    }
+
+    let resInnerType = validExpr.type.val.fields.filter(f => f.name == 'ok')[0].type;
+    return { tag: expr.tag, val: validExpr, type: resInnerType };
+  }
 
   if (expr.tag == 'not') {
     let exprTuple = ensureExprValid(expr.val, Type.BOOL, table, scope, sourceLine);
