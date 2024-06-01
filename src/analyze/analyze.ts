@@ -342,12 +342,12 @@ function analyzeFn(
     setValToScope(scope, fn.paramNames[i], resolvedParamType, mut);
   }
 
-  let body = analyzeInstBody(fn.body, table, scope);
-  if (body == null) {
+  if (allElifFollowIf(fn.body) == false) {
     return null;
   }
 
-  if (allElifFollowIf(fn.body) == false) {
+  let body = analyzeInstBody(fn.body, table, scope);
+  if (body == null) {
     return null;
   }
 
