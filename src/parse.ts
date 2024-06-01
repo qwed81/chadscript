@@ -199,6 +199,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'char_const', val: string }
   | { tag: 'int_const', val: number }
   | { tag: 'bool_const', val: boolean }
+  | { tag: 'num_const', val: number }
   | { tag: 'left_expr', val: LeftExpr }
 
 const MAPPING: [string, number][] = [
@@ -984,6 +985,14 @@ function tryParseExpr(tokens: string[]): Expr | null {
   let structInit = tryParseStructInit(tokens);
   if (structInit != null) {
     return structInit;
+  }
+
+  if (tokens.length == 3 && tokens.includes('.')) {
+    if (tokens[0][0] >= '0' && tokens[0][0] <= '9' && tokens[1] == '.'
+      && tokens[2][0] >= '0' && tokens[2][0] <= '9') {
+
+      return { tag: 'num_const', val: parseFloat(`${tokens[0]}.${tokens[2]}`) };
+    }
   }
 
   if (tokens.length == 1) {

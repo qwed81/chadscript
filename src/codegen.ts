@@ -170,6 +170,8 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
     return `${expr.val}`;
   } else if (expr.tag == 'bool_const') {
     return `${expr.val}`;
+  } else if (expr.tag == 'num_const') {
+    return `${expr.val}`;
   } else if (expr.tag == 'left_expr') {
     return codeGenLeftExpr(expr.val, addInst);
   }

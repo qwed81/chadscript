@@ -85,6 +85,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
   | { tag: 'bool_const', val: boolean, type: Type.Type }
+  | { tag: 'num_const', val: number, type: Type.Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
 
 interface DotOp {
@@ -1012,7 +1013,7 @@ function ensureBinOpValid(
 
     let exprType = testFn(exprLeft.type, exprRight.type);
     if (exprType == null) {
-      logError(sourceLine, `operator ${expr.op} not defined for type ${Type.toStr(exprLeft.type)}`);
+      logError(sourceLine, `operator ${expr.op} not defined for type ${Type.toStr(exprLeft.type)}, ${Type.toStr(exprRight.type)}`);
       return null;
     }
 
@@ -1084,7 +1085,11 @@ function ensureExprValid(
     }
 
     let resInnerType = validExpr.type.val.fields.filter(f => f.name == 'ok')[0].type;
-    return { tag: expr.tag, val: validExpr, type: resInnerType };
+    if (expr.tag == 'try') {
+      return { tag: 'try', val: validExpr, type: resInnerType };
+    } else {
+      return { tag: 'assert', val: validExpr, type: resInnerType };
+    }
   }
 
   if (expr.tag == 'not') {
@@ -1207,6 +1212,10 @@ function ensureExprValid(
   if (expr.tag == 'int_const') {
     computedExpr = { tag: 'int_const', val: expr.val, type: Type.INT };
   } 
+
+  if (expr.tag == 'num_const') {
+    computedExpr = { tag: 'num_const', val: expr.val, type: Type.NUM };
+  }
 
   if (expr.tag == 'left_expr') {
     // see if it is constant enum initialization of a void type

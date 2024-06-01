@@ -2,7 +2,7 @@ import { logError } from '../index'
 import * as Parse from '../parse';
 
 export {
-  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR,
+  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM,
   Field, Struct, Type, toStr, typeApplicable, isGeneric,
   canMath, canOrder, canEq, canIndex, canDot, RefTable,
   getUnitReferences, resolveType, resolveFn, getFnUniqueId,
@@ -16,6 +16,7 @@ const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, 
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
+const NUM: Type = { tag: 'primative', val: 'num' };
 
 interface Field {
   name: string
@@ -28,7 +29,7 @@ interface Struct {
   id: string
 }
 
-type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' }
+type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' }
   | { tag: 'generic', val: string }
   | { tag: 'slice', val: Type }
   | { tag: 'struct', val: Struct }
@@ -204,7 +205,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
   return input;
 }
 
-function isGeneric(a: Type) {
+function isGeneric(a: Type): boolean {
   if (a.tag == 'generic') {
     return true;
   }
@@ -238,11 +239,17 @@ function canMath(a: Type, b: Type): Type | null {
   if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
     return INT;
   }
+  if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
+    return NUM;
+  }
   return null;
 }
 
 function canOrder(a: Type, b: Type): Type | null {
   if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+    return BOOL;
+  }
+  if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
     return BOOL;
   }
   return null;
@@ -304,7 +311,7 @@ function resolveType(
   sourceLine: number
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'bool' || def.val == 'char' || def.val == 'void') {
+    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void') {
       return { tag: 'primative', val: def.val };
     }
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
