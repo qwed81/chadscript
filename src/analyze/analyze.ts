@@ -341,23 +341,90 @@ function analyzeFn(
     setValToScope(scope, fn.paramNames[i], resolvedParamType, mut);
   }
 
-  let body: Inst[] | null = [];
-  for (let instMeta of fn.body) {
-    let inst = analyzeInst(instMeta, table, scope); 
-    if (inst == null) {
-      body = null;
-    } else if (body != null) {
-      body.push(inst)
-    }
+  let body = analyzeInstBody(fn.body, table, scope);
+  if (body == null) {
+    return null;
   }
 
-  exitScope(scope);
-  if (body == null) {
+  if (allElifFollowIf(fn.body) == false) {
+    return null;
+  }
+
+  if (!Type.typeApplicable(returnType, Type.VOID) && allPathsReturn(fn.body) == false) {
+    logError(fn.sourceLine, 'function does not always return');
     return null;
   }
 
   let ident = Type.getFnUniqueId(unit.fullName, fn);
   return { body, ident, paramNames: fn.paramNames };
+}
+
+function allElifFollowIf(body: Parse.InstMeta[]): boolean {
+  for (let i = 0; i < body.length; i++) {
+    let inst = body[i].inst;
+    let subBody: Parse.InstMeta[] | null = null;
+
+    // check the condition
+    let notFollowsIf = i == 0 || body[i - 1].inst.tag != 'if' && body[i - 1].inst.tag != 'elif';
+    if ((inst.tag == 'elif' || inst.tag == 'else') && notFollowsIf) {
+      logError(body[i].sourceLine, inst.tag + ' does not follow if');
+      return false;
+    }
+    // recusrively enter every other body
+    if (inst.tag == 'if' || inst.tag == 'for_in' || inst.tag == 'elif' || inst.tag == 'while') {
+      subBody = inst.val.body;
+    }
+    if (inst.tag == 'else') {
+      subBody = inst.val;
+    }
+
+    if (subBody != null && allElifFollowIf(subBody) == false) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// recursively checks to make sure all paths return
+function allPathsReturn(body: Parse.InstMeta[]): boolean {
+  let ifGroupings: Parse.InstMeta[][][] = [];
+  let currentGroup: Parse.InstMeta[][] = [];
+  for (let i = 0; i < body.length; i++) {
+    let inst = body[i].inst;
+    if (inst.tag == 'return') {
+      return true;
+    }
+
+    if (inst.tag == 'if') {
+      currentGroup = [];
+      currentGroup.push(inst.val.body);
+    }
+    else if (inst.tag == 'elif') {
+      currentGroup.push(inst.val.body);
+    }
+    else if (inst.tag == 'else') {
+      currentGroup.push(inst.val);
+      ifGroupings.push(currentGroup);
+      currentGroup = [];
+    } else {
+      currentGroup = [];
+    }
+  }
+
+  for (let i = 0; i < ifGroupings.length; i++) {
+    let thisGroupReturns = true;
+    for (let j = 0; j < ifGroupings[i].length; j++) {
+      if (allPathsReturn(ifGroupings[i][j]) == false) {
+        thisGroupReturns = false;
+        break;
+      } 
+    }
+    if (thisGroupReturns && ifGroupings[i][ifGroupings.length - 1]) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function analyzeInstBody(
