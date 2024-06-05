@@ -63,7 +63,7 @@ type Inst = { tag: 'if', val: CondBody, sourceLine: number }
 
 interface FnCall {
   fn: LeftExpr
-  exprs: Expr[]
+  exprs: Expr[],
 }
 
 interface StructInitField {

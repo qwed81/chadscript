@@ -34,7 +34,7 @@ type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' }
   | { tag: 'slice', val: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
-  | { tag: 'fn', val: { returnType: Type, paramTypes: Type[] } }
+  | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
 
 function createRes(genericType: Type): Type {
   return {
@@ -199,7 +199,14 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     for (let paramType of input.val.paramTypes) {
       newParamTypes.push(applyGenericMap(paramType, map));
     }
-    return { tag: 'fn', val: { returnType: newReturnType, paramTypes: newParamTypes } };
+    return {
+      tag: 'fn',
+      val: {
+        returnType: newReturnType,
+        paramTypes: newParamTypes,
+        linkedParams: input.val.linkedParams 
+      } 
+    };
   }
 
   return input;
@@ -348,16 +355,18 @@ function resolveType(
   } 
   else if (def.tag == 'fn') {
     let paramTypes: Type[] = [];
+    let linked: boolean[] = [];
     for (let parseParam of def.val.paramTypes) {
       let resolvedParam = resolveType(parseParam, refTable, sourceLine);
       if (resolvedParam == null) {
         return null;
       }
+      linked.push(parseParam.tag == 'link');
       paramTypes.push(resolvedParam);
     }
     let returnType = resolveType(def.val.returnType, refTable, sourceLine);
     if (returnType != null) {
-      return { tag: 'fn', val: { paramTypes, returnType } };
+      return { tag: 'fn', val: { paramTypes, returnType, linkedParams: linked } };
     }
   }
 
@@ -426,7 +435,6 @@ function resolveStruct(
 interface FnResult {
   fnType: Type,
   uniqueName: string
-  linkedParams: boolean[]
 }
 
 function resolveFn(
@@ -505,10 +513,11 @@ function resolveFn(
         tag: 'fn',
         val: {
           returnType: concreteReturnType,
-          paramTypes: concreteParamTypes 
+          paramTypes: concreteParamTypes, 
+          linkedParams 
         }
       };
-      possibleFns.push({ uniqueName, fnType, linkedParams });
+      possibleFns.push({ uniqueName, fnType});
     }
   }
 

@@ -1,4 +1,4 @@
-import { LeftExpr, Inst, Expr, allPathsReturn } from './analyze';
+import { LeftExpr, Inst, Expr, allPathsReturn, FnCall } from './analyze';
 import { logError } from '../index';
 import { Type } from './types';
 
@@ -137,12 +137,24 @@ function remove(set: VariantSet[], leftExpr: LeftExpr) {
     return;
   }
 
-  for (let i = 1; i <= key.length; i++) {
-    let index = indexOf(set, key.slice(0, i));
-    if (index == -1) {
+  for (let i = set.length - 1; i >= 0; i--) {
+    let entry = set[i];
+    if (key.length > entry.key.length) {
       continue;
     }
-    set.splice(index, 1);
+
+    // remove if entry.key starts with key
+    let shouldRemove = true;
+    for (let i = 0; i < key.length; i++) {
+      if (entry.key[i] != key[i]) {
+        shouldRemove = false;
+        break;
+      }
+    }
+
+    if (shouldRemove) {
+      set.splice(i, 1);
+    }
   }
 }
 
@@ -332,6 +344,7 @@ function enumCheckExpr(
         return false;
       }
     }
+    removeIfLinked(set, expr.val);
   }
   else if (expr.tag == 'is') {
     let possible = getVariantPossibilities(set, expr.left);
@@ -342,13 +355,23 @@ function enumCheckExpr(
 
     return enumCheckLeftExpr(set, expr.left, sourceLine);
   }
-
-  if (expr.tag == 'left_expr') {
+  else if (expr.tag == 'left_expr') {
     return enumCheckLeftExpr(set, expr.val, sourceLine);
   }
 
   // constants are always valid
   return true;
+}
+
+function removeIfLinked(set: VariantSet[], fnCall: FnCall) {
+  for (let i = 0; i < fnCall.exprs.length; i++) {
+    if (fnCall.fn.type.tag == 'fn') {
+      let expr = fnCall.exprs[i];
+      if (fnCall.fn.type.val.linkedParams[i] && expr.tag == 'left_expr') {
+        remove(set, expr.val);
+      }
+    }
+  }
 }
 
 function enumCheckBody(body: Inst[]): boolean {
@@ -418,6 +441,8 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
         leftExpr = { tag: 'var', val: inst.val.name, type: inst.val.type };
       } 
 
+      enumCheckLeftExpr(set, leftExpr, inst.sourceLine);
+
       remove(set, leftExpr);
       if (enumCheckExpr(set, inst.val.expr, inst.sourceLine) == false) {
         allOk = false;
@@ -430,8 +455,15 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
         allOk = false;
       }
     } 
+    else if (inst.tag == 'fn_call') {
+      for (let expr of inst.val.exprs) {
+        if (enumCheckExpr(set, expr, inst.sourceLine) == false) {
+          allOk = false;
+        }
+      }
+      removeIfLinked(set, inst.val);
+    }
   }
-
 
   return allOk;
 }
