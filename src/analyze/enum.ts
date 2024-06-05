@@ -262,19 +262,23 @@ function enumCheckLeftExpr(
     return enumCheckLeftExpr(set, leftExpr.val.var, sourceLine);
   }
   else if (leftExpr.tag == 'dot') {
-    if (leftExpr.val.left.tag == 'left_expr' && leftExpr.val.left.type.tag == 'enum') {
-      let possible = getVariantPossibilities(set, leftExpr.val.left.val);
-      if (possible.length == 0 || !possible.includes(leftExpr.val.varName)) {
-        logError(sourceLine, `enum can not be "${leftExpr.val.varName}"`)
+    return enumCheckExpr(set, leftExpr.val.left, sourceLine);
+  } 
+  else if (leftExpr.tag == 'prime') {
+    if (leftExpr.val.tag == 'left_expr' && leftExpr.val.type.tag == 'enum') {
+    let possible = getVariantPossibilities(set, leftExpr.val.val);
+      if (possible.length == 0) {
+        logError(sourceLine, `there is no valid enum variant`);
         
         return false;
       }
-      else if (possible.length > 1 || possible[0] != leftExpr.val.varName) {
+      else if (possible.length > 1) {
         logError(sourceLine, `enum can be ${JSON.stringify(possible)}`);
         return false;
       }
     } else {
-      return enumCheckExpr(set, leftExpr.val.left, sourceLine);
+      logError(sourceLine, 'prime operator not valid on this expression');
+      return false;
     }
   }
 

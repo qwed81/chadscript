@@ -178,7 +178,7 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
     return `${codeGenLeftExpr(expr.left, addInst)}.tag == '${expr.variant}'`;
   } else if (expr.tag == 'enum_init') {
     if (expr.fieldExpr != null) {
-      return `{ tag: '${expr.fieldName}', _${expr.fieldName}: ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
+      return `{ tag: '${expr.fieldName}', val: ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
     } else {
       return `{ tag: '${expr.fieldName}' }`;
     }
@@ -223,6 +223,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[]): string {
     let start = codeGenExpr(leftExpr.val.start, addInst);
     let end = codeGenExpr(leftExpr.val.end, addInst);
     return `${codeGenLeftExpr(leftExpr.val.var, addInst)}.slice(${start}, ${end})`;
+  }
+  else if (leftExpr.tag == 'prime') {
+    return `${ codeGenExpr(leftExpr.val, addInst) }.val`;
   }
   else {
     return '_' + leftExpr.val;

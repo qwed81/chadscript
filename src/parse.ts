@@ -174,6 +174,7 @@ interface ArrOffset {
 }
 
 type LeftExpr = { tag: 'dot', val: DotOp }
+  | { tag: 'prime', val: Expr }
   | { tag: 'arr_offset', val: ArrOffset }
   | { tag: 'var', val: string }
 
@@ -919,6 +920,14 @@ function tryParseLeftExpr(tokens: string[]): LeftExpr | null {
     return dot;
   }
 
+  if (tokens[tokens.length - 1] == '\'') {
+    let parsed = tryParseExpr(tokens.slice(0, -1));
+    if (parsed == null) {
+      return null;
+    }
+    return { tag: 'prime', val: parsed };
+  }
+
   return tryParseArrExpr(tokens);
 }
 
@@ -951,7 +960,7 @@ function tryParseExpr(tokens: string[]): Expr | null {
     if (parsed == null) {
       return null;
     }
-    if (tokens[tokens.length -1 ] == '?') {
+    if (tokens[tokens.length - 1] == '?') {
       return { tag: 'try', val: parsed };
     } else {
       return { tag: 'assert', val: parsed };
@@ -1122,7 +1131,7 @@ function getLines(data: string): SourceLine[] {
       }
 
       // process chars as a single token
-      if (line[i] == '\'') {
+      if (line[i] == '\'' && line[i - 1] == ' ') {
         let possibleSlice = line.slice(tokenStart, i);
         if (possibleSlice.length != 0) {
           tokens.push(possibleSlice);
@@ -1133,6 +1142,13 @@ function getLines(data: string): SourceLine[] {
           i += 1;
         }
         tokens.push('\'' + line.slice(tokenStart, i) + '\'');
+        tokenStart = i + 1;
+      } else if (line[i] == '\''){
+        let possibleSlice = line.slice(tokenStart, i);
+        if (possibleSlice.length != 0) {
+          tokens.push(possibleSlice);
+        }
+        tokens.push('\'');
         tokenStart = i + 1;
       }
 

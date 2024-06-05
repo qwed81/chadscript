@@ -108,6 +108,7 @@ interface ArrOffsetSlice {
 }
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
+  | { tag: 'prime', val: Expr, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
   | { tag: 'var', val: string, type: Type.Type }
@@ -634,12 +635,12 @@ function analyzeInst(
       return null;
     }
 
-    if (to.expr.tag == 'arr_offset_slice') {
+    if (to.tag == 'arr_offset_slice') {
       logError(instMeta.sourceLine, 'can not assign to a slice');
       return null;
     }
 
-    if (canMutate(to.expr, scope) == false) {
+    if (canMutate(to, scope) == false) {
       logError(instMeta.sourceLine, 'value can not be mutated');
       return null;
     }
@@ -656,7 +657,7 @@ function analyzeInst(
       }
     }
 
-    return { tag: 'assign', val: { to: to.expr , expr: expr, op: inst.val.op }, sourceLine: instMeta.sourceLine };
+    return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, sourceLine: instMeta.sourceLine };
   } 
 
   logError(instMeta.sourceLine, 'compiler error analyzeInst');
@@ -670,6 +671,12 @@ function canMutate(leftExpr: LeftExpr, scope: Scope): boolean {
     }
     return canMutate(leftExpr.val.left.val, scope);
   } 
+  if (leftExpr.tag == 'prime') {
+    if (leftExpr.val.tag != 'left_expr') {
+      return false;
+    }
+    return canMutate(leftExpr.val.val, scope);
+  }
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
     if (v == null) {
@@ -686,11 +693,6 @@ function canMutate(leftExpr: LeftExpr, scope: Scope): boolean {
   return false;
 }
 
-interface LeftExprTuple {
-  expr: LeftExpr,
-  type: Type.Type
-}
-
 interface FnTypeHint {
   paramTypes: Type.Type[]
   returnType: Type.Type | null
@@ -704,7 +706,7 @@ function ensureLeftExprValid(
   table: Type.RefTable,
   scope: Scope,
   sourceLine: number
-): LeftExprTuple | null {
+): LeftExpr | null {
 
   if (leftExpr.tag == 'dot') {
     let validLeftExpr = ensureExprValid(leftExpr.val.left, null, table, scope, sourceLine);
@@ -712,8 +714,8 @@ function ensureLeftExprValid(
       return null;
     }
 
-    if (validLeftExpr.type.tag != 'struct' && validLeftExpr.type.tag != 'enum') {
-      logError(sourceLine, 'dot op only supported on structs and enums');
+    if (validLeftExpr.type.tag != 'struct') {
+      logError(sourceLine, 'dot op only supported on structs');
       return null;
     }
 
@@ -727,15 +729,14 @@ function ensureLeftExprValid(
           },
           type: field.type
         };
-        return { expr: dotOp, type: field.type };
+        return dotOp;
       }
     }
 
     logError(sourceLine, `field ${leftExpr.val.varName} not in ${Type.toStr(validLeftExpr.type)}`);
     return null;
   } 
-
-  if (leftExpr.tag == 'arr_offset') {
+  else if (leftExpr.tag == 'arr_offset') {
     let arr = ensureLeftExprValid(leftExpr.val.var, null, table, scope, sourceLine);
     if (arr == null) {
       return null;
@@ -756,12 +757,12 @@ function ensureLeftExprValid(
       let newExpr: LeftExpr = { 
         tag: 'arr_offset_int',
         val: {
-          var: arr.expr,
+          var: arr,
           index: index
         },
         type: innerType
       };
-      return { expr: newExpr, type: innerType };
+      return newExpr;
     } else if (Type.typeApplicable(index.type, Type.RANGE)) {
       let start: Expr = {
         tag: 'left_expr',
@@ -790,21 +791,22 @@ function ensureLeftExprValid(
       let newExpr: LeftExpr = { 
         tag: 'arr_offset_slice',
         val: {
-          var: arr.expr,
+          var: arr,
           start,
           end
         },
         type: arr.type  
       };
-      return { expr: newExpr, type: arr.type };
+      return newExpr;
     }
 
     logError(sourceLine, 'slice must be indexed with range or int');
     return null;
-  } else if (leftExpr.tag == 'var') {
+  } 
+  else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
     if (v != null && fnTypeHint == null) { // possible bug? seems fine
-      return { expr: { tag: 'var', val: leftExpr.val, type: v.type }, type: v.type };
+      return { tag: 'var', val: leftExpr.val, type: v.type };
     }
 
     if (fnTypeHint != null) {
@@ -820,11 +822,18 @@ function ensureLeftExprValid(
         return null;
       }
 
-      return { expr: { tag: 'var', val: fn.uniqueName, type: fn.fnType }, type: fn.fnType };
+      return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
     }
 
     logError(sourceLine, `could not find ${leftExpr.val}`);
     return null;
+  }
+  else if (leftExpr.tag == 'prime') {
+    let expr = ensureExprValid(leftExpr.val, null, table, scope, sourceLine);
+    if (expr == null) {
+      return null;
+    }
+    return { tag: 'prime', val: expr, type: expr.type };
   }
 
   logError(-1, 'compiler bug ensureLeftExprValid');
@@ -892,7 +901,7 @@ function ensureFnCallValid(
   let newExpr: Expr = { 
     tag: 'fn_call',
     val: {
-      fn: fnResult.expr,
+      fn: fnResult,
       exprs: paramExprs  
     },
     type: fnType.val.returnType
@@ -1222,7 +1231,7 @@ function ensureExprValid(
       if (exprTuple == null) {
         return null;
       }
-      computedExpr = { tag: 'left_expr', val: exprTuple.expr, type: exprTuple.type };
+      computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
     } 
   }
 
