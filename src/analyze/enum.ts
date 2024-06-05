@@ -298,7 +298,7 @@ function enumCheckExpr(
     let right: boolean = enumCheckExpr(set, expr.val.right, sourceLine);
     return left && right;
   }
-  else if (expr.tag == 'not' || expr.tag == 'assert' || expr.tag == 'linked') {
+  else if (expr.tag == 'not' || expr.tag == 'assert') {
     return enumCheckExpr(set, expr.val, sourceLine);
   }
   else if (expr.tag == 'struct_init') {

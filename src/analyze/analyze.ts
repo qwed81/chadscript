@@ -81,7 +81,6 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'not', val: Expr, type: Type.Type }
   | { tag: 'try', val: Expr, type: Type.Type }
   | { tag: 'assert', val: Expr, type: Type.Type }
-  | { tag: 'linked', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, fieldExpr: Expr | null, type: Type.Type }
@@ -844,29 +843,12 @@ function ensureFnCallValid(
   // setup check the types of params for use later
   let paramTypes: Type.Type[] = [];
   let paramExprs: Expr[] = [];
-  let linked: boolean[] = []
   for (let i = 0; i < fnCall.exprs.length; i++) {
     let expr: Parse.Expr = fnCall.exprs[i] ;
-    if (expr.tag == 'linked') {
-      expr = expr.val;
-      linked.push(true);
-    } else {
-      linked.push(false);
-    }
-
     let validExpr = ensureExprValid(expr, null, table, scope, sourceLine);
     if (validExpr == null) {
       return null;
     }
-
-    if (fnCall.exprs[i].tag == 'linked') {
-      let t = validExpr.type.tag;
-      if ((t == 'slice' || t == 'enum' || t == 'struct') == false) {
-        logError(sourceLine, 'type can not be turned into a reference');
-        return null;
-      }
-    }
-
     paramTypes.push(validExpr.type);
     paramExprs.push(validExpr);
   }
@@ -891,17 +873,6 @@ function ensureFnCallValid(
   }
 
   for (let i = 0; i < paramTypes.length; i++) {
-    /*
-    if (linked[i] == false && fnResult.linkedParams[i] == true) {
-      logError(sourceLine, 'expected ref');
-      return null;
-    }
-    else if (linked[i] == true && fnResult.linkedParams[i] == false) {
-      logError(sourceLine, 'unexpected ref');
-      return null;
-    }
-    */
-
     if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i]) == false) {
       logError(sourceLine, `invalid type for parameter ${i}`);
       return null;

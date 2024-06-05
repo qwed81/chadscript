@@ -192,7 +192,6 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'not', val: Expr }
   | { tag: 'try', val: Expr }
   | { tag: 'assert', val: Expr }
-  | { tag: 'linked', val: Expr }
   | { tag: 'fn_call', val: FnCall }
   | { tag: 'struct_init', val: StructInitField[] }
   | { tag: 'str_const', val: string }
@@ -966,15 +965,6 @@ function tryParseExpr(tokens: string[]): Expr | null {
       return null;
     }
     return { tag: 'not', val: expr };
-  }
-
-  // parse link
-  if (tokens.length >= 2 && tokens[0] == '&') {
-    let expr = tryParseExpr(tokens.slice(1));
-    if (expr == null) {
-      return null;
-    }
-    return { tag: 'linked', val: expr };
   }
 
   let fnCall = tryParseFnCall(tokens);
