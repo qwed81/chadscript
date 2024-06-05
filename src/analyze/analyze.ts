@@ -1,6 +1,7 @@
 import * as Parse from '../parse';
 import { logError } from '../index'
 import * as Type from './types'
+import { enumCheckBody } from './enum';
 
 interface Program {
   fns: Fn[]
@@ -21,6 +22,7 @@ interface CondBody {
 interface Declare {
   name: string
   expr: Expr
+  type: Type.Type
 }
 
 interface Assign {
@@ -45,18 +47,18 @@ interface ForIn {
   body: Inst[]
 }
 
-type Inst = { tag: 'if', val: CondBody }
-  | { tag: 'elif', val: CondBody }
-  | { tag: 'while', val: CondBody }
-  | { tag: 'for_in', val: ForIn }
-  | { tag: 'else', val: Inst[] }
-  | { tag: 'return', val: Expr | null }
-  | { tag: 'break' }
-  | { tag: 'continue' }
-  | { tag: 'match', val: Match }
-  | { tag: 'declare', val: Declare}
-  | { tag: 'assign', val: Assign }
-  | { tag: 'include', val: string[] }
+type Inst = { tag: 'if', val: CondBody, sourceLine: number }
+  | { tag: 'elif', val: CondBody, sourceLine: number }
+  | { tag: 'while', val: CondBody, sourceLine: number }
+  | { tag: 'for_in', val: ForIn, sourceLine: number }
+  | { tag: 'else', val: Inst[], sourceLine: number }
+  | { tag: 'return', val: Expr | null, sourceLine: number }
+  | { tag: 'break', sourceLine: number }
+  | { tag: 'continue', sourceLine: number }
+  | { tag: 'match', val: Match, sourceLine: number }
+  | { tag: 'declare', val: Declare, sourceLine: number }
+  | { tag: 'assign', val: Assign, sourceLine: number }
+  | { tag: 'include', val: string[], sourceLine: number }
 
 interface FnCall {
   fn: LeftExpr
@@ -75,12 +77,14 @@ interface BinExpr {
 }
 
 type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
+  | { tag: 'is', left: LeftExpr, variant: string, type: Type.Type }
   | { tag: 'not', val: Expr, type: Type.Type }
   | { tag: 'try', val: Expr, type: Type.Type }
   | { tag: 'assert', val: Expr, type: Type.Type }
   | { tag: 'linked', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
+  | { tag: 'enum_init', fieldName: string, fieldExpr: Expr | null, type: Type.Type }
   | { tag: 'str_const', val: string, type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
@@ -104,13 +108,12 @@ interface ArrOffsetSlice {
   end: Expr
 }
 
-type LeftExpr = { tag: 'dot', val: DotOp }
-  | { tag: 'arr_offset_int', val: ArrOffsetInt }
-  | { tag: 'arr_offset_slice', val: ArrOffsetSlice }
-  | { tag: 'var', val: string }
+type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
+  | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
+  | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
+  | { tag: 'var', val: string, type: Type.Type }
 
-
-export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr }
+export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let entryName: string | null = null;
@@ -155,7 +158,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
 
 function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number): Fn[] | null {
   let unit = units[unitIndex];
-  let lookupTable = { units, unitName: unit.fullName, uses: unit.uses };
+  let lookupTable = Type.getUnitReferences(units[unitIndex], units);
 
   let fns: Fn[] | null = [];
   for (let fn of unit.fns) {
@@ -172,7 +175,7 @@ function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number): Fn[] | n
 
 function analyzeUnitDataTypes(units: Parse.ProgramUnit[], unitIndex: number): boolean {
   let unit = units[unitIndex];
-  let lookupTable = { units, unitName: unit.fullName, uses: unit.uses };
+  let lookupTable = Type.getUnitReferences(units[unitIndex], units);
 
   let invalidDataType = false;
   for (let struct of unit.structs) {
@@ -351,7 +354,11 @@ function analyzeFn(
     return null;
   }
 
-  if (!Type.typeApplicable(returnType, Type.VOID) && allPathsReturn(fn.body) == false) {
+  if (enumCheckBody(body) == false) {
+    return null;
+  }
+
+  if (!Type.typeApplicable(returnType, Type.VOID) && allPathsReturn(body) == false) {
     logError(fn.sourceLine, 'function does not always return');
     return null;
   }
@@ -387,11 +394,11 @@ function allElifFollowIf(body: Parse.InstMeta[]): boolean {
 }
 
 // recursively checks to make sure all paths return
-function allPathsReturn(body: Parse.InstMeta[]): boolean {
-  let ifGroupings: Parse.InstMeta[][][] = [];
-  let currentGroup: Parse.InstMeta[][] = [];
+function allPathsReturn(body: Inst[]): boolean {
+  let ifGroupings: Inst[][][] = [];
+  let currentGroup: Inst[][] = [];
   for (let i = 0; i < body.length; i++) {
-    let inst = body[i].inst;
+    let inst = body[i];
     if (inst.tag == 'return') {
       return true;
     }
@@ -470,11 +477,11 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: inst.tag, val: { cond: expr, body: body } };
+    return { tag: inst.tag, val: { cond: expr, body: body }, sourceLine: instMeta.sourceLine };
   } 
 
   if (inst.tag == 'include') {
-    return { tag: 'include', val: inst.val };
+    return { tag: 'include', val: inst.val, sourceLine: instMeta.sourceLine };
   }
 
   if (inst.tag == 'for_in') {
@@ -495,8 +502,11 @@ function analyzeInst(
     return {
       tag: 'for_in',
       val: {
-        varName: inst.val.varName, iter: iterExpr, body: body 
-      }
+        varName: inst.val.varName,
+        iter: iterExpr,
+        body: body 
+      },
+      sourceLine: instMeta.sourceLine
     };
   }
 
@@ -506,7 +516,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'else', val: body };
+    return { tag: 'else', val: body, sourceLine: instMeta.sourceLine };
   }
 
   if (inst.tag == 'match') {
@@ -548,7 +558,7 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'match', val: { var: exprTuple, branches: newBranches } };
+    return { tag: 'match', val: { var: exprTuple, branches: newBranches }, sourceLine: instMeta.sourceLine };
   }
 
   if (inst.tag == 'break' || inst.tag == 'continue') {
@@ -556,7 +566,7 @@ function analyzeInst(
       logError(instMeta.sourceLine, inst.tag + ' must be used in a loop');
       return null;
     }
-    return { tag: inst.tag };
+    return { tag: inst.tag, sourceLine: instMeta.sourceLine };
   } 
 
   if (inst.tag == 'return_void') {
@@ -564,7 +574,7 @@ function analyzeInst(
       logError(instMeta.sourceLine, 'returning from non-void fn without expression');
       return null;
     }
-    return { tag: 'return', val: null };
+    return { tag: 'return', val: null, sourceLine: instMeta.sourceLine };
   } 
 
   if (inst.tag == 'return') {
@@ -572,7 +582,7 @@ function analyzeInst(
     if (expr == null) {
       return null;
     }
-    return { tag: 'return', val: expr };
+    return { tag: 'return', val: expr, sourceLine: instMeta.sourceLine };
   } 
 
   if (inst.tag == 'fn_call') {
@@ -581,8 +591,8 @@ function analyzeInst(
       return null;
     }
 
-    let to: LeftExpr =  { tag: 'var', val: '_' };
-    return { tag: 'assign', val: { to, expr: exprTuple, op: '=' } };
+    let to: LeftExpr =  { tag: 'var', val: '_', type: Type.VOID };
+    return { tag: 'assign', val: { to, expr: exprTuple, op: '=' }, sourceLine: instMeta.sourceLine };
   } 
 
   if (inst.tag == 'declare') {
@@ -608,7 +618,15 @@ function analyzeInst(
       return null;
     }
 
-    return { tag: 'declare', val: { name: inst.val.name, expr: expr } };
+    return {
+      tag: 'declare',
+      val: {
+        name: inst.val.name,
+        expr: expr,
+        type: declareType
+      },
+      sourceLine: instMeta.sourceLine 
+    };
   } 
 
   if (inst.tag == 'assign') {
@@ -639,7 +657,7 @@ function analyzeInst(
       }
     }
 
-    return { tag: 'assign', val: { to: to.expr , expr: expr, op: inst.val.op }};
+    return { tag: 'assign', val: { to: to.expr , expr: expr, op: inst.val.op }, sourceLine: instMeta.sourceLine };
   } 
 
   logError(instMeta.sourceLine, 'compiler error analyzeInst');
@@ -702,7 +720,14 @@ function ensureLeftExprValid(
 
     for (let field of validLeftExpr.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
-        let dotOp: LeftExpr = { tag: 'dot', val: { left: validLeftExpr, varName: field.name } };
+        let dotOp: LeftExpr = {
+          tag: 'dot',
+          val: {
+            left: validLeftExpr,
+            varName: field.name 
+          },
+          type: field.type
+        };
         return { expr: dotOp, type: field.type };
       }
     }
@@ -734,7 +759,8 @@ function ensureLeftExprValid(
         val: {
           var: arr.expr,
           index: index
-        } 
+        },
+        type: innerType
       };
       return { expr: newExpr, type: innerType };
     } else if (Type.typeApplicable(index.type, Type.RANGE)) {
@@ -745,7 +771,8 @@ function ensureLeftExprValid(
           val: {
             left: index,
             varName: 'start'
-          } 
+          },
+          type: Type.INT
         },
         type: Type.INT
       };
@@ -756,7 +783,8 @@ function ensureLeftExprValid(
           val: {
             left: index,
             varName: 'end'
-          }
+          },
+          type: Type.INT
         },
         type: Type.INT
       };
@@ -766,7 +794,8 @@ function ensureLeftExprValid(
           var: arr.expr,
           start,
           end
-        } 
+        },
+        type: arr.type  
       };
       return { expr: newExpr, type: arr.type };
     }
@@ -776,7 +805,7 @@ function ensureLeftExprValid(
   } else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
     if (v != null && fnTypeHint == null) { // possible bug? seems fine
-      return { expr: { tag: 'var', val: leftExpr.val }, type: v.type };
+      return { expr: { tag: 'var', val: leftExpr.val, type: v.type }, type: v.type };
     }
 
     if (fnTypeHint != null) {
@@ -792,7 +821,7 @@ function ensureLeftExprValid(
         return null;
       }
 
-      return { expr: { tag: 'var', val: fn.uniqueName}, type: fn.fnType };
+      return { expr: { tag: 'var', val: fn.uniqueName, type: fn.fnType }, type: fn.fnType };
     }
 
     logError(sourceLine, `could not find ${leftExpr.val}`);
@@ -954,32 +983,12 @@ function ensureBinOpValid(
       return null;
     }
 
-    // convert to <expr as leftExpr>.tag == ${fieldName}
-    let convertedExpr: Expr = {
-      tag: 'bin', 
-      val: {
-        op: '==',
-        left: {
-          tag: 'left_expr',
-          val: {
-            tag: 'dot',
-            val: {
-              left: exprLeft,
-              varName: 'tag'
-            }
-          },
-          type: Type.CHAR_SLICE // TODO? not sure if this is right
-        },
-        right: {
-          tag: 'str_const',
-          val: fieldName,
-          type: Type.CHAR_SLICE
-        }
-      },
-      type: Type.BOOL
+    computedExpr = {
+      tag: 'is',
+      left: exprLeft.val,
+      variant: fieldName,
+      type: Type.BOOL 
     };
-
-    computedExpr = convertedExpr;
   } else {
     let exprLeft = ensureExprValid(expr.left, null, table, scope, sourceLine);
     if (exprLeft == null) {
@@ -1118,15 +1127,12 @@ function ensureExprValid(
           return null;
         }
 
-        let createdExpr: Expr = {
-          tag: 'struct_init',
-          val: [
-            { name: 'tag', expr: { tag: 'str_const', val: fieldName, type: Type.CHAR_SLICE } },
-            { name: fieldName, expr: fieldExpr }
-          ],
-          type: expectedReturn
+        computedExpr = {
+          tag: 'enum_init',
+          fieldName,
+          fieldExpr,
+          type: expectedReturn 
         };
-        computedExpr = createdExpr;
       } 
     } 
 
@@ -1224,14 +1230,12 @@ function ensureExprValid(
       if (fieldIndex != -1) {
         if (Type.typeApplicable(expectedReturn.val.fields[fieldIndex].type, Type.VOID)) {
           let fieldName = expectedReturn.val.fields[fieldIndex].name;
-          let createdExpr: Expr = {
-            tag: 'struct_init',
-            val: [
-              { name: 'tag', expr: { tag: 'str_const', val: fieldName, type: Type.BOOL } }
-            ],
+          computedExpr = {
+            tag: 'enum_init',
+            fieldName,
+            fieldExpr: null,
             type: expectedReturn
           };
-          computedExpr = createdExpr;
         } 
       } 
     } else { // normal left expr parsing

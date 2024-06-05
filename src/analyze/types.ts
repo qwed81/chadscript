@@ -290,6 +290,7 @@ function canDot(a: Type, field: string): Type | null {
 
 interface RefTable {
   units: Parse.ProgramUnit[]
+  allUnits: Parse.ProgramUnit[]
 }
 
 function getUnitReferences(
@@ -299,10 +300,10 @@ function getUnitReferences(
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
   for (let i = 0; i < allUnits.length; i++) {
     if (thisUnit.uses.includes(allUnits[i].fullName)) {
-      newUnits.push(thisUnit);
+      newUnits.push(allUnits[i]);
     }
   }
-  return { units: newUnits };
+  return { units: newUnits, allUnits };
 }
 
 function resolveType(
@@ -371,7 +372,7 @@ function resolveStruct(
 ): Type | null {
   let possibleStructs: Type[] = [];
   for (let unit of refTable.units) {
-    let unitRefTable = getUnitReferences(unit, refTable.units);
+    let unitRefTable = getUnitReferences(unit, refTable.allUnits);
 
     let items: ['struct' | 'enum', Parse.Struct][] = Array.from(unit.structs).map(x => ['struct', x]);
     items.push(...Array.from(unit.enums).map(x => ['enum', x]) as ['enum', Parse.Struct][]);
@@ -451,7 +452,7 @@ function resolveFn(
   let possibleFns: FnResult[] = [];
   let wrongTypeFns: Parse.Fn[] = [];
   for (let unit of refTable.units) {
-    let unitRefTable = getUnitReferences(unit, refTable.units);
+    let unitRefTable = getUnitReferences(unit, refTable.allUnits);
     for (let fnDef of unit.fns) {
       if (fnDef.name != name) {
         continue;

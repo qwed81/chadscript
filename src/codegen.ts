@@ -174,6 +174,14 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
     return `${expr.val}`;
   } else if (expr.tag == 'left_expr') {
     return codeGenLeftExpr(expr.val, addInst);
+  } else if (expr.tag == 'is') {
+    return `${codeGenLeftExpr(expr.left, addInst)}.tag == '${expr.variant}'`;
+  } else if (expr.tag == 'enum_init') {
+    if (expr.fieldExpr != null) {
+      return `{ tag: '${expr.fieldName}', _${expr.fieldName}: ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
+    } else {
+      return `{ tag: '${expr.fieldName}' }`;
+    }
   }
 
   return 'undefined';
