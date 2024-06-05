@@ -137,7 +137,7 @@ function remove(set: VariantSet[], leftExpr: LeftExpr) {
     return;
   }
 
-  for (let i = 1; i < key.length; i++) {
+  for (let i = 1; i <= key.length; i++) {
     let index = indexOf(set, key.slice(0, i));
     if (index == -1) {
       continue;
@@ -154,7 +154,13 @@ function getVariantPossibilities(set: VariantSet[], leftExpr: LeftExpr): string[
 
   let index = indexOf(set, key);
   if (index == -1) {
-    return [];
+    // if the key does not exist in the set, then the variant
+    // can be any possibility
+    if (leftExpr.type.tag == 'enum') {
+      return leftExpr.type.val.fields.map(x => x.name);
+    } else {
+      return [];
+    }
   }
 
   return Array.from(set[index].currentSet.values());
@@ -179,6 +185,14 @@ function leftExprToKey(leftExpr: LeftExpr): string[] | null {
     else if (currExpr.tag == 'arr_offset_int') {
       output.push(currExpr.val.index + '');
       currExpr = currExpr.val.var;
+    }
+    else if (currExpr.tag == 'prime') {
+      if (currExpr.val.tag == 'left_expr') {
+        output.push('\'');
+        currExpr = currExpr.val.val;
+      } else {
+        return null;
+      }
     }
     else {
       return null;
@@ -409,15 +423,7 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
         allOk = false;
       }
 
-      let expr = inst.val.expr;
-      if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
-        let possible = expr.type.val.fields.map(x => x.name);
-        add(set, leftExpr, [expr.fieldName], possible);
-      }
-      else if (expr.type.tag == 'enum') {
-        let possible = expr.type.val.fields.map(x => x.name);
-        add(set, leftExpr, possible, possible);
-      }
+      recursiveAddExpr(set, leftExpr, inst.val.expr);
     } 
     else if (inst.tag == 'return' && inst.val != null) {
       if (enumCheckExpr(set, inst.val, inst.sourceLine) == false) {
@@ -426,5 +432,43 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
     } 
   }
 
+
   return allOk;
 }
+
+function recursiveAddExpr(set: VariantSet[], leftExpr: LeftExpr, expr: Expr) {
+  if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
+    let possible = expr.type.val.fields.map(x => x.name);
+    add(set, leftExpr, [expr.fieldName], possible);
+    // handle int?? a = some(some(20)) where a'' is int
+    if (expr.fieldExpr != null) {
+      let newLeftExpr: LeftExpr = {
+        tag: 'prime',
+        val: {
+          tag: 'left_expr',
+          val: leftExpr,
+          type: expr.fieldExpr.type
+        },
+        type: expr.fieldExpr.type
+      };
+      recursiveAddExpr(set, newLeftExpr, expr.fieldExpr);
+    }
+  }
+  else if (expr.tag == 'struct_init') {
+    for (let field of expr.val) {
+      let asExpr: Expr = { tag: 'left_expr', val: leftExpr, type: field.expr.type };
+      let newLeftExpr: LeftExpr = {
+        tag: 'dot',
+        val: {
+          varName: field.name,
+          left: asExpr,
+        },
+        type: field.expr.type 
+      }; 
+      recursiveAddExpr(set, newLeftExpr, field.expr);
+    }
+  }
+
+}
+
+

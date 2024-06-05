@@ -94,6 +94,9 @@ function codeGenInst(inst: Inst, indent: number): string {
   else if (inst.tag == 'while') {
     instText = `while (${ codeGenExpr(inst.val.cond, addInst) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
   }
+  else if (inst.tag == 'fn_call') {
+    instText = codeGenFnCall(inst.val, addInst) + ';';
+  }
   else if (inst.tag == 'return') {
     if (inst.val == null) {
       instText == 'return;'

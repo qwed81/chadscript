@@ -51,6 +51,7 @@ type Inst = { tag: 'if', val: CondBody, sourceLine: number }
   | { tag: 'elif', val: CondBody, sourceLine: number }
   | { tag: 'while', val: CondBody, sourceLine: number }
   | { tag: 'for_in', val: ForIn, sourceLine: number }
+  | { tag: 'fn_call', val: FnCall, sourceLine: number }
   | { tag: 'else', val: Inst[], sourceLine: number }
   | { tag: 'return', val: Expr | null, sourceLine: number }
   | { tag: 'break', sourceLine: number }
@@ -591,8 +592,9 @@ function analyzeInst(
       return null;
     }
 
-    let to: LeftExpr =  { tag: 'var', val: '_', type: Type.VOID };
-    return { tag: 'assign', val: { to, expr: exprTuple, op: '=' }, sourceLine: instMeta.sourceLine };
+    if (exprTuple.tag == 'fn_call') {
+      return { tag: 'fn_call', val: exprTuple.val, sourceLine: instMeta.sourceLine }
+    }
   } 
 
   if (inst.tag == 'declare') {
