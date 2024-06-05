@@ -981,7 +981,13 @@ function tryParseExpr(tokens: string[]): Expr | null {
     if (tokens[0][0] >= '0' && tokens[0][0] <= '9' && tokens[1] == '.'
       && tokens[2][0] >= '0' && tokens[2][0] <= '9') {
 
-      return { tag: 'num_const', val: parseFloat(`${tokens[0]}.${tokens[2]}`) };
+      let num;
+      try {
+        num = parseFloat(`${tokens[0]}.${tokens[2]}`) 
+      } catch(e) {
+        return null;
+      }
+      return { tag: 'num_const', val: num };
     }
   }
 
@@ -1003,7 +1009,14 @@ function tryParseExpr(tokens: string[]): Expr | null {
 
     if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9'
       || ident.length >= 2 && ident[0] == '-' && ident[1] >= '0' && ident[1] <= '9') {
-      return { tag: 'int_const', val: parseInt(ident) };
+
+      let int;
+      try {
+        int = parseInt(ident);
+      } catch (e) {
+        return null;
+      }
+      return { tag: 'int_const', val: int };
     }
   }
 
