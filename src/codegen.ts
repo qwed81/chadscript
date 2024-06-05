@@ -139,7 +139,7 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
     if (expr.val.op == 'is') {
       return `${expr.val.left}.tag == ${expr.val.right}`;
     }
-    if (expr.val.op == 'to') {
+    if (expr.val.op == ':') {
       return 'undefined';
     }
     if (expr.val.op == '/' && expr.type.tag == 'primative' && expr.type.val == 'int') {

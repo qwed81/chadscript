@@ -909,7 +909,7 @@ function ensureBinOpValid(
 ): Expr | null {
 
   let computedExpr: Expr | null = null; 
-  if (expr.op == 'to') {
+  if (expr.op == ':') {
     let leftTuple = ensureExprValid(expr.left, Type.INT, table, scope, sourceLine);
     let rightTuple = ensureExprValid(expr.right, Type.INT, table, scope, sourceLine);
     if (leftTuple == null || rightTuple == null) {

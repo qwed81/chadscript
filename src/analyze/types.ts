@@ -12,7 +12,7 @@ export {
 const CHAR_SLICE: Type = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
-const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'Range' } };
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };

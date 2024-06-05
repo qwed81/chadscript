@@ -202,7 +202,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'left_expr', val: LeftExpr }
 
 const MAPPING: [string, number][] = [
-  ['to', 0],
+  [':', 0],
   ['+',  4], ['-', 4], ['*', 5], ['&&', 2], ['||', 1],
   ['/', 5], ['%', 5], ['==', 3], ['!=', 3], ['<', 3],
   ['>', 3], ['>=', 3], ['<=', 3], ['is', 3]
@@ -755,13 +755,13 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'while', val: { cond, body: b }};
   } 
   else if (keyword == 'for') {
-    let splits = balancedSplitTwo(line.tokens.slice(1), 'in');
-    if (splits[0].length != 1) {
-      logError(line.sourceLine, 'expected var name');
+    if (tokens.length < 3) {
+      logError(line.sourceLine, 'expected for <var> <iter>');
       return null;
     }
 
-    let expr = tryParseExpr(splits[1]);
+    let varName = tokens[1];
+    let expr = tryParseExpr(tokens.slice(2));
     if (expr == null) {
       return null;
     }
@@ -770,7 +770,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     if (b == null) {
       return b;
     }
-    return { tag: 'for_in', val: { varName: splits[0][0], iter: expr, body: b }};
+    return { tag: 'for_in', val: { varName, iter: expr, body: b }};
   } 
   else if (keyword == 'break') {
     return { tag: 'break' };
@@ -1091,7 +1091,7 @@ function getLines(data: string): SourceLine[] {
     // split tokens based on special characters
     let tokens: string[] = [];
     let tokenStart = 0;
-    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@'];
+    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':'];
     for (let i = 0; i < line.length; i++) {
       // process string as a single token
       if (line[i] == '"') {
