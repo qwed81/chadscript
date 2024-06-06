@@ -1,8 +1,10 @@
-import { LeftExpr, Inst, Expr, allPathsReturn, FnCall } from './analyze';
+import { LeftExpr,  Expr } from './analyze';
 import { logError } from '../index';
-import { Type } from './types';
 
-export { enumCheckBody }
+export {
+  PossibleVariants, getVariantPossibilities, applyCond, applyInverseCond,
+  recursiveAddExpr, remove, VariantScope, enterScope, exitScope, peek
+}
 
 // variable -> possibilities
 interface VariantSet {
@@ -11,9 +13,13 @@ interface VariantSet {
   currentSet: string[]
 }
 
+type PossibleVariants = VariantSet[]
+
+type VariantScope = PossibleVariants[]
+
 // the key intersection, value union (typically ||)
-function intersectingUnion(a: VariantSet[], b: VariantSet[]): VariantSet[] {
-  let newSet: VariantSet[] = [];
+function intersectingUnion(a: PossibleVariants, b: PossibleVariants): PossibleVariants {
+  let newSet: PossibleVariants = [];
   for (let entry of a) {
     let bIndex = indexOf(b, entry.key);
     if (bIndex == -1) {
@@ -36,8 +42,8 @@ function intersectingUnion(a: VariantSet[], b: VariantSet[]): VariantSet[] {
 }
 
 // the value union, key intersection (typically &&)
-function unionsIntersection(a: VariantSet[], b: VariantSet[]): VariantSet[] {
-  let newSet: VariantSet[] = [];
+function unionsIntersection(a: PossibleVariants, b: PossibleVariants): PossibleVariants {
+  let newSet: PossibleVariants = [];
   for (let entry of a) {
     let bIndex = indexOf(b, entry.key);
     if (bIndex == -1) {
@@ -77,27 +83,8 @@ function unionsIntersection(a: VariantSet[], b: VariantSet[]): VariantSet[] {
   return newSet;
 }
 
-// the compliment of all of the values (typically !)
-function innerCompliment(a: VariantSet[]): VariantSet[] {
-  let newSet: VariantSet[] = [];
-  for (let entry of a) {
-    let compliment = entry.totalSet.filter(x => !entry.currentSet.includes(x));
-    let newEntry: VariantSet = {
-      key: Array.from(entry.key),
-      currentSet: compliment,
-      totalSet: entry.totalSet
-    }
-    newSet.push(newEntry)
-  }
-  return newSet;
-}
-
-function clone(set: VariantSet[]): VariantSet[] {
-  return JSON.parse(JSON.stringify(set));
-}
-
 function add(
-  set: VariantSet[],
+  set: PossibleVariants,
   leftExpr: LeftExpr,
   current: string[],
   possible: string[]
@@ -115,9 +102,9 @@ function add(
   set.push(newEntry);
 }
 
-function indexOf(set: VariantSet[], key: string[]): number {
+function indexOf(set: PossibleVariants, key: string[]): number {
   for (let i = 0; i < set.length; i++) {
-    let allMatch = true;
+    let allMatch = key.length == set[i].key.length;
     for (let j = 0; j < set[i].key.length; j++) {
       if (set[i].key[j] != key[j]) {
         allMatch = false;
@@ -131,51 +118,65 @@ function indexOf(set: VariantSet[], key: string[]): number {
   return -1;
 }
 
-function remove(set: VariantSet[], leftExpr: LeftExpr) {
+function remove(scope: VariantScope, leftExpr: LeftExpr) {
   let key = leftExprToKey(leftExpr);
   if (key == null) {
     return;
   }
 
-  for (let i = set.length - 1; i >= 0; i--) {
-    let entry = set[i];
-    if (key.length > entry.key.length) {
-      continue;
-    }
-
-    // remove if entry.key starts with key
-    let shouldRemove = true;
-    for (let i = 0; i < key.length; i++) {
-      if (entry.key[i] != key[i]) {
-        shouldRemove = false;
-        break;
+  for (let i = scope.length - 1; i >= 0; i--) {
+    for (let j = scope[i].length - 1; j >= 0; j--) {
+      let entry = scope[i][j];
+      if (key.length > entry.key.length) {
+        continue;
       }
-    }
 
-    if (shouldRemove) {
-      set.splice(i, 1);
+      // remove if entry.key starts with key
+      let shouldRemove = true;
+      for (let i = 0; i < key.length; i++) {
+        if (entry.key[i] != key[i]) {
+          shouldRemove = false;
+          break;
+        }
+      }
+
+      if (shouldRemove) {
+        scope.splice(i, 1);
+      }
     }
   }
 }
 
-function getVariantPossibilities(set: VariantSet[], leftExpr: LeftExpr): string[] {
+function enterScope(scope: VariantScope) {
+  scope.push([]);
+}
+
+function exitScope(scope: VariantScope) {
+  scope.pop();
+}
+
+function peek(scope: VariantScope) {
+  return scope[scope.length - 1];
+}
+
+function getVariantPossibilities(scope: VariantScope, leftExpr: LeftExpr): string[] {
   let key = leftExprToKey(leftExpr);
   if (key == null) {
     return [];
   }
 
-  let index = indexOf(set, key);
-  if (index == -1) {
-    // if the key does not exist in the set, then the variant
-    // can be any possibility
-    if (leftExpr.type.tag == 'enum') {
-      return leftExpr.type.val.fields.map(x => x.name);
-    } else {
-      return [];
+  for (let i = scope.length - 1; i >= 0; i--) {
+    let index = indexOf(scope[i], key);
+    if (index != -1) {
+      return Array.from(scope[i][index].currentSet.values());
     }
   }
 
-  return Array.from(set[index].currentSet.values());
+  if (leftExpr.type.tag == 'enum') {
+    return leftExpr.type.val.fields.map(x => x.name);
+  } else {
+    return [];
+  }
 }
 
 function leftExprToKey(leftExpr: LeftExpr): string[] | null {
@@ -213,21 +214,21 @@ function leftExprToKey(leftExpr: LeftExpr): string[] | null {
   return output.reverse();
 }
 
-function getReverseExprSet(expr: Expr): VariantSet[] {
+function getInverseExprSet(expr: Expr): PossibleVariants {
   if (expr.tag == 'bin' && expr.val.op == '||') {
-    let left = getReverseExprSet(expr.val.left);
-    let right = getReverseExprSet(expr.val.right);
+    let left = getInverseExprSet(expr.val.left);
+    let right = getInverseExprSet(expr.val.right);
     return unionsIntersection(left, right);
   }
   else if (expr.tag == 'bin' && expr.val.op == '&&') {
-    let left = getReverseExprSet(expr.val.left);
-    let right = getReverseExprSet(expr.val.right);
+    let left = getInverseExprSet(expr.val.left);
+    let right = getInverseExprSet(expr.val.right);
     return intersectingUnion(left, right);
   }
   else if (expr.tag == 'is') {
     if (expr.left.type.tag == 'enum') {
       let key = expr.left;
-      let newSet: VariantSet[] = [];
+      let newSet: PossibleVariants = [];
       let possible = expr.left.type.val.fields.map(x => x.name);
       let current: string[] = possible.filter(x => x != expr.variant);
       add(newSet, key, current, possible);
@@ -248,7 +249,7 @@ function getReverseExprSet(expr: Expr): VariantSet[] {
 // used for if/while/elif statements to get the new
 // set that can be used. note that enumCheckExpr should
 // be called before getExprSet or the errors may be weird
-function getExprSet(expr: Expr): VariantSet[] {
+function getExprSet(expr: Expr): PossibleVariants {
   if (expr.tag == 'bin' && expr.val.op == '||') {
     let left = getExprSet(expr.val.left);
     let right = getExprSet(expr.val.right);
@@ -262,7 +263,7 @@ function getExprSet(expr: Expr): VariantSet[] {
   else if (expr.tag == 'is') {
     if (expr.left.type.tag == 'enum') {
       let key = expr.left;
-      let newSet: VariantSet[] = [];
+      let newSet: PossibleVariants = [];
       let possible = expr.left.type.val.fields.map(x => x.name);
       add(newSet, key, [expr.variant], possible);
       return newSet;
@@ -273,148 +274,98 @@ function getExprSet(expr: Expr): VariantSet[] {
     }
   }
   else if (expr.tag == 'not') {
-    return getReverseExprSet(expr);
+    return getInverseExprSet(expr);
   }
 
   return [];
 }
 
-function enumCheckLeftExpr(
-  set: VariantSet[],
-  leftExpr: LeftExpr,
-  sourceLine: number
-): boolean {
-  if (leftExpr.tag == 'arr_offset_int' || leftExpr.tag == 'arr_offset_slice') {
-    return enumCheckLeftExpr(set, leftExpr.val.var, sourceLine);
-  }
-  else if (leftExpr.tag == 'dot') {
-    return enumCheckExpr(set, leftExpr.val.left, sourceLine);
-  } 
-  else if (leftExpr.tag == 'prime') {
-    if (leftExpr.val.tag == 'left_expr' && leftExpr.val.type.tag == 'enum') {
-    let possible = getVariantPossibilities(set, leftExpr.val.val);
-      if (possible.length == 0) {
-        logError(sourceLine, `there is no valid enum variant`);
-        
-        return false;
-      }
-      else if (possible.length > 1) {
-        logError(sourceLine, `enum can be ${JSON.stringify(possible)}`);
-        return false;
-      }
-    } else {
-      logError(sourceLine, 'prime operator not valid on this expression');
-      return false;
-    }
+function applyCond(
+  scope: VariantScope,
+  cond: Expr | null,
+  ifConds: Expr[],
+) {
+
+  // if statements can be broken into cond && !prevCondition
+  // this holds the !previous condition
+  let ifChainVariants: PossibleVariants = [];
+  for (let i = 0; i < ifConds.length; i++) {
+    ifChainVariants = unionsIntersection(ifChainVariants, getInverseExprSet(ifConds[i]));
   }
 
-  // single variables are always valid
-  return true;
+  let bodySet = unionsIntersection(scope[scope.length - 1], ifChainVariants);
+  if (cond != null) {
+    bodySet = unionsIntersection(getExprSet(cond), bodySet);
+  }
+
+  scope[scope.length - 1] = bodySet;
 }
 
-function enumCheckExpr(
-  set: VariantSet[],
-  expr: Expr,
-  sourceLine: number
-): boolean {
-  if (expr.tag == 'bin') {
-    let left: boolean = enumCheckExpr(set, expr.val.left, sourceLine);
+function applyInverseCond(
+  scope: VariantScope,
+  cond: Expr | null,
+  ifConds: Expr[]
+) {
 
-    if (expr.val.op == '&&') {
-      let leftSet = getExprSet(expr.val.left);
-      set = unionsIntersection(set, leftSet);
-    }
-
-    let right: boolean = enumCheckExpr(set, expr.val.right, sourceLine);
-    return left && right;
+  // if statements can be broken into cond && !prevCondition
+  // this holds the !previous condition
+  let ifChainVariants: PossibleVariants = [];
+  for (let i = 0; i < ifConds.length; i++) {
+    ifChainVariants = unionsIntersection(ifChainVariants, getInverseExprSet(ifConds[i]));
   }
-  else if (expr.tag == 'not' || expr.tag == 'assert') {
-    return enumCheckExpr(set, expr.val, sourceLine);
+
+  let notCondSet = ifChainVariants;
+  if (cond != null) {
+    let reverse = getInverseExprSet(cond);
+    notCondSet = unionsIntersection(reverse, ifChainVariants);
+  }
+
+  scope[scope.length - 1] = unionsIntersection(scope[scope.length - 1], notCondSet);
+}
+
+function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
+  let set = scope[scope.length - 1];
+  if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
+    let possible = expr.type.val.fields.map(x => x.name);
+    add(set, leftExpr, [expr.fieldName], possible);
+    // handle int?? a = some(some(20)) where a'' is int
+    if (expr.fieldExpr != null) {
+      let newLeftExpr: LeftExpr = {
+        tag: 'prime',
+        val: {
+          tag: 'left_expr',
+          val: leftExpr,
+          type: expr.fieldExpr.type
+        },
+        type: expr.fieldExpr.type
+      };
+      recursiveAddExpr(scope, newLeftExpr, expr.fieldExpr);
+    }
   }
   else if (expr.tag == 'struct_init') {
-    for (let init of expr.val) {
-      if (enumCheckExpr(set, init.expr, sourceLine) == false) {
-        return false;
-      }
-    }
-  }
-  else if (expr.tag == 'fn_call') {
-    for (let param of expr.val.exprs) {
-      if (enumCheckExpr(set, param, sourceLine) == false) {
-        return false;
-      }
-    }
-    removeIfLinked(set, expr.val);
-  }
-  else if (expr.tag == 'is') {
-    let possible = getVariantPossibilities(set, expr.left);
-    if (!possible.includes(expr.variant)) {
-      logError(sourceLine, `enum can not be "${expr.variant}"`);
-      return false;
-    }
-
-    return enumCheckLeftExpr(set, expr.left, sourceLine);
-  }
-  else if (expr.tag == 'left_expr') {
-    return enumCheckLeftExpr(set, expr.val, sourceLine);
-  }
-
-  // constants are always valid
-  return true;
-}
-
-function removeIfLinked(set: VariantSet[], fnCall: FnCall) {
-  for (let i = 0; i < fnCall.exprs.length; i++) {
-    if (fnCall.fn.type.tag == 'fn') {
-      let expr = fnCall.exprs[i];
-      if (fnCall.fn.type.val.linkedParams[i] && expr.tag == 'left_expr') {
-        remove(set, expr.val);
-      }
+    for (let field of expr.val) {
+      let asExpr: Expr = { tag: 'left_expr', val: leftExpr, type: field.expr.type };
+      let newLeftExpr: LeftExpr = {
+        tag: 'dot',
+        val: {
+          varName: field.name,
+          left: asExpr,
+        },
+        type: field.expr.type 
+      }; 
+      recursiveAddExpr(scope, newLeftExpr, field.expr);
     }
   }
 }
 
-function enumCheckBody(body: Inst[]): boolean {
-  let set: VariantSet[] = [];
-  return enumCheckBodyRecur(set, body);
-}
-
-function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
+/*
+function enumCheckBodyRecur(set: PossibleVariants, body: Inst[]): boolean {
   let allOk: boolean = true;
   for (let i = 0; i < body.length; i++) {
     let inst = body[i];
 
-    // if statements can be broken into cond && !prevCondition
-    // this holds the !previous condition
-    let ifChain: VariantSet[] = [];
-    // each elif / else will not be the previous if/elif's variants
-    if (inst.tag == 'elif' || inst.tag == 'else') {
-      for (let j = i - 1; j >= 0; j--) {
-        let prevInst = body[j];
-        if (prevInst.tag == 'if' || prevInst.tag == 'elif') {
-          ifChain = unionsIntersection(ifChain, getReverseExprSet(prevInst.val.cond));
-        }
-      }
-    }
 
     if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
-      let bodySet = unionsIntersection(set, ifChain);
-      if (enumCheckExpr(bodySet, inst.val.cond, inst.sourceLine) == false) {
-        allOk = false;
-        continue;
-      }
-
-      let condSet = unionsIntersection(getExprSet(inst.val.cond), bodySet);
-      if (enumCheckBodyRecur(condSet, inst.val.body) == false) {
-        allOk = false;
-      }
-
-      // if this path always returns, then everything after will not be this variant
-      if (allPathsReturn(inst.val.body)) {
-        let reverse = getReverseExprSet(inst.val.cond);
-        let notCondSet = unionsIntersection(reverse, ifChain);
-        set = unionsIntersection(set, notCondSet);
-      }
     }
     else if (inst.tag == 'else') {
       let cloned = unionsIntersection(set, ifChain);
@@ -443,7 +394,6 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
 
       enumCheckLeftExpr(set, leftExpr, inst.sourceLine);
 
-      remove(set, leftExpr);
       if (enumCheckExpr(set, inst.val.expr, inst.sourceLine) == false) {
         allOk = false;
       }
@@ -468,39 +418,5 @@ function enumCheckBodyRecur(set: VariantSet[], body: Inst[]): boolean {
   return allOk;
 }
 
-function recursiveAddExpr(set: VariantSet[], leftExpr: LeftExpr, expr: Expr) {
-  if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
-    let possible = expr.type.val.fields.map(x => x.name);
-    add(set, leftExpr, [expr.fieldName], possible);
-    // handle int?? a = some(some(20)) where a'' is int
-    if (expr.fieldExpr != null) {
-      let newLeftExpr: LeftExpr = {
-        tag: 'prime',
-        val: {
-          tag: 'left_expr',
-          val: leftExpr,
-          type: expr.fieldExpr.type
-        },
-        type: expr.fieldExpr.type
-      };
-      recursiveAddExpr(set, newLeftExpr, expr.fieldExpr);
-    }
-  }
-  else if (expr.tag == 'struct_init') {
-    for (let field of expr.val) {
-      let asExpr: Expr = { tag: 'left_expr', val: leftExpr, type: field.expr.type };
-      let newLeftExpr: LeftExpr = {
-        tag: 'dot',
-        val: {
-          varName: field.name,
-          left: asExpr,
-        },
-        type: field.expr.type 
-      }; 
-      recursiveAddExpr(set, newLeftExpr, field.expr);
-    }
-  }
-
-}
-
+*/
 

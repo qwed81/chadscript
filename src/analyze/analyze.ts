@@ -1,7 +1,7 @@
 import * as Parse from '../parse';
 import { logError } from '../index'
 import * as Type from './types'
-import { enumCheckBody } from './enum';
+import * as Enum from './enum';
 
 interface Program {
   fns: Fn[]
@@ -317,6 +317,7 @@ function analyzeFn(
 
   let scope: Scope = { 
     varTypes: [],
+    variantScope: [[]],
     generics,
     returnType: returnType,
     inLoop: false,
@@ -352,10 +353,6 @@ function analyzeFn(
 
   let body = analyzeInstBody(fn.body, table, scope);
   if (body == null) {
-    return null;
-  }
-
-  if (enumCheckBody(body) == false) {
     return null;
   }
 
@@ -443,18 +440,87 @@ function analyzeInstBody(
 ): Inst[] | null {
   enterScope(scope);
 
-  let newBody: Inst[] | null = [];
+  let newBody: Inst[] = [];
+  let isValid = true;
   for (let i = 0; i < body.length; i++) {
-    let inst = analyzeInst(body[i], table, scope);
+    let tag = body[i].inst.tag;
+    let inst;
+    if (tag == 'if' || tag == 'while' || tag == 'elif' || tag == 'else') {
+      inst = analyzeCond(body[i], newBody, table, scope);
+    } else {
+      inst = analyzeInst(body[i], table, scope);
+    }
+
     if (inst == null) {
-      newBody = null;
+      isValid = false;
     } else if (newBody != null) {
       newBody.push(inst);
     }
   }
 
   exitScope(scope);
-  return newBody;
+  if (isValid) {
+    return newBody;
+  }
+  return null;
+}
+
+function analyzeCond(
+  instMeta: Parse.InstMeta,
+  prevInsts: Inst[], 
+  table: Type.RefTable,
+  scope: Scope
+): Inst | null {
+
+  let inst = instMeta.inst;
+  let ifChain: Expr[] = [];
+  if (inst.tag == 'else' || inst.tag == 'elif') {
+    for (let i = prevInsts.length - 2; i >= 0; i--) {
+      let prevInst = prevInsts[i];
+      if (prevInst.tag == 'if' || prevInst.tag == 'elif') {
+        ifChain.push(prevInst.val.cond);
+      }
+    }
+  }
+
+  let cond: Expr | null = null;
+  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
+    cond = ensureExprValid(inst.val.cond, Type.BOOL, table, scope, instMeta.sourceLine);
+    if (cond == null) {
+      return null;
+    }
+  }
+
+  if (inst.tag == 'while') {
+    scope.inLoop = true;
+  }
+
+  Enum.enterScope(scope.variantScope);
+  Enum.applyCond(scope.variantScope, cond, ifChain);
+  let body: Inst[] | null = null;
+  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
+    body = analyzeInstBody(inst.val.body, table, scope);
+  }
+  else if (inst.tag == 'else') {
+    body = analyzeInstBody(inst.val, table, scope);
+  }
+  Enum.exitScope(scope.variantScope);
+
+  if (body == null) {
+    return null;
+  }
+
+  if (allPathsReturn(body)) {
+    Enum.applyInverseCond(scope.variantScope, cond, ifChain);
+  }
+
+  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
+    return { tag: inst.tag, val: { cond: cond!, body: body }, sourceLine: instMeta.sourceLine };
+  } else if (inst.tag == 'else') {
+    return { tag: 'else', val: body, sourceLine: instMeta.sourceLine };
+  }
+
+  return null;
 }
 
 function analyzeInst(
@@ -463,23 +529,6 @@ function analyzeInst(
   scope: Scope,
 ): Inst | null {
   let inst = instMeta.inst;
-  if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
-    let expr = ensureExprValid(inst.val.cond, Type.BOOL, table, scope, instMeta.sourceLine);
-    if (expr == null) {
-      return null;
-    }
-
-    if (inst.tag == 'while') {
-      scope.inLoop = true;
-    }
-
-    let body = analyzeInstBody(inst.val.body, table, scope);
-    if (body == null) {
-      return null;
-    }
-
-    return { tag: inst.tag, val: { cond: expr, body: body }, sourceLine: instMeta.sourceLine };
-  } 
 
   if (inst.tag == 'include') {
     return { tag: 'include', val: inst.val, sourceLine: instMeta.sourceLine };
@@ -509,15 +558,6 @@ function analyzeInst(
       },
       sourceLine: instMeta.sourceLine
     };
-  }
-
-  if (inst.tag == 'else') {
-    let body = analyzeInstBody(inst.val, table, scope);
-    if (body == null) {
-      return null;
-    }
-
-    return { tag: 'else', val: body, sourceLine: instMeta.sourceLine };
   }
 
   if (inst.tag == 'match') {
@@ -620,6 +660,10 @@ function analyzeInst(
       return null;
     }
 
+    let leftExpr: LeftExpr = { tag: 'var', val: inst.val.name, type: declareType };
+    Enum.remove(scope.variantScope, leftExpr);
+    Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
+
     return {
       tag: 'declare',
       val: {
@@ -657,6 +701,11 @@ function analyzeInst(
         logError(instMeta.sourceLine, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);
         return null;
       }
+    }
+
+    Enum.remove(scope.variantScope, to);
+    if (inst.val.op == '=') {
+      Enum.recursiveAddExpr(scope.variantScope, to, expr);
     }
 
     return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, sourceLine: instMeta.sourceLine };
@@ -717,7 +766,7 @@ function ensureLeftExprValid(
     }
 
     if (validLeftExpr.type.tag != 'struct') {
-      logError(sourceLine, 'dot op only supported on structs');
+      logError(sourceLine, `dot op not applicable to ${Type.toStr(validLeftExpr.type)}`);
       return null;
     }
 
@@ -835,7 +884,29 @@ function ensureLeftExprValid(
     if (expr == null) {
       return null;
     }
-    return { tag: 'prime', val: expr, type: expr.type };
+
+    if (expr.type.tag != 'enum') {
+      logError(sourceLine, 'prime operator only used on enums');
+      return null;
+    }
+
+    if (expr.tag == 'left_expr') {
+      let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, expr.val);
+      if (possibleVariants.length == 0) {
+        logError(sourceLine, 'no variant possible');
+        return null;
+      }
+      else if (possibleVariants.length > 1) {
+        logError(sourceLine, `enum can be ${ JSON.stringify(possibleVariants) }`);
+        return null;
+      }
+
+      let innerType = expr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
+      return { tag: 'prime', val: expr, type: innerType };
+    }
+
+    logError(sourceLine, 'prime operator not supported on this expr');
+    return null;
   }
 
   logError(-1, 'compiler bug ensureLeftExprValid');
@@ -898,6 +969,16 @@ function ensureFnCallValid(
 
     logError(sourceLine, 'invalid return type');
     return null;
+  }
+
+  // remove all linked parameters from valid enums
+  if (fnType.tag == 'fn') {
+    for (let i = 0; i < paramExprs.length; i++) {
+      let expr = paramExprs[i];
+      if (fnType.val.linkedParams[i] && expr.tag == 'left_expr') {
+        Enum.remove(scope.variantScope, expr.val);
+      }
+    }
   }
 
   let newExpr: Expr = { 
@@ -971,7 +1052,33 @@ function ensureBinOpValid(
       variant: fieldName,
       type: Type.BOOL 
     };
-  } else {
+  } 
+  else if (expr.op == '&&') {
+    let exprLeft = ensureExprValid(expr.left, Type.BOOL, table, scope, sourceLine);
+    if (exprLeft == null) {
+      return null;
+    }
+
+    // the left side of the && can be used on the right
+    Enum.enterScope(scope.variantScope);
+    Enum.applyCond(scope.variantScope, exprLeft, []);
+    let exprRight = ensureExprValid(expr.right, Type.BOOL, table, scope, sourceLine);
+    Enum.exitScope(scope.variantScope);
+    if (exprRight == null) {
+      return null;
+    }
+
+    computedExpr = {
+      tag: 'bin',
+      val: {
+        op: '&&',
+        left: exprLeft,
+        right: exprRight
+      },
+      type: Type.BOOL
+    }
+  }
+  else {
     let exprLeft = ensureExprValid(expr.left, null, table, scope, sourceLine);
     if (exprLeft == null) {
       return null;
@@ -993,7 +1100,7 @@ function ensureBinOpValid(
     else if (op == '==' || op == '!=') {
       testFn = Type.canEq;
     }
-    else if (op == '&&' || op == '||') {
+    else if (op == '||') {
       testFn = (a, b) => {
         if (Type.typeApplicable(a, Type.BOOL) && Type.typeApplicable(b, Type.BOOL)) {
           return Type.BOOL;
@@ -1262,7 +1369,8 @@ interface Scope {
   generics: Set<string>, 
   returnType: Type.Type
   inLoop: boolean
-  varCounter: number
+  varCounter: number,
+  variantScope: Enum.VariantScope 
 };
 
 function enterScope(scope: Scope) {

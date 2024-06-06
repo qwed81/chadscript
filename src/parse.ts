@@ -736,6 +736,11 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'elif', val: { cond, body: b }};
   } else if (keyword == 'else') {
+    if (tokens.length != 1) {
+      logError(line.sourceLine, 'unexpected token after \'else\'');
+      return null;
+    }
+
     let b = parseInstBody(body);
     if (b == null) {
       return null;
