@@ -575,6 +575,7 @@ function parseFnHeader(
       let name = param[param.length - 1];
       let t = tryParseType(param.slice(0, -1));
       if (t == null) {
+        logError(header.sourceLine, 'could not parse parameters');
         return null;
       }
       paramTypes.push(t);

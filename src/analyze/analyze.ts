@@ -876,7 +876,7 @@ function ensureLeftExprValid(
       return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
     }
 
-    logError(sourceLine, `could not find ${leftExpr.val}`);
+    logError(sourceLine, `could not find '${leftExpr.val}'`);
     return null;
   }
   else if (leftExpr.tag == 'prime') {
@@ -1327,7 +1327,9 @@ function ensureExprValid(
           };
         } 
       } 
-    } else { // normal left expr parsing
+    }
+
+    if (computedExpr == null) { // normal left expr parsing
       let fnTypeHint: FnTypeHint | null = null;
       if (expectedReturn != null && expectedReturn.tag == 'fn') {
         fnTypeHint = {
