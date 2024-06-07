@@ -141,7 +141,7 @@ function remove(scope: VariantScope, leftExpr: LeftExpr) {
       }
 
       if (shouldRemove) {
-        scope.splice(i, 1);
+        scope[i].splice(j, 1);
       }
     }
   }

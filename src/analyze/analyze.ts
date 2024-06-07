@@ -475,7 +475,7 @@ function analyzeCond(
   let inst = instMeta.inst;
   let ifChain: Expr[] = [];
   if (inst.tag == 'else' || inst.tag == 'elif') {
-    for (let i = prevInsts.length - 2; i >= 0; i--) {
+    for (let i = prevInsts.length - 1; i >= 0; i--) {
       let prevInst = prevInsts[i];
       if (prevInst.tag == 'if' || prevInst.tag == 'elif') {
         ifChain.push(prevInst.val.cond);
@@ -745,7 +745,7 @@ function canMutate(leftExpr: LeftExpr, scope: Scope): boolean {
 }
 
 interface FnTypeHint {
-  paramTypes: Type.Type[]
+  paramTypes: (Type.Type | null)[]
   returnType: Type.Type | null
 }
 
@@ -874,10 +874,14 @@ function ensureLeftExprValid(
       }
 
       return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
+    } 
+
+    let fn = Type.resolveFn(leftExpr.val, null, null, table, sourceLine);
+    if (fn == null) {
+      return null;
     }
 
-    logError(sourceLine, `could not find '${leftExpr.val}'`);
-    return null;
+    return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
   }
   else if (leftExpr.tag == 'prime') {
     let expr = ensureExprValid(leftExpr.val, null, table, scope, sourceLine);

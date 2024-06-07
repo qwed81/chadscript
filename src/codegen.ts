@@ -3,7 +3,7 @@ import { Fn, Inst, LeftExpr, Expr, StructInitField, FnCall } from './analyze/ana
 
 // generates the javascript output for the given program
 function codegen(prog: Program): string {
-  let programStr = `_${prog.entry}();`;
+  let programStr = `_${prog.entry}().then(exitCode => process.exit(exitCode));`;
   for (let fn of prog.fns) {
     let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1, false);
     programStr += fnCode;
@@ -75,7 +75,7 @@ function codeGenInst(inst: Inst, indent: number): string {
 
     // perform a copy on assignment of objects
     if (typeTag == 'struct' || typeTag == 'enum') {
-      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr, addInst)}`;
+      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr, addInst)})`;
     } else {
       rightExpr = codeGenExpr(inst.val.expr, addInst);
     }
@@ -154,13 +154,13 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
   } else if (expr.tag == 'try') {
     let varName = '__temp_' + addInst.length;
     addInst.push(`var ${varName} = ${codeGenExpr(expr.val, addInst)};`);
-    addInst.push(`if ('_err' in ${varName}) return ${varName};`);
-    return `${varName}._ok`;
+    addInst.push(`if (${varName}.tag == 'err') return ${varName};`);
+    return `${varName}.val`;
   } else if (expr.tag == 'assert') {
     let varName = '__temp_' + addInst.length;
     addInst.push(`var ${varName} = ${codeGenExpr(expr.val, addInst)};`);
-    addInst.push(`if ('_err' in ${varName}) { console.error(${varName}._err); process.exit(-1) }`);
-    return `${varName}._ok`;
+    addInst.push(`if (${varName}.tag == 'err') { console.error(${varName}.val); process.exit(-1) }`);
+    return `${varName}.val`;
   } else if (expr.tag == 'fn_call') {
     return codeGenFnCall(expr.val, addInst);
   } else if (expr.tag == 'struct_init') {

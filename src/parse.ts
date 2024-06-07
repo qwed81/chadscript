@@ -1065,6 +1065,13 @@ function getLines(data: string): SourceLine[] {
   // split lines based on spaces
   for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
     let line = lines[lineNumber];
+    if (line.startsWith('##')) {
+      lineNumber++;
+      while (!lines[lineNumber].startsWith('##') && lineNumber < lines.length) {
+        lineNumber++;
+      }
+    }
+
     line = line.split('#')[0]; // ignore comments
     let indent = 0;
     for (let i = 0; i < line.length; i++) {
@@ -1090,6 +1097,10 @@ function getLines(data: string): SourceLine[] {
       sourceLines.push({ tokens: [line], indent, sourceLine: lineNumber });
       for (let blockLineNumber = lineNumber + 1; blockLineNumber < lines.length; blockLineNumber++) {
         let line = lines[blockLineNumber];
+        if (line.trim() == '') {
+          continue;
+        }
+
         let indent = 0;
         for (let i = 0; i < line.length; i++) {
           if (line[i] != ' ') {

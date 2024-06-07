@@ -440,7 +440,7 @@ interface FnResult {
 function resolveFn(
   name: string,
   returnType: Type | null,
-  paramTypes: Type[],
+  paramTypes: (Type | null)[] | null,
   refTable: RefTable,
   calleeLine: number
 ): FnResult | null {
@@ -450,10 +450,12 @@ function resolveFn(
     logError(calleeLine, 'compiler error generic return type is generic');
     return null;
   }
-  for (let paramType of paramTypes) {
-    if (isGeneric(paramType)) {
-      logError(calleeLine, 'compiler error parameter is generic');
-      return null;
+  if (paramTypes != null) {
+    for (let paramType of paramTypes) {
+      if (paramType != null && isGeneric(paramType)) {
+        logError(calleeLine, 'compiler error parameter is generic');
+        return null;
+      }
     }
   }
 
@@ -467,7 +469,7 @@ function resolveFn(
       }
       
       let genericMap = new Map<string, Type>();
-      if (fnDef.t.paramTypes.length != paramTypes.length) {
+      if (paramTypes != null && fnDef.t.paramTypes.length != paramTypes.length) {
         wrongTypeFns.push(fnDef);
         continue;
       }
@@ -487,10 +489,14 @@ function resolveFn(
           logError(calleeLine, 'compiler error param type invalid (checked before)');
           return null;
         }
-        if (!typeApplicableStateful(paramTypes[i], defParamType, genericMap)) {
-          wrongTypeFns.push(fnDef);
-          allParamsOk = false;
-          break;
+
+        if (paramTypes != null) {
+          let paramType = paramTypes[i];
+          if (paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap)) {
+            wrongTypeFns.push(fnDef);
+            allParamsOk = false;
+            break;
+          }
         }
         concreteParamTypes.push(applyGenericMap(defParamType, genericMap));
       }
@@ -536,7 +542,7 @@ function resolveFn(
     return null;
   }
 
-  logError(calleeLine, 'could not find function');
+  logError(calleeLine, `could not find ${name}`);
   return null;
 }
 
