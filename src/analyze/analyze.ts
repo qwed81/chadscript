@@ -5,12 +5,13 @@ import * as Enum from './enum';
 
 interface Program {
   fns: Fn[]
-  entry: string
 }
 
 interface Fn {
-  ident: string
+  name: string
+  unitName: string,
   paramNames: string[]
+  type: Type.Type 
   body: Inst[]
 }
 
@@ -78,13 +79,13 @@ interface BinExpr {
 }
 
 type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
-  | { tag: 'is', left: LeftExpr, variant: string, type: Type.Type }
+  | { tag: 'is', left: LeftExpr, variant: string, variantIndex: number, type: Type.Type }
   | { tag: 'not', val: Expr, type: Type.Type }
   | { tag: 'try', val: Expr, type: Type.Type }
   | { tag: 'assert', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
-  | { tag: 'enum_init', fieldName: string, fieldExpr: Expr | null, type: Type.Type }
+  | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
   | { tag: 'str_const', val: string, type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
@@ -109,33 +110,16 @@ interface ArrOffsetSlice {
 }
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
-  | { tag: 'prime', val: Expr, type: Type.Type }
+  | { tag: 'prime', val: Expr, variant: string, variantIndex: number, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
   | { tag: 'var', val: string, type: Type.Type }
+  | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
 
 export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
-  let entryName: string | null = null;
-  for (let unit of units) {
-    for (let fn of unit.fns) {
-      if (fn.name == 'main') {
-        if (entryName != null) {
-          logError(fn.sourceLine, 'more than 1 main function found');
-          return null;
-        } 
-        entryName = Type.getFnUniqueId(unit.fullName, fn);
-      }
-    }
-  }
-
-  if (entryName == null) {
-    logError(-1, 'could not find main function');
-    return null;
-  }
-
-  let validProgram: Program | null = { fns: [], entry: entryName };
+  let validProgram: Program | null = { fns: [] };
 
   for (let i = 0; i < units.length; i++) {
     if (analyzeUnitDataTypes(units, i) == false) {
@@ -315,16 +299,18 @@ function analyzeFn(
     return null;
   }
 
-  let scope: Scope = { 
-    varTypes: [],
+  let scope: FnContext = { 
+    typeScope: [],
     variantScope: [[]],
     generics,
     returnType: returnType,
     inLoop: false,
-    varCounter: 0
   };
 
   enterScope(scope);
+
+  let paramTypes: Type.Type[] = [];
+  let linkedParams: boolean[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
     let paramType = fn.t.paramTypes[i];
     let mut = false;
@@ -332,19 +318,15 @@ function analyzeFn(
       paramType = paramType.val;
       mut = true;
     }
+    linkedParams.push(mut);
 
     let resolvedParamType = Type.resolveType(fn.t.paramTypes[i], table, fn.sourceLine);
     if (resolvedParamType == null) {
       return null;
     }
 
-    let isRefable = (resolvedParamType.tag == 'struct' || resolvedParamType.tag == 'enum' || resolvedParamType.tag == 'slice');
-    if (fn.t.paramTypes[i].tag == 'link' && !isRefable) {
-      logError(fn.sourceLine, 'type can not be used as referece');
-      return null;
-    }
-
     setValToScope(scope, fn.paramNames[i], resolvedParamType, mut);
+    paramTypes.push(resolvedParamType);
   }
 
   if (allElifFollowIf(fn.body) == false) {
@@ -361,8 +343,15 @@ function analyzeFn(
     return null;
   }
 
-  let ident = Type.getFnUniqueId(unit.fullName, fn);
-  return { body, ident, paramNames: fn.paramNames };
+
+  let fnType: Type.Type = { tag: 'fn', val: { paramTypes, returnType, linkedParams } };
+  return {
+    name: fn.name,
+    unitName: unit.fullName,
+    body,
+    type: fnType,
+    paramNames: fn.paramNames,
+  };
 }
 
 function allElifFollowIf(body: Parse.InstMeta[]): boolean {
@@ -436,7 +425,7 @@ function allPathsReturn(body: Inst[]): boolean {
 function analyzeInstBody(
   body: Parse.InstMeta[],
   table: Type.RefTable,
-  scope: Scope,
+  scope: FnContext,
 ): Inst[] | null {
   enterScope(scope);
 
@@ -469,7 +458,7 @@ function analyzeCond(
   instMeta: Parse.InstMeta,
   prevInsts: Inst[], 
   table: Type.RefTable,
-  scope: Scope
+  scope: FnContext
 ): Inst | null {
 
   let inst = instMeta.inst;
@@ -526,7 +515,7 @@ function analyzeCond(
 function analyzeInst(
   instMeta: Parse.InstMeta,
   table: Type.RefTable,
-  scope: Scope,
+  scope: FnContext,
 ): Inst | null {
   let inst = instMeta.inst;
 
@@ -715,7 +704,7 @@ function analyzeInst(
   return null;
 }
 
-function canMutate(leftExpr: LeftExpr, scope: Scope): boolean {
+function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
   if (leftExpr.tag == 'dot') {
     if (leftExpr.val.left.tag != 'left_expr') {
       return false;
@@ -755,7 +744,7 @@ function ensureLeftExprValid(
   // to find the correct function
   fnTypeHint: FnTypeHint | null,
   table: Type.RefTable,
-  scope: Scope,
+  scope: FnContext,
   sourceLine: number
 ): LeftExpr | null {
 
@@ -873,7 +862,7 @@ function ensureLeftExprValid(
         return null;
       }
 
-      return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
+      return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType };
     } 
 
     let fn = Type.resolveFn(leftExpr.val, null, null, table, sourceLine);
@@ -881,7 +870,7 @@ function ensureLeftExprValid(
       return null;
     }
 
-    return { tag: 'var', val: fn.uniqueName, type: fn.fnType };
+    return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType };
   }
   else if (leftExpr.tag == 'prime') {
     let expr = ensureExprValid(leftExpr.val, null, table, scope, sourceLine);
@@ -906,7 +895,13 @@ function ensureLeftExprValid(
       }
 
       let innerType = expr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
-      return { tag: 'prime', val: expr, type: innerType };
+      return {
+        tag: 'prime',
+        val: expr,
+        variantIndex: Type.getVariantIndex(expr.type, possibleVariants[0]),
+        variant: possibleVariants[0],
+        type: innerType 
+      };
     }
 
     logError(sourceLine, 'prime operator not supported on this expr');
@@ -922,7 +917,7 @@ function ensureFnCallValid(
   fnCall: Parse.FnCall,
   expectedReturn: Type.Type | null,
   table: Type.RefTable, 
-  scope: Scope,
+  scope: FnContext,
   sourceLine: number
 ): Expr | null {
 
@@ -1000,7 +995,7 @@ function ensureBinOpValid(
   expr: Parse.BinExpr,
   expectedReturn: Type.Type | null,
   table: Type.RefTable,
-  scope: Scope,
+  scope: FnContext,
   sourceLine: number
 ): Expr | null {
 
@@ -1054,6 +1049,7 @@ function ensureBinOpValid(
       tag: 'is',
       left: exprLeft.val,
       variant: fieldName,
+      variantIndex: Type.getVariantIndex(exprLeft.type, fieldName),
       type: Type.BOOL 
     };
   } 
@@ -1150,7 +1146,7 @@ function ensureExprValid(
   // which helps with struct typing and generic functions
   expectedReturn: Type.Type | null,
   table: Type.RefTable,
-  scope: Scope,
+  scope: FnContext,
   sourceLine: number
 ): Expr | null {
   let computedExpr: Expr | null = null; 
@@ -1222,6 +1218,7 @@ function ensureExprValid(
 
         computedExpr = {
           tag: 'enum_init',
+          variantIndex: Type.getVariantIndex(expectedReturn, fieldName),
           fieldName,
           fieldExpr,
           type: expectedReturn 
@@ -1301,7 +1298,7 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'str_const') {
-    computedExpr = { tag: 'str_const', val: expr.val, type: Type.CHAR_SLICE };
+    computedExpr = { tag: 'str_const', val: expr.val, type: Type.STR };
   } 
 
   if (expr.tag == 'char_const') {
@@ -1325,6 +1322,7 @@ function ensureExprValid(
           let fieldName = expectedReturn.val.fields[fieldIndex].name;
           computedExpr = {
             tag: 'enum_init',
+            variantIndex: Type.getVariantIndex(expectedReturn, fieldName),
             fieldName,
             fieldExpr: null,
             type: expectedReturn
@@ -1370,32 +1368,30 @@ interface Var {
   mut: boolean
 }
 
-interface Scope {
-  varTypes: Map<string, Var>[]
+interface FnContext {
+  typeScope: Map<string, Var>[]
   generics: Set<string>, 
   returnType: Type.Type
   inLoop: boolean
-  varCounter: number,
   variantScope: Enum.VariantScope 
 };
 
-function enterScope(scope: Scope) {
-  scope.varTypes.push(new Map());
+function enterScope(scope: FnContext) {
+  scope.typeScope.push(new Map());
 }
 
-function exitScope(scope: Scope) {
-  scope.varTypes.pop();
+function exitScope(scope: FnContext) {
+  scope.typeScope.pop();
 }
 
-function setValToScope(scope: Scope, name: string, type: Type.Type, mut: boolean) {
-  scope.varTypes[scope.varTypes.length - 1].set(name, { type, mut });
-  scope.varCounter += 1;
+function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boolean) {
+  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut });
 }
 
-function getVar(scope: Scope, name: string): Var | null {
-  for (let i = scope.varTypes.length - 1; i >= 0; i--) {
-    if (scope.varTypes[i].has(name)) {
-      return scope.varTypes[i].get(name)!;
+function getVar(scope: FnContext, name: string): Var | null {
+  for (let i = scope.typeScope.length - 1; i >= 0; i--) {
+    if (scope.typeScope[i].has(name)) {
+      return scope.typeScope[i].get(name)!;
     }
   }
   return null;

@@ -1,27 +1,98 @@
-import { Program  } from './analyze/analyze';
-import { Fn, Inst, LeftExpr, Expr, StructInitField, FnCall } from './analyze/analyze';
-
-// generates the javascript output for the given program
-function codegen(prog: Program): string {
-  let programStr = `_${prog.entry}().then(exitCode => process.exit(exitCode));`;
-  for (let fn of prog.fns) {
-    let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1, false);
-    programStr += fnCode;
-  }
-
-  return programStr;
-}
+import { Program  } from '../analyze/analyze';
+import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
+import { toStr, Type } from '../analyze/types';
+import { replaceGenerics, CProgram, CFn } from './concreteFns';
 
 export {
   codegen
 }
 
-function codeGenFnHeader(fn: Fn) {
-  let headerStr = '\nasync function _' + fn.ident + '(';
+// generates the c output for the given program
+function codegen(prog: Program): string {
+  let newProg: CProgram = replaceGenerics(prog);
+
+  let programStr = '#include <stdio.h>\n';
+  for (let struct of newProg.structs) {
+    programStr += '\n' + codeGenType(struct.name) + ' {';
+    for (let i = 0; i < struct.fieldTypes.length; i++) {
+      programStr += '\n  ' + codeGenType(struct.fieldTypes[i]) + ' _' + struct.fieldNames[i] + ';';
+    }
+    programStr += '\n};\n'
+  }
+
+  for (let struct of newProg.enums) {
+    programStr += '\n' + codeGenType(struct.name) + ' {';
+    programStr += '\n  int tag;';
+    programStr += '\n  union {';
+    for (let i = 0; i < struct.fieldTypes.length; i++) {
+      let typeStr = codeGenType(struct.fieldTypes[i]);
+      if (typeStr == 'void') {
+        typeStr = 'int';
+      }
+      programStr += '\n    ' + typeStr + ' _' + struct.fieldNames[i] + ';' 
+    }
+    programStr += '\n  };\n};'
+  }
+
+  for (let slice of newProg.slices) {
+    if (slice.tag != 'slice') {
+      continue;
+    }
+
+    programStr += '\n' + codeGenType(slice) + ' {';
+    programStr += '\n  ' + codeGenType(slice.val) + ' *_ptr;';
+    programStr += '\n  int _len;'
+    programStr += '\n  int _refCount;'
+    programStr += '\n};'
+  }
+
+  for (let fn of newProg.fns) {
+    programStr += codeGenFnHeader(fn) + ';';
+  }
+
+  for (let fn of newProg.fns) {
+    let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1, false);
+    programStr += fnCode;
+  }
+
+
+  programStr += '\nint main() { return _main(); }';
+  return programStr;
+}
+
+
+function codeGenType(type: Type): string {
+  if (type.tag == 'primative') {
+    if (type.val == 'str') {
+      return 'const char*';
+    }
+    else if (type.val == 'num') {
+      return 'double';
+    }
+
+    return type.val;
+  }
+  if (type.tag == 'slice') {
+    return 'struct _slice_' + codeGenType(type.val);
+  }
+  let typeStr = '_' + toStr(type);
+  typeStr = typeStr.replace('(', '_op');
+  typeStr = typeStr.replace(')', '_cp');
+  typeStr = typeStr.replace('[', '_os');
+  typeStr = typeStr.replace(']', '_cs');
+  typeStr = typeStr.replace(',', '_c')
+  typeStr = typeStr.replace('.', '_');
+
+  return 'struct ' + typeStr.replace(' ', '');
+}
+
+function codeGenFnHeader(fn: CFn) {
+  let headerStr = '\n' + codeGenType(fn.returnType) +  ' _' + fn.name + '(';
   let paramStr = '';
 
   for (let i = 0; i < fn.paramNames.length; i++) {
-    paramStr += '_' + fn.paramNames[i];
+    paramStr += codeGenType(fn.paramTypes[i]);
+    paramStr += ' _' + fn.paramNames[i];
     if (i != fn.paramNames.length - 1) {
       paramStr += ', ';
     }
@@ -57,29 +128,13 @@ function codeGenInst(inst: Inst, indent: number): string {
 
   let instText;
   if (inst.tag == 'declare') {
-    let typeTag = inst.val.expr.type.tag;
-    let rightExpr;
+    let type = inst.val.expr.type;
+    let rightExpr = codeGenExpr(inst.val.expr, addInst);
 
-    // perform a copy on assignment of objects
-    if (typeTag == 'struct' || typeTag == 'enum') {
-      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr, addInst)})`;
-    } else {
-      rightExpr = codeGenExpr(inst.val.expr, addInst);
-    }
-
-    instText = `var _${inst.val.name} = ${rightExpr};`;
+    instText = `${codeGenType(type)} _${inst.val.name} = ${rightExpr};`;
   } 
   else if (inst.tag == 'assign') {
-    let typeTag = inst.val.expr.type.tag;
-    let rightExpr;
-
-    // perform a copy on assignment of objects
-    if (typeTag == 'struct' || typeTag == 'enum') {
-      rightExpr = `Object.assign({}, ${codeGenExpr(inst.val.expr, addInst)})`;
-    } else {
-      rightExpr = codeGenExpr(inst.val.expr, addInst);
-    }
-
+    let rightExpr = codeGenExpr(inst.val.expr, addInst);
     instText = `${codeGenLeftExpr(inst.val.to, addInst)} ${inst.val.op} ${rightExpr};`;
   } 
   else if (inst.tag == 'if') {
@@ -105,11 +160,11 @@ function codeGenInst(inst: Inst, indent: number): string {
     }
   }
   else if (inst.tag == 'include') {
-    let instText: string = tabs + '// include\n';
+    let instText: string = '';
     for (let i = 0; i < inst.val.length; i++) {
-      instText += inst.val[i] + '\n';
+      instText += inst.val[i].slice(2) + '\n';
     }
-    return instText + tabs + '// end include\n';
+    return instText;
   }
   else if (inst.tag == 'match') {
     instText = `switch (${codeGenExpr(inst.val.var, addInst)}._tag) {\n`;
@@ -123,9 +178,9 @@ function codeGenInst(inst: Inst, indent: number): string {
   } 
   else if (inst.tag == 'for_in') {
     let name = inst.val.varName;
-    let inner = `for (let _${name} = __range_${name}._start; _${name} < __range_${name}._end; _${name}++)`;
+    let inner = `for (int _${name} = __range_${name}._start; _${name} < __range_${name}._end; _${name}++)`;
     inner += '' + codeGenBody(inst.val.body, indent + 2, false);
-    instText = `{\n${tabs}  var __range_${name} = `
+    instText = `{\n${tabs}  int __range_${name} = `
     instText += `${codeGenExpr(inst.val.iter, addInst)};\n${tabs}  ${inner}\n${tabs}}`;
   }
 
@@ -139,28 +194,36 @@ function codeGenInst(inst: Inst, indent: number): string {
 
 function codeGenExpr(expr: Expr, addInst: string[]): string {
   if (expr.tag == 'bin') {
-    if (expr.val.op == 'is') {
-      return `${expr.val.left}.tag == ${expr.val.right}`;
-    }
     if (expr.val.op == ':') {
       return 'undefined';
-    }
-    if (expr.val.op == '/' && expr.type.tag == 'primative' && expr.type.val == 'int') {
-      return `(${ codeGenExpr(expr.val.left, addInst) } / ${ codeGenExpr(expr.val.right, addInst) } | 0)`
     }
     return `${ codeGenExpr(expr.val.left, addInst) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst) }`;
   } else if (expr.tag == 'not') {
     return '!' + codeGenExpr(expr.val, addInst);
   } else if (expr.tag == 'try') {
+    let innerType;
+    if (expr.type.tag == 'enum') {
+      innerType = expr.type.val.fields[0].type
+    } else {
+      return 'undefined';
+    }
+
     let varName = '__temp_' + addInst.length;
-    addInst.push(`var ${varName} = ${codeGenExpr(expr.val, addInst)};`);
-    addInst.push(`if (${varName}.tag == 'err') return ${varName};`);
-    return `${varName}.val`;
+    addInst.push(`${innerType} ${varName} = ${codeGenExpr(expr.val, addInst)};`);
+    addInst.push(`if (${varName}.tag == 1) return ${varName};`);
+    return `${varName}._ok`;
   } else if (expr.tag == 'assert') {
+    let innerType;
+    if (expr.type.tag == 'enum') {
+      innerType = expr.type.val.fields[0].type
+    } else {
+      return 'undefined';
+    }
+
     let varName = '__temp_' + addInst.length;
-    addInst.push(`var ${varName} = ${codeGenExpr(expr.val, addInst)};`);
-    addInst.push(`if (${varName}.tag == 'err') { console.error(${varName}.val); process.exit(-1) }`);
-    return `${varName}.val`;
+    addInst.push(`${innerType} ${varName} = ${codeGenExpr(expr.val, addInst)};`);
+    addInst.push(`if (${varName}.tag == 1) { printf("panic"); exit(-1); }`);
+    return `${varName}._ok`;
   } else if (expr.tag == 'fn_call') {
     return codeGenFnCall(expr.val, addInst);
   } else if (expr.tag == 'struct_init') {
@@ -168,7 +231,7 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
   } else if (expr.tag == 'str_const') {
     return `"${expr.val}"`;
   } else if (expr.tag == 'char_const') {
-    return `"${expr.val}"`;
+    return `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
     return `${expr.val}`;
   } else if (expr.tag == 'bool_const') {
@@ -178,12 +241,12 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
   } else if (expr.tag == 'left_expr') {
     return codeGenLeftExpr(expr.val, addInst);
   } else if (expr.tag == 'is') {
-    return `${codeGenLeftExpr(expr.left, addInst)}.tag == '${expr.variant}'`;
+    return `${codeGenLeftExpr(expr.left, addInst)}.tag == ${expr.variantIndex}`;
   } else if (expr.tag == 'enum_init') {
     if (expr.fieldExpr != null) {
-      return `{ tag: '${expr.fieldName}', val: ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
+      return `{ .tag = ${expr.variantIndex}, ._${expr.fieldName} = ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
     } else {
-      return `{ tag: '${expr.fieldName}' }`;
+      return `{ .tag = '${expr.variantIndex}' }`;
     }
   }
 
@@ -194,7 +257,7 @@ function codeGenStructInit(structInit: StructInitField[], addInst: string[]): st
   let output = '{ ';
   for (let i = 0; i < structInit.length; i++) {
     let initField = structInit[i];
-    output += `_${initField.name}: ${codeGenExpr(initField.expr, addInst)}`;
+    output += `._${initField.name} = ${codeGenExpr(initField.expr, addInst)}`;
     if (i != structInit.length - 1) {
       output += ', ';
     }
@@ -204,7 +267,7 @@ function codeGenStructInit(structInit: StructInitField[], addInst: string[]): st
 }
 
 function codeGenFnCall(fnCall: FnCall, addInst: string[]): string {
-  let output = 'await ' + codeGenLeftExpr(fnCall.fn, addInst) + '(';
+  let output = codeGenLeftExpr(fnCall.fn, addInst) + '(';
   for (let i = 0; i < fnCall.exprs.length; i++) {
     output += codeGenExpr(fnCall.exprs[i], addInst);
     if (i != fnCall.exprs.length - 1) {
@@ -220,15 +283,18 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[]): string {
     return `${codeGenExpr(leftExpr.val.left, addInst)}._${leftExpr.val.varName}`;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
-    return `${codeGenLeftExpr(leftExpr.val.var, addInst)}[${codeGenExpr(leftExpr.val.index, addInst)}]`;
+    return `${codeGenLeftExpr(leftExpr.val.var, addInst)}._ptr[${codeGenExpr(leftExpr.val.index, addInst)}]`;
   } 
   else if (leftExpr.tag == 'arr_offset_slice') {
     let start = codeGenExpr(leftExpr.val.start, addInst);
     let end = codeGenExpr(leftExpr.val.end, addInst);
-    return `${codeGenLeftExpr(leftExpr.val.var, addInst)}.slice(${start}, ${end})`;
+    return `{ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst)} + start, ._len = ${end} - ${start}, ._refCount = 2 }`;
   }
   else if (leftExpr.tag == 'prime') {
-    return `${ codeGenExpr(leftExpr.val, addInst) }.val`;
+    return `${ codeGenExpr(leftExpr.val, addInst) }._${leftExpr.variant}`;
+  }
+  else if (leftExpr.tag == 'fn') {
+    return `_${ leftExpr.fnName }`;
   }
   else {
     return '_' + leftExpr.val;

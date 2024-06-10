@@ -1,5 +1,6 @@
 import { LeftExpr,  Expr } from './analyze';
 import { logError } from '../index';
+import { getVariantIndex } from './types';
 
 export {
   PossibleVariants, getVariantPossibilities, applyCond, applyInverseCond,
@@ -337,6 +338,8 @@ function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
           val: leftExpr,
           type: expr.fieldExpr.type
         },
+        variant: expr.fieldName,
+        variantIndex: getVariantIndex(expr.type, expr.fieldName),
         type: expr.fieldExpr.type
       };
       recursiveAddExpr(scope, newLeftExpr, expr.fieldExpr);

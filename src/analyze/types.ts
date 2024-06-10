@@ -2,11 +2,11 @@ import { logError } from '../index'
 import * as Parse from '../parse';
 
 export {
-  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM,
-  Field, Struct, Type, toStr, typeApplicable, isGeneric,
-  canMath, canOrder, canEq, canIndex, canDot, RefTable,
+  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR,
+  Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
+  applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
   getUnitReferences, resolveType, resolveFn, getFnUniqueId,
-  isRes, createRes
+  isRes, createRes, getVariantIndex
 }
 
 const CHAR_SLICE: Type = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
@@ -17,6 +17,7 @@ const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
+const STR: Type = { tag: 'primative', val: 'str' };
 
 interface Field {
   name: string
@@ -29,7 +30,7 @@ interface Struct {
   id: string
 }
 
-type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' }
+type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'str' }
   | { tag: 'generic', val: string }
   | { tag: 'slice', val: Type }
   | { tag: 'struct', val: Struct }
@@ -48,6 +49,20 @@ function createRes(genericType: Type): Type {
       generics: [genericType]
     }
   }
+}
+
+function getVariantIndex(type: Type, fieldName: string): number {
+  if (type.tag != 'enum') {
+    return -1;
+  }
+
+  for (let i = 0; i < type.val.fields.length; i++) {
+    if (type.val.fields[i].name == fieldName) {
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 function toStr(t: Type | null): string {
@@ -90,7 +105,7 @@ function toStr(t: Type | null): string {
         s += ', ';
       }
     }
-    return `${s}(${toStr(t.val.returnType)})`;
+    return `${toStr(t.val.returnType)}(${s})`;
   }
 
   return JSON.stringify(t);
@@ -319,7 +334,7 @@ function resolveType(
   sourceLine: number
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void') {
+    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'str') {
       return { tag: 'primative', val: def.val };
     }
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
@@ -434,7 +449,8 @@ function resolveStruct(
 
 interface FnResult {
   fnType: Type,
-  uniqueName: string
+  unitName: string
+  fnName: string
 }
 
 function resolveFn(
@@ -513,8 +529,6 @@ function resolveFn(
         continue;
       }
       let concreteReturnType: Type = applyGenericMap(defReturnType, genericMap);
-      let uniqueName = getFnUniqueId(unit.fullName, fnDef);
-
       let fnType: Type = {
         tag: 'fn',
         val: {
@@ -523,7 +537,8 @@ function resolveFn(
           linkedParams 
         }
       };
-      possibleFns.push({ uniqueName, fnType});
+
+      possibleFns.push({ unitName: unit.fullName, fnName: fnDef.name, fnType });
     }
   }
 
@@ -548,17 +563,6 @@ function resolveFn(
 
 // java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
 function getFnUniqueId(fnUnitName: string, fn: Parse.Fn): string {
-  let str = JSON.stringify({fnUnitName, fn: fn.name, t: fn.t });
-
-  let hash = 0;
-  for (let i = 0, len = str.length; i < len; i++) {
-    let chr = str.charCodeAt(i);
-    hash = (hash << 5) - hash + chr;
-  }
-
-  if (hash < 0) {
-    hash = hash * -1;
-  }
-  return '$' + hash;
+  return JSON.stringify({fnUnitName, fn: fn.name});
 }
 

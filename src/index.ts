@@ -1,7 +1,7 @@
 import arg from 'arg';
 import { parseDir } from './parse';
 import { analyze } from './analyze/analyze';
-import { codegen } from './codegen';
+import { codegen } from './codegen/codegen';
 import fs from 'node:fs';
 
 export {
@@ -28,7 +28,7 @@ function compile() {
 
   if (parsedProgram == null) {
     console.log('invalid program :/ could not parse')
-    return;
+    process.exit(-1);
   } 
 
   let analyzedProgram = analyze(parsedProgram);
@@ -38,7 +38,7 @@ function compile() {
       console.log(JSON.stringify(parsedProgram, null, 2));
     }
     console.log('invalid program');
-    return;
+    process.exit(-1);
   } 
 
   let output = codegen(analyzedProgram);
