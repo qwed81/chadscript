@@ -52,7 +52,7 @@ type Inst = { tag: 'if', val: CondBody, sourceLine: number }
   | { tag: 'elif', val: CondBody, sourceLine: number }
   | { tag: 'while', val: CondBody, sourceLine: number }
   | { tag: 'for_in', val: ForIn, sourceLine: number }
-  | { tag: 'fn_call', val: FnCall, sourceLine: number }
+  | { tag: 'expr', val: Expr, sourceLine: number }
   | { tag: 'else', val: Inst[], sourceLine: number }
   | { tag: 'return', val: Expr | null, sourceLine: number }
   | { tag: 'break', sourceLine: number }
@@ -615,15 +615,13 @@ function analyzeInst(
     return { tag: 'return', val: expr, sourceLine: instMeta.sourceLine };
   } 
 
-  if (inst.tag == 'fn_call') {
-    let exprTuple = ensureFnCallValid(inst.val, Type.VOID, table, scope, instMeta.sourceLine);
+  if (inst.tag == 'expr') {
+    let exprTuple = ensureExprValid(inst.val, Type.VOID, table, scope, instMeta.sourceLine);
     if (exprTuple == null) {
       return null;
     }
 
-    if (exprTuple.tag == 'fn_call') {
-      return { tag: 'fn_call', val: exprTuple.val, sourceLine: instMeta.sourceLine }
-    }
+    return { tag: 'expr', val: exprTuple, sourceLine: instMeta.sourceLine }
   } 
 
   if (inst.tag == 'declare') {

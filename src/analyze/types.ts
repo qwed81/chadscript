@@ -5,7 +5,7 @@ export {
   CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
-  getUnitReferences, resolveType, resolveFn, getFnUniqueId,
+  getUnitReferences, resolveType, resolveFn,
   isRes, createRes, getVariantIndex
 }
 
@@ -30,7 +30,7 @@ interface Struct {
   id: string
 }
 
-type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'str' }
+type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'str' | 'byte' }
   | { tag: 'generic', val: string }
   | { tag: 'slice', val: Type }
   | { tag: 'struct', val: Struct }
@@ -338,7 +338,7 @@ function resolveType(
   sourceLine: number
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'str') {
+    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'str' || def.val == 'byte') {
       return { tag: 'primative', val: def.val };
     }
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
@@ -549,10 +549,5 @@ function resolveFn(
 
   logError(calleeLine, `could not find ${name}`);
   return null;
-}
-
-// java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
-function getFnUniqueId(fnUnitName: string, fn: Parse.Fn): string {
-  return JSON.stringify({fnUnitName, fn: fn.name});
 }
 

@@ -168,14 +168,9 @@ function resolveInst(
     }
     return inst;
   }
-  else if (inst.tag == 'fn_call') {
-    let fn = resolveLeftExpr(inst.val.fn, genericMap, ctx);
-    let exprs: Expr[] = [];
-    for (let param of inst.val.exprs) {
-      exprs.push(resolveExpr(param, genericMap, ctx));
-    }
-
-    return { tag: 'fn_call', val: { fn, exprs }, sourceLine: inst.sourceLine };
+  else if (inst.tag == 'expr') {
+    let val = resolveExpr(inst.val, genericMap, ctx);
+    return { tag: 'expr', val, sourceLine: inst.sourceLine };
   }
   else if (inst.tag == 'break' || inst.tag == 'continue') {
     return inst;
@@ -233,7 +228,15 @@ function resolveExpr(
   }
   else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert') {
     let inner = resolveExpr(expr.val, genericMap, ctx);
-    return { tag: 'not', val: inner, type: expr.type };
+    if (expr.tag == 'not') {
+      return { tag: expr.tag, val: inner, type: expr.type };
+    }
+    else if (expr.tag == 'try') {
+      return { tag: expr.tag, val: inner, type: expr.type };
+    }
+    else if (expr.tag == 'assert') {
+      return { tag: expr.tag, val: inner, type: expr.type };
+    }
   }
   else if (expr.tag == 'fn_call') {
     let fn = resolveLeftExpr(expr.val.fn, genericMap, ctx);
@@ -346,7 +349,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
     return;
   }
 
-  let typeKey = JSON.stringify(type);
+  let typeKey = JSON.stringify(type, null, 2);
   if (inStack.has(typeKey)) {
     logError(-1, 'recusive struct' + typeKey);
     return;
@@ -354,6 +357,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
   if (alreadyGenned.has(typeKey)) {
     return;
   }
+  alreadyGenned.add(typeKey);
 
   inStack.add(typeKey);
   for (let field of type.val.fields) {

@@ -11,7 +11,7 @@ export {
 function codegen(prog: Program): string {
   let newProg: CProgram = replaceGenerics(prog);
 
-  let programStr = '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>';
+  let programStr = '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <sys/mman.h>\n#include <fcntl.h>\n#include <sys/stat.h>\n#include <unistd.h>';
 
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
@@ -73,6 +73,12 @@ function codegen(prog: Program): string {
   return programStr;
 }
 
+function replaceAll(s: string, find: string, replace: string) {
+  while (s.includes(find)) {
+    s = s.replace(find, replace);
+  }
+  return s;
+}
 
 function codeGenType(type: Type): string {
   if (type.tag == 'primative') {
@@ -82,17 +88,19 @@ function codeGenType(type: Type): string {
     else if (type.val == 'num') {
       return 'double';
     }
-
+    else if (type.val == 'byte') {
+      return 'unsigned char';
+    }
     return type.val;
   }
   let typeStr = '_' + toStr(type);
-  typeStr = typeStr.replace('(', '_op');
-  typeStr = typeStr.replace(')', '_cp');
-  typeStr = typeStr.replace('[', '_os');
-  typeStr = typeStr.replace(']', '_cs');
-  typeStr = typeStr.replace(',', '_c')
-  typeStr = typeStr.replace('.', '_');
-  typeStr = typeStr.replace('*', '_slice')
+  typeStr = replaceAll(typeStr, '(', '_op');
+  typeStr = replaceAll(typeStr, ')', '_cp');
+  typeStr = replaceAll(typeStr, '[', '_os');
+  typeStr = replaceAll(typeStr, ']', '_cs');
+  typeStr = replaceAll(typeStr, ',', '_c');
+  typeStr = replaceAll(typeStr, '.', '_');
+  typeStr = replaceAll(typeStr, '*', '_slice');
 
   return 'struct ' + typeStr.replace(' ', '');
 }
@@ -146,36 +154,36 @@ function codeGenInst(inst: Inst, indent: number): string {
   if (inst.tag == 'declare') {
     let type = inst.val.type;
     if (inst.val.expr != null) {
-      let rightExpr = codeGenExpr(inst.val.expr, addInst);
+      let rightExpr = codeGenExpr(inst.val.expr, addInst, inst.sourceLine);
       instText = `${codeGenType(type)} _${inst.val.name} = ${rightExpr};`;
     } else {
       instText = `${codeGenType(type)} _${inst.val.name};`;
     }
   } 
   else if (inst.tag == 'assign') {
-    let rightExpr = codeGenExpr(inst.val.expr, addInst);
-    instText = `${codeGenLeftExpr(inst.val.to, addInst)} ${inst.val.op} ${rightExpr};`;
+    let rightExpr = codeGenExpr(inst.val.expr, addInst, inst.sourceLine);
+    instText = `${codeGenLeftExpr(inst.val.to, addInst, inst.sourceLine)} ${inst.val.op} ${rightExpr};`;
   } 
   else if (inst.tag == 'if') {
-    instText = `if (${ codeGenExpr(inst.val.cond, addInst) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
+    instText = `if (${ codeGenExpr(inst.val.cond, addInst, inst.sourceLine) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
   } 
   else if (inst.tag == 'elif') {
-    instText = `else if (${ codeGenExpr(inst.val.cond, addInst) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
+    instText = `else if (${ codeGenExpr(inst.val.cond, addInst, inst.sourceLine) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
   }
   else if (inst.tag == 'else') {
     instText = `else ${ codeGenBody(inst.val, indent + 1, false) }`;
   }
   else if (inst.tag == 'while') {
-    instText = `while (${ codeGenExpr(inst.val.cond, addInst) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
+    instText = `while (${ codeGenExpr(inst.val.cond, addInst, inst.sourceLine) }) ${ codeGenBody(inst.val.body, indent + 1, false) }`;
   }
-  else if (inst.tag == 'fn_call') {
-    instText = codeGenFnCall(inst.val, addInst) + ';';
+  else if (inst.tag == 'expr') {
+    instText = codeGenExpr(inst.val, addInst, inst.sourceLine) + ';';
   }
   else if (inst.tag == 'return') {
     if (inst.val == null) {
       instText == 'return;'
     } else {
-      instText = `return ${ codeGenExpr(inst.val, addInst) };`;
+      instText = `return ${ codeGenExpr(inst.val, addInst, inst.sourceLine) };`;
     }
   }
   else if (inst.tag == 'include') {
@@ -186,7 +194,7 @@ function codeGenInst(inst: Inst, indent: number): string {
     return instText;
   }
   else if (inst.tag == 'match') {
-    instText = `switch (${codeGenExpr(inst.val.var, addInst)}._tag) {\n`;
+    instText = `switch (${codeGenExpr(inst.val.var, addInst, inst.sourceLine)}._tag) {\n`;
     for (let branch of inst.val.branches) {
       instText += `${tabs}case \'${branch.enumVariant}\':${ codeGenBody(branch.body, indent + 1, true) }\n`;
     }
@@ -200,7 +208,7 @@ function codeGenInst(inst: Inst, indent: number): string {
     let inner = `for (int _${name} = __range_${name}._start; _${name} < __range_${name}._end; _${name}++)`;
     inner += '' + codeGenBody(inst.val.body, indent + 2, false);
     instText = `{\n${tabs} ${codeGenType(RANGE)} __range_${name} = `
-    instText += `${codeGenExpr(inst.val.iter, addInst)};\n${tabs}  ${inner}\n${tabs}}`;
+    instText += `${codeGenExpr(inst.val.iter, addInst, inst.sourceLine)};\n${tabs}  ${inner}\n${tabs}}`;
   }
 
   let outputText = '';
@@ -211,42 +219,42 @@ function codeGenInst(inst: Inst, indent: number): string {
   return outputText;
 }
 
-function codeGenExpr(expr: Expr, addInst: string[]): string {
+function codeGenExpr(expr: Expr, addInst: string[], exprIndex: number): string {
   if (expr.tag == 'bin') {
     if (expr.val.op == ':') {
       return 'undefined';
     }
-    return `${ codeGenExpr(expr.val.left, addInst) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst) }`;
+    return `${ codeGenExpr(expr.val.left, addInst, exprIndex + 1) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst, exprIndex + 2) }`;
   } else if (expr.tag == 'not') {
-    return '!' + codeGenExpr(expr.val, addInst);
+    return '!' + codeGenExpr(expr.val, addInst, exprIndex + 1);
   } else if (expr.tag == 'try') {
-    let innerType;
-    if (expr.type.tag == 'enum') {
-      innerType = expr.type.val.fields[0].type
+    let optType;
+    if (expr.val.type.tag == 'enum') {
+      optType = expr.val.type
     } else {
       return 'undefined';
     }
 
-    let varName = '__temp_' + addInst.length;
-    addInst.push(`${innerType} ${varName} = ${codeGenExpr(expr.val, addInst)};`);
+    let varName = '__temp_' + exprIndex;
+    addInst.push(`${ codeGenType(optType) } ${varName} = ${codeGenExpr(expr.val, addInst, exprIndex + 1)};`);
     addInst.push(`if (${varName}.tag == 1) return ${varName};`);
     return `${varName}._ok`;
   } else if (expr.tag == 'assert') {
-    let innerType;
-    if (expr.type.tag == 'enum') {
-      innerType = expr.type.val.fields[0].type
+    let optType;
+    if (expr.val.type.tag == 'enum') {
+      optType = expr.val.type
     } else {
       return 'undefined';
     }
 
-    let varName = '__temp_' + addInst.length;
-    addInst.push(`${innerType} ${varName} = ${codeGenExpr(expr.val, addInst)};`);
-    addInst.push(`if (${varName}.tag == 1) { printf("panic"); exit(-1); }`);
+    let varName = '__temp_' + exprIndex;
+    addInst.push(`${ codeGenType(optType) } ${varName} = ${codeGenExpr(expr.val, addInst, exprIndex + 1)};`);
+    addInst.push(`if (${varName}.tag == 1) { printf("panic: %s", ${varName}._err); exit(-1); }`);
     return `${varName}._ok`;
   } else if (expr.tag == 'fn_call') {
-    return codeGenFnCall(expr.val, addInst);
+    return codeGenFnCall(expr.val, addInst, exprIndex + 1);
   } else if (expr.tag == 'struct_init') {
-    return codeGenStructInit(expr, addInst)
+    return codeGenStructInit(expr, addInst, exprIndex + 1)
   } else if (expr.tag == 'str_const') {
     return `"${expr.val}"`;
   } else if (expr.tag == 'char_const') {
@@ -258,21 +266,21 @@ function codeGenExpr(expr: Expr, addInst: string[]): string {
   } else if (expr.tag == 'num_const') {
     return `${expr.val}`;
   } else if (expr.tag == 'left_expr') {
-    return codeGenLeftExpr(expr.val, addInst);
+    return codeGenLeftExpr(expr.val, addInst, exprIndex + 1);
   } else if (expr.tag == 'is') {
-    return `${codeGenLeftExpr(expr.left, addInst)}.tag == ${expr.variantIndex}`;
+    return `${codeGenLeftExpr(expr.left, addInst, exprIndex + 1)}.tag == ${expr.variantIndex}`;
   } else if (expr.tag == 'enum_init') {
     if (expr.fieldExpr != null) {
-      return `{ .tag = ${expr.variantIndex}, ._${expr.fieldName} = ${ codeGenExpr(expr.fieldExpr, addInst) } }`;
+      return `(${ codeGenType(expr.type) }){ .tag = ${expr.variantIndex}, ._${expr.fieldName} = ${ codeGenExpr(expr.fieldExpr, addInst, exprIndex + 1) } }`;
     } else {
-      return `{ .tag = '${expr.variantIndex}' }`;
+      return `(${ codeGenType(expr.type) }){ .tag = '${expr.variantIndex}' }`;
     }
   }
 
   return 'undefined';
 }
 
-function codeGenStructInit(expr: Expr, addInst: string[]): string {
+function codeGenStructInit(expr: Expr, addInst: string[], exprIndex: number): string {
   if (expr.tag != 'struct_init') {
     return 'undefined';
   }
@@ -281,7 +289,7 @@ function codeGenStructInit(expr: Expr, addInst: string[]): string {
   let output = `(${codeGenType(expr.type)}){ `;
   for (let i = 0; i < structInit.length; i++) {
     let initField = structInit[i];
-    output += `._${initField.name} = ${codeGenExpr(initField.expr, addInst)}`;
+    output += `._${initField.name} = ${codeGenExpr(initField.expr, addInst, exprIndex + 1 + i)}`;
     if (i != structInit.length - 1) {
       output += ', ';
     }
@@ -290,10 +298,10 @@ function codeGenStructInit(expr: Expr, addInst: string[]): string {
   return output + ' }'
 }
 
-function codeGenFnCall(fnCall: FnCall, addInst: string[]): string {
-  let output = codeGenLeftExpr(fnCall.fn, addInst) + '(';
+function codeGenFnCall(fnCall: FnCall, addInst: string[], exprIndex: number): string {
+  let output = codeGenLeftExpr(fnCall.fn, addInst, exprIndex + 1) + '(';
   for (let i = 0; i < fnCall.exprs.length; i++) {
-    output += codeGenExpr(fnCall.exprs[i], addInst);
+    output += codeGenExpr(fnCall.exprs[i], addInst, exprIndex);
     if (i != fnCall.exprs.length - 1) {
       output += ', ';
     }
@@ -302,27 +310,27 @@ function codeGenFnCall(fnCall: FnCall, addInst: string[]): string {
   return output + ')'
 }
 
-function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[]): string {
+function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], exprIndex: number): string {
   if (leftExpr.tag == 'dot') {
-    return `${codeGenExpr(leftExpr.val.left, addInst)}._${leftExpr.val.varName}`;
+    return `${codeGenExpr(leftExpr.val.left, addInst, exprIndex + 1)}._${leftExpr.val.varName}`;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
     let indexType = leftExpr.val.var.type.tag;
     if (indexType == 'slice') {
-      return `${codeGenLeftExpr(leftExpr.val.var, addInst)}._ptr[${codeGenExpr(leftExpr.val.index, addInst)}]`;
+      return `${codeGenLeftExpr(leftExpr.val.var, addInst, exprIndex + 1)}._ptr[${codeGenExpr(leftExpr.val.index, addInst, exprIndex + 2)}]`;
     } else if (indexType == 'primative' && leftExpr.val.var.type.val == 'str') {
-      return `${codeGenLeftExpr(leftExpr.val.var, addInst)}[${codeGenExpr(leftExpr.val.index, addInst)}]`;
+      return `${codeGenLeftExpr(leftExpr.val.var, addInst, exprIndex + 1)}[${codeGenExpr(leftExpr.val.index, addInst, exprIndex + 2)}]`;
     }
 
-    return `${codeGenLeftExpr(leftExpr.val.var, addInst)}._arr._ptr[${codeGenExpr(leftExpr.val.index, addInst)}]`;
+    return `${codeGenLeftExpr(leftExpr.val.var, addInst, exprIndex + 1)}._arr._ptr[${codeGenExpr(leftExpr.val.index, addInst, exprIndex + 2)}]`;
   } 
   else if (leftExpr.tag == 'arr_offset_slice') {
-    let start = codeGenExpr(leftExpr.val.start, addInst);
-    let end = codeGenExpr(leftExpr.val.end, addInst);
-    return `{ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst)} + start, ._len = ${end} - ${start}, ._refCount = 2 }`;
+    let start = codeGenExpr(leftExpr.val.start, addInst, exprIndex + 1);
+    let end = codeGenExpr(leftExpr.val.end, addInst, exprIndex + 1);
+    return `{ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst, exprIndex + 1)} + start, ._len = ${end} - ${start}, ._refCount = 2 }`;
   }
   else if (leftExpr.tag == 'prime') {
-    return `${ codeGenExpr(leftExpr.val, addInst) }._${leftExpr.variant}`;
+    return `${ codeGenExpr(leftExpr.val, addInst, exprIndex + 1) }._${leftExpr.variant}`;
   }
   else if (leftExpr.tag == 'fn') {
     return getFnUniqueId(leftExpr.unitName, leftExpr.fnName, leftExpr.type);
@@ -334,6 +342,6 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[]): string {
 
 // java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {
-  return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '');
+  return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_slice');
 }
 

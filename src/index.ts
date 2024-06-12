@@ -32,11 +32,11 @@ function compile() {
   } 
 
   let analyzedProgram = analyze(parsedProgram);
+  if (args['-v']) {
+    console.log('parse tree: ')
+    console.log(JSON.stringify(parsedProgram, null, 2));
+  }
   if (analyzedProgram == null) {
-    if (args['-v']) {
-      console.log('parse tree: ')
-      console.log(JSON.stringify(parsedProgram, null, 2));
-    }
     console.log('invalid program');
     process.exit(-1);
   } 

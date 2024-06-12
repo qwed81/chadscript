@@ -157,7 +157,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'return_void' }
   | { tag: 'return', val: Expr }
   | { tag: 'match', val: Match }
-  | { tag: 'fn_call', val: FnCall }
+  | { tag: 'expr', val: Expr }
   | { tag: 'declare', val: Declare }
   | { tag: 'assign', val: Assign }
   | { tag: 'macro', val: Macro }
@@ -800,9 +800,9 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return parseMatch(line, body)
   }
 
-  let fnCall = tryParseFnCall(tokens);
-  if (fnCall != null) {
-    return { tag: 'fn_call', val: fnCall };
+  let expression = tryParseExpr(tokens);
+  if (expression != null) {
+    return { tag: 'expr', val: expression };
   }
 
   if (!tokens.includes('=') && !tokens.includes('+=') && !tokens.includes('-=')) {
@@ -951,6 +951,18 @@ function tryParseExpr(tokens: string[]): Expr | null {
     return null;
   }
 
+  if (tokens[0] == 'try' || tokens[0] == 'assert') {
+    let parsed = tryParseExpr(tokens.slice(1));
+    if (parsed == null) {
+      return null;
+    }
+    if (tokens[tokens.length - 1] == '?') {
+      return { tag: 'try', val: parsed };
+    } else {
+      return { tag: 'assert', val: parsed };
+    }
+  }
+
   // parse all bin expr
   for (let i = 0; i < 6; i++) {
     for (let props of MAPPING) {
@@ -967,19 +979,6 @@ function tryParseExpr(tokens: string[]): Expr | null {
 
   if (tokens.length >= 2 && tokens[0] == '(' && tokens[tokens.length - 1] == ')') {
     return tryParseExpr(tokens.slice(1, -1));
-  }
-
-  // parse assert and try
-  if (tokens[tokens.length - 1] == '?' || tokens[tokens.length - 1] == '!') {
-    let parsed = tryParseExpr(tokens.slice(0, -1));
-    if (parsed == null) {
-      return null;
-    }
-    if (tokens[tokens.length - 1] == '?') {
-      return { tag: 'try', val: parsed };
-    } else {
-      return { tag: 'assert', val: parsed };
-    }
   }
 
   // parse not
