@@ -22,7 +22,7 @@ interface CondBody {
 
 interface Declare {
   name: string
-  expr: Expr
+  expr: Expr | null
   type: Type.Type
 }
 
@@ -637,21 +637,21 @@ function analyzeInst(
       return null;
     }
 
-    if (Type.isGeneric(declareType)) {
-      logError(instMeta.sourceLine, 'declare values must be concrete');
-      return null;
-    }
-
     setValToScope(scope, inst.val.name, declareType, true);
 
-    let expr = ensureExprValid(inst.val.expr, declareType, table, scope, instMeta.sourceLine);
-    if (expr == null) {
-      return null;
+    let expr = null;
+    if (inst.val.expr) {
+      expr = ensureExprValid(inst.val.expr, declareType, table, scope, instMeta.sourceLine);
+      if (expr == null) {
+        return null;
+      }
     }
 
     let leftExpr: LeftExpr = { tag: 'var', val: inst.val.name, type: declareType };
     Enum.remove(scope.variantScope, leftExpr);
-    Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
+    if (expr != null) {
+      Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
+    }
 
     return {
       tag: 'declare',

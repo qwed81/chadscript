@@ -298,6 +298,10 @@ function canIndex(a: Type): Type | null {
     return a.val;
   }
 
+  if (a.tag == 'primative' && a.val == 'str') {
+    return CHAR;
+  }
+
   if (a.tag == 'struct' && a.val.id == 'std.List') {
     return a.val.generics[0];
   }
@@ -440,7 +444,7 @@ function resolveStruct(
   }
 
   if (possibleStructs.length == 0) {
-    logError(sourceLine, 'struct could not be found');
+    logError(sourceLine, `struct '${name}' could not be found`);
     return null;
   }
 
@@ -460,20 +464,6 @@ function resolveFn(
   refTable: RefTable,
   calleeLine: number
 ): FnResult | null {
-
-  // ensure that the types presented can actually disambiguate the fucntion
-  if (returnType != null && isGeneric(returnType)) {
-    logError(calleeLine, 'compiler error generic return type is generic');
-    return null;
-  }
-  if (paramTypes != null) {
-    for (let paramType of paramTypes) {
-      if (paramType != null && isGeneric(paramType)) {
-        logError(calleeLine, 'compiler error parameter is generic');
-        return null;
-      }
-    }
-  }
 
   let possibleFns: FnResult[] = [];
   let wrongTypeFns: Parse.Fn[] = [];

@@ -1,6 +1,7 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError } from '../index';
-import { Type, typeApplicableStateful, applyGenericMap } from '../analyze/types';
+import { Type, typeApplicableStateful, applyGenericMap, RANGE } from '../analyze/types';
+import { codeGenType } from './codegen';
 
 export {
   replaceGenerics, CProgram, CFn
@@ -8,12 +9,15 @@ export {
 
 interface CProgram {
   fns: CFn[]
-  enums: CStruct[]
-  structs: CStruct[]
-  slices: Type[]
+  orderedStructs: CStruct[]
+  entry: CFn
 }
 
-interface CStruct {
+type CStruct = { tag: 'slice', val: Type }
+  | { tag: 'struct', val: CStructImpl }
+  | { tag: 'enum', val: CStructImpl }
+
+interface CStructImpl {
   name: Type
   fieldTypes: Type[],
   fieldNames: string[]
@@ -21,8 +25,8 @@ interface CStruct {
 
 interface CFn {
   name: string
-  returnType: Type
-  paramTypes: Type[]
+  unitName: string
+  type: Type
   paramNames: string[]
   body: Inst[]
 }
@@ -36,12 +40,16 @@ interface NeedResolveFn {
 interface ResolveContext {
   fnResolveQueue: NeedResolveFn[],
   queuedFns: Set<string>
-  typeMap: Map<string, Type>,
+  typeResolveQueue: Type[]
+  queuedTypes: Set<string>,
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
   let key = JSON.stringify(type);
-  ctx.typeMap.set(key, type);
+  if (!ctx.queuedTypes.has(key)) {
+    ctx.typeResolveQueue.push(type);
+    ctx.queuedTypes.add(key);
+  }
 }
 
 function replaceGenerics(prog: Program): CProgram {
@@ -58,12 +66,15 @@ function replaceGenerics(prog: Program): CProgram {
   let ctx: ResolveContext = {
     fnResolveQueue: [],
     queuedFns: new Set(),
-    typeMap: new Map()
+    typeResolveQueue: [],
+    queuedTypes: new Set()
   };
 
-  let cFn = resolveFn(entries[0], new Map(), ctx);
+  let entry = resolveFn(entries[0], new Map(), ctx);
   let resolved: CFn[] = [];
-  resolved.push(cFn);
+  resolved.push(entry);
+
+  queueType(ctx, RANGE);
 
   while (ctx.fnResolveQueue.length > 0) {
     let dep = ctx.fnResolveQueue.pop()!;
@@ -91,42 +102,8 @@ function replaceGenerics(prog: Program): CProgram {
     resolved.push(cFn);
   }
 
-  let cStructs: CStruct[] = [];
-  let cEnums: CStruct[] = [];
-  for (let struct of ctx.typeMap.values()) {
-    if (struct.tag != 'struct' && struct.tag != 'enum') {
-      continue;
-    }
-
-    let fieldTypes: Type[] = [];
-    let fieldNames: string[] = [];
-    for (let field of struct.val.fields) {
-      fieldTypes.push(field.type);
-      fieldNames.push(field.name);
-    }
-
-    let cStruct = {
-      name: struct,
-      fieldTypes,
-      fieldNames
-    };
-
-    if (struct.tag == 'struct') {
-      cStructs.push(cStruct);
-    }
-    else if (struct.tag == 'enum') {
-      cEnums.push(cStruct);
-    }
-  }
-
-  let slices: Type[] = [];
-  for (let struct of ctx.typeMap.values()) {
-    if (struct.tag == 'slice') {
-      slices.push(struct);
-    }
-  }
-
-  return { structs: cStructs, enums: cEnums, fns: resolved, slices };
+  let orderedStructs = orderStructs(ctx.typeResolveQueue);
+  return { orderedStructs, fns: resolved, entry };
 }
 
 function resolveFn(
@@ -134,20 +111,21 @@ function resolveFn(
   genericMap: Map<string, Type>,
   ctx: ResolveContext
 ): CFn {
-  if (genericFn.type.tag != 'fn') {
+  let newType = applyGenericMap(genericFn.type, genericMap);
+  if (newType.tag != 'fn') {
     return undefined!;
   }
 
-  for (let type of genericFn.type.val.paramTypes) {
+  for (let type of newType.val.paramTypes) {
     queueType(ctx, type);
   }
-  queueType(ctx, genericFn.type.val.returnType)
+  queueType(ctx, newType.val.returnType)
 
   return {
     name: genericFn.name,
     paramNames: genericFn.paramNames,
-    paramTypes: genericFn.type.val.paramTypes,
-    returnType: genericFn.type.val.returnType,
+    unitName: genericFn.unitName,
+    type: newType,
     body: resolveInstBody(genericFn.body, genericMap, ctx),
   }
 }
@@ -204,9 +182,12 @@ function resolveInst(
   }
   else if (inst.tag == 'declare') {
     let type = applyGenericMap(inst.val.type, genericMap);
-    let expr = resolveExpr(inst.val.expr, genericMap, ctx);
     queueType(ctx, type);
-    return { tag: 'declare', val: { type, name: inst.val.name, expr }, sourceLine: inst.sourceLine }
+    if (inst.val.expr != null) {
+      let expr = resolveExpr(inst.val.expr, genericMap, ctx);
+      return { tag: 'declare', val: { type, name: inst.val.name, expr }, sourceLine: inst.sourceLine }
+    } 
+      return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, sourceLine: inst.sourceLine }
   }
   else if (inst.tag == 'assign') {
     let expr = resolveExpr(inst.val.expr, genericMap, ctx);
@@ -214,7 +195,21 @@ function resolveInst(
     return { tag: 'assign', val: { op: inst.val.op, to, expr }, sourceLine: inst.sourceLine };
   }
   else if (inst.tag == 'include') {
-    return inst;
+    let outLines: string[] = [];
+    for (let line of inst.val) {
+      let outLine: string = '';
+      for (let i = 0; i < line.length; i++) {
+        if (i < line.length - 1 && line[i] == '$' && line[i + 1] >= 'A' && line[i + 1] <= 'Z') {
+          let type = applyGenericMap({ tag: 'generic', val: line[i + 1] }, genericMap);
+          outLine += codeGenType(type);
+          i = i + 1;
+        } else {
+          outLine += line[i];
+        }
+      }
+      outLines.push(outLine);
+    }
+    return { tag: 'include', val: outLines, sourceLine: inst.sourceLine };
   }
 
   logError(-1, 'compiler erorr resolveInst unreachable');
@@ -323,15 +318,75 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
-    let key = JSON.stringify(leftExpr);
+    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType };
+    let key = JSON.stringify(newLeftExpr);
     if (!ctx.queuedFns.has(key)) {
       ctx.fnResolveQueue.push({ fnName: leftExpr.fnName, unitName: leftExpr.unitName, fnType: depType });
       ctx.queuedFns.add(key);
     }
-    return { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType };
+    return newLeftExpr;
   }
 
   logError(-1, 'compiler erorr resolveLeftExpr unreachable');
   return undefined!;
+}
+
+function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<string>, output: CStruct[]) {
+  if (type.tag == 'slice') {
+    let typeKey = JSON.stringify(type);
+    if (alreadyGenned.has(typeKey)) {
+      return;
+    }
+    alreadyGenned.add(typeKey);
+    output.push({ tag: 'slice', val: type });
+    return;
+  }
+
+  if (type.tag != 'struct' && type.tag != 'enum') {
+    return;
+  }
+
+  let typeKey = JSON.stringify(type);
+  if (inStack.has(typeKey)) {
+    logError(-1, 'recusive struct' + typeKey);
+    return;
+  }
+  if (alreadyGenned.has(typeKey)) {
+    return;
+  }
+
+  inStack.add(typeKey);
+  for (let field of type.val.fields) {
+    typeTreeRecur(field.type, inStack, alreadyGenned, output);
+  }
+  inStack.delete(typeKey);
+
+  let fieldTypes: Type[] = [];
+  let fieldNames: string[] = [];
+  for (let field of type.val.fields) {
+    fieldTypes.push(field.type);
+    fieldNames.push(field.name);
+  }
+
+  let cStruct = { 
+    tag: type.tag,
+    val: {
+      name: type,
+      fieldTypes,
+      fieldNames
+    }
+  };
+
+  output.push(cStruct);
+}
+
+function orderStructs(typeResolveQueue: Type[]): CStruct[] {
+  let alreadyGenned: Set<string> = new Set();
+  let output: CStruct[] = [];
+  for (let type of typeResolveQueue) {
+    typeTreeRecur(type, new Set(), alreadyGenned, output);
+  }
+
+  return output;
 }
 

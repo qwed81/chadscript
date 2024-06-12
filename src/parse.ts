@@ -117,7 +117,7 @@ interface ForIn {
 interface Declare {
   t: Type,
   name: string,
-  expr: Expr
+  expr: Expr | null
 }
 
 interface Assign {
@@ -805,6 +805,15 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'fn_call', val: fnCall };
   }
 
+  if (!tokens.includes('=') && !tokens.includes('+=') && !tokens.includes('-=')) {
+    let type = tryParseType(tokens.slice(0, -1));
+    let name = tokens[tokens.length - 1];
+    if (tokens.length > 1 && type != null) {
+      return { tag: 'declare', val: { t: type, name, expr: null } };
+    }
+    return null;
+  }
+
   let assignOp: string = '='; 
   if (tokens.includes('+=')) {
     assignOp = '+=';
@@ -1148,7 +1157,7 @@ function getLines(data: string): SourceLine[] {
       }
 
       // process chars as a single token
-      if (line[i] == '\'' && line[i - 1] == ' ') {
+      if (line[i] == '\'' && (line[i - 1] == ' ' || line[i - 1] == '(' || line[i - 1] == '[')) {
         let possibleSlice = line.slice(tokenStart, i);
         if (possibleSlice.length != 0) {
           tokens.push(possibleSlice);
