@@ -12,7 +12,7 @@ interface CProgram {
   entry: CFn
 }
 
-type CStruct = { tag: 'slice', val: Type }
+type CStruct = { tag: 'arr', val: Type }
   | { tag: 'struct', val: CStructImpl }
   | { tag: 'enum', val: CStructImpl }
 
@@ -329,7 +329,7 @@ function resolveLeftExpr(
 }
 
 function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<string>, output: CStruct[]) {
-  if (type.tag == 'slice') {
+  if (type.tag == 'arr') {
     typeTreeRecur(type.val, inStack, alreadyGenned, output);
 
     let typeKey = JSON.stringify(type);
@@ -337,7 +337,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
       return;
     }
     alreadyGenned.add(typeKey);
-    output.push({ tag: 'slice', val: type });
+    output.push({ tag: 'arr', val: type });
     return;
   }
 

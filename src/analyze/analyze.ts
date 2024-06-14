@@ -203,7 +203,7 @@ function verifyDataType(
     return true;
   } 
 
-  if (type.tag == 'slice') {
+  if (type.tag == 'arr') {
     return verifyDataType(type.val, sourceLine, table, validGenerics);
   }
 
@@ -269,7 +269,7 @@ function addGenerics(paramType: Parse.Type, generics: Set<string>) {
     generics.add(paramType.val);
   }
 
-  if (paramType.tag == 'slice' || paramType.tag == 'link') {
+  if (paramType.tag == 'arr' || paramType.tag == 'link') {
     addGenerics(paramType.val, generics);
   }
 
@@ -867,7 +867,7 @@ function ensureLeftExprValid(
       return newExpr;
     }
 
-    logError(sourceLine, 'slice must be indexed with range or int');
+    logError(sourceLine, 'arr must be indexed with range or int');
     return null;
   } 
   else if (leftExpr.tag == 'var') {

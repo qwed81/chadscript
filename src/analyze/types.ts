@@ -9,7 +9,7 @@ export {
   isRes, createRes, getVariantIndex
 }
 
-const CHAR_SLICE: Type = { tag: 'slice', val: { tag: 'primative', val: 'char' } }
+const CHAR_SLICE: Type = { tag: 'arr', val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
 const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
@@ -33,7 +33,7 @@ interface Struct {
 
 type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'str' | 'byte' }
   | { tag: 'generic', val: string }
-  | { tag: 'slice', val: Type }
+  | { tag: 'arr', val: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
@@ -75,7 +75,7 @@ function toStr(t: Type | null): string {
     return t.val;
   }
 
-  if (t.tag == 'slice') {
+  if (t.tag == 'arr') {
     return `${toStr(t.val)}*`;
   }
   
@@ -126,7 +126,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
   }
 
   // convert List[T] to T*
-  if (sub.tag == 'struct' && sub.val.id == 'std.List' && supa.tag == 'slice') {
+  if (sub.tag == 'struct' && sub.val.id == 'std.List' && supa.tag == 'arr') {
     return typeApplicableStateful(sub.val.generics[0], supa.val, genericMap);
   }
 
@@ -138,7 +138,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
     return sub.val == supa.val;
   }
 
-  if (sub.tag == 'slice' && supa.tag == 'slice') {
+  if (sub.tag == 'arr' && supa.tag == 'arr') {
     return typeApplicableStateful(sub.val, supa.val, genericMap);
   }
 
@@ -206,8 +206,8 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     }
     return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
   }
-  else if (input.tag == 'slice') {
-    return { tag: 'slice', val: applyGenericMap(input.val, map) };
+  else if (input.tag == 'arr') {
+    return { tag: 'arr', val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'fn') {
     let newReturnType: Type = applyGenericMap(input.val.returnType, map);
@@ -242,7 +242,7 @@ function isGeneric(a: Type): boolean {
       }
     }
   }
-  else if (a.tag == 'slice') {
+  else if (a.tag == 'arr') {
     return isGeneric(a.val);
   }
   else if (a.tag == 'fn') {
@@ -320,7 +320,7 @@ function canEq(a: Type, b: Type): Type | null {
 }
 
 function canIndex(a: Type): Type | null {
-  if (a.tag == 'slice') {
+  if (a.tag == 'arr') {
     return a.val;
   }
 
@@ -375,12 +375,12 @@ function resolveType(
   else if (def.tag == 'link') {
     return resolveType(def.val, refTable, sourceLine);
   }
-  else if (def.tag == 'slice') {
+  else if (def.tag == 'arr') {
     let slice = resolveType(def.val, refTable, sourceLine);
     if (slice == null) {
       return null;
     }
-    return { tag: 'slice', val: slice };
+    return { tag: 'arr', val: slice };
   }
   else if (def.tag == 'generic') {
     let resolvedGenerics: Type[] = [];

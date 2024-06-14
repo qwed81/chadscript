@@ -68,7 +68,7 @@ interface FnType {
 }
 
 type Type = { tag: 'basic', val: string }
-  | { tag: 'slice', val: Type }
+  | { tag: 'arr', val: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
@@ -501,7 +501,7 @@ function tryParseType(tokens: string[]): Type | null {
       return { tag: 'generic', val: { name: 'Opt', generics: [innerType] } };
     } 
     else if (lastToken == '*') {
-      return { tag: 'slice', val: innerType };
+      return { tag: 'arr', val: innerType };
     }
     else {
       return { tag: 'link', val: innerType };

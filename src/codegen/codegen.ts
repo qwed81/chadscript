@@ -31,7 +31,7 @@ function codegen(prog: Program): string {
     if (struct.tag == 'struct' || struct.tag == 'enum') {
       programStr += '\n' + codeGenType(struct.val.name) + ';';
     }
-    else if (struct.tag == 'slice') {
+    else if (struct.tag == 'arr') {
       programStr += '\n' + codeGenType(struct.val) + ';';
     }
   }
@@ -58,8 +58,8 @@ function codegen(prog: Program): string {
       }
       programStr += '\n  };\n};'
     }
-    else if (struct.tag == 'slice') {
-      if (struct.val.tag != 'slice') {
+    else if (struct.tag == 'arr') {
+      if (struct.val.tag != 'arr') {
         continue;
       }
 
@@ -114,7 +114,7 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, ']', '_cs');
   typeStr = replaceAll(typeStr, ',', '_c');
   typeStr = replaceAll(typeStr, '.', '_');
-  typeStr = replaceAll(typeStr, '*', '_slice');
+  typeStr = replaceAll(typeStr, '*', '_arr');
 
   return 'struct ' + typeStr.replace(' ', '');
 }
@@ -340,7 +340,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], ctx: FnContext):
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
     let indexType = leftExpr.val.var.type.tag;
-    if (indexType == 'slice') {
+    if (indexType == 'arr') {
       return `${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}._ptr[${codeGenExpr(leftExpr.val.index, addInst, ctx)}]`;
     } else if (indexType == 'primative' && leftExpr.val.var.type.val == 'str') {
       return `${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}[${codeGenExpr(leftExpr.val.index, addInst, ctx)}]`;
@@ -366,6 +366,6 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], ctx: FnContext):
 
 // java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {
-  return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_slice');
+  return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_arr');
 }
 
