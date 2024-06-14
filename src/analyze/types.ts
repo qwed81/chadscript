@@ -2,7 +2,7 @@ import { logError } from '../index'
 import * as Parse from '../parse';
 
 export {
-  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR,
+  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
   getUnitReferences, resolveType, resolveFn, 
@@ -17,6 +17,7 @@ const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
+const BYTE: Type = { tag: 'primative', val: 'byte' };
 const STR: Type = { tag: 'primative', val: 'str' };
 
 interface Field {
@@ -258,12 +259,37 @@ function isGeneric(a: Type): boolean {
 }
 
 function canMath(a: Type, b: Type): Type | null {
-  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
-    return INT;
+  if (typeApplicable(a, INT)) {
+    if (typeApplicable(b, INT)) {
+      return INT;
+    } else if (typeApplicable(b, NUM)) {
+      return NUM;
+    } else if (typeApplicable(b, BYTE)) {
+      return BYTE;
+    } else if (typeApplicable(b, CHAR)) {
+      return CHAR;
+    }
   }
-  if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
-    return NUM;
+  else if (typeApplicable(a, BYTE)) {
+    if (typeApplicable(b, INT)) {
+      return INT;
+    } else if (typeApplicable(b, BYTE)) {
+      return BYTE;
+    }
   }
+  else if (typeApplicable(a, CHAR)) {
+    if (typeApplicable(b, INT)) {
+      return INT;
+    } else if (typeApplicable(b, CHAR)) {
+      return CHAR;
+    }
+  }
+  else if (typeApplicable(a, NUM)) {
+    if (typeApplicable(b, INT) || typeApplicable(b, NUM)) {
+      return NUM;
+    }
+  }
+
   return null;
 }
 
