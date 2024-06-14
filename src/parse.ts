@@ -69,6 +69,7 @@ interface FnType {
 
 type Type = { tag: 'basic', val: string }
   | { tag: 'arr', val: Type }
+  | { tag: 'const_arr', val: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
@@ -489,7 +490,7 @@ function tryParseType(tokens: string[]): Type | null {
   }
 
   let lastToken = tokens[tokens.length - 1]; 
-  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*') {
+  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*' || lastToken == '^') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
@@ -502,6 +503,9 @@ function tryParseType(tokens: string[]): Type | null {
     } 
     else if (lastToken == '*') {
       return { tag: 'arr', val: innerType };
+    }
+    else if (lastToken == '^') {
+      return { tag: 'const_arr', val: innerType }
     }
     else {
       return { tag: 'link', val: innerType };
@@ -1122,7 +1126,7 @@ function splitTokens(line: string): string[] {
   // split tokens based on special characters
   let tokens: string[] = [];
   let tokenStart = 0;
-  const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':'];
+  const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^'];
   for (let i = 0; i < line.length; i++) {
     // process string as a single token
     if (line[i] == '"') {

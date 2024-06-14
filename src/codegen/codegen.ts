@@ -1,6 +1,6 @@
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
-import { toStr, Type, RANGE } from '../analyze/types';
+import { toStr, Type, RANGE, STR } from '../analyze/types';
 import { replaceGenerics, CProgram, CFn } from './concreteFns';
 
 export {
@@ -96,10 +96,7 @@ function replaceAll(s: string, find: string, replace: string) {
 
 function codeGenType(type: Type): string {
   if (type.tag == 'primative') {
-    if (type.val == 'str') {
-      return 'const char*';
-    }
-    else if (type.val == 'num') {
+    if (type.val == 'num') {
       return 'double';
     }
     else if (type.val == 'byte') {
@@ -115,6 +112,7 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, ',', '_c');
   typeStr = replaceAll(typeStr, '.', '_');
   typeStr = replaceAll(typeStr, '*', '_arr');
+  typeStr = replaceAll(typeStr, '^', '_arr');
 
   return 'struct ' + typeStr.replace(' ', '');
 }
@@ -280,7 +278,7 @@ function codeGenExpr(expr: Expr, addInst: string[], ctx: FnContext): string {
   } else if (expr.tag == 'struct_init') {
     return codeGenStructInit(expr, addInst, ctx)
   } else if (expr.tag == 'str_const') {
-    return `"${expr.val}"`;
+    return `(${ codeGenType(STR) }){ ._refCount = 2, ._ptr = "${expr.val}", ._len = strlen("${expr.val}") }`;
   } else if (expr.tag == 'char_const') {
     return `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {

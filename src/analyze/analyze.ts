@@ -203,7 +203,7 @@ function verifyDataType(
     return true;
   } 
 
-  if (type.tag == 'arr') {
+  if (type.tag == 'arr' || type.tag == 'const_arr') {
     return verifyDataType(type.val, sourceLine, table, validGenerics);
   }
 
@@ -236,6 +236,7 @@ function verifyDataType(
     }
     return true;
   }
+
   return false;
 }
 
@@ -321,6 +322,11 @@ function analyzeFn(
     let paramType = fn.t.paramTypes[i];
     let mut = false;
     if (paramType.tag == 'link') {
+      if (paramType.val.tag == 'arr' || paramType.val.tag == 'const_arr') {
+        logError(fn.sourceLine, 'ref not valid for arrays');
+        return null;
+      }
+
       paramType = paramType.val;
       mut = true;
     }
@@ -732,6 +738,10 @@ function analyzeInst(
 }
 
 function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
+  if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
+    return false;
+  }
+
   if (leftExpr.tag == 'dot') {
     if (leftExpr.val.left.tag != 'left_expr') {
       return false;

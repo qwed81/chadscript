@@ -332,7 +332,10 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
   if (type.tag == 'arr') {
     typeTreeRecur(type.val, inStack, alreadyGenned, output);
 
-    let typeKey = JSON.stringify(type);
+    // prevent redefinition of slices based on mutability
+    let t2 = Object.assign({}, type);
+    t2.constant = false;
+    let typeKey = JSON.stringify(t2);
     if (alreadyGenned.has(typeKey)) {
       return;
     }

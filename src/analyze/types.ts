@@ -2,14 +2,14 @@ import { logError } from '../index'
 import * as Parse from '../parse';
 
 export {
-  CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
   getUnitReferences, resolveType, resolveFn, 
   isRes, createRes, getVariantIndex
 }
 
-const CHAR_SLICE: Type = { tag: 'arr', val: { tag: 'primative', val: 'char' } }
+const STR: Type = { tag: 'arr', constant: true, val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
 const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
@@ -18,7 +18,6 @@ const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
 const BYTE: Type = { tag: 'primative', val: 'byte' };
-const STR: Type = { tag: 'primative', val: 'str' };
 
 interface Field {
   name: string
@@ -31,9 +30,9 @@ interface Struct {
   id: string
 }
 
-type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'str' | 'byte' }
+type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte' }
   | { tag: 'generic', val: string }
-  | { tag: 'arr', val: Type }
+  | { tag: 'arr', constant: boolean, val: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
@@ -45,7 +44,7 @@ function createRes(genericType: Type): Type {
       id: 'std.Res',
       fields: [
         { name: 'ok', type: genericType },
-        { name: 'err', type: CHAR_SLICE }
+        { name: 'err', type: STR }
       ],
       generics: [genericType]
     }
@@ -76,7 +75,11 @@ function toStr(t: Type | null): string {
   }
 
   if (t.tag == 'arr') {
-    return `${toStr(t.val)}*`;
+    if (t.constant) {
+      return `${toStr(t.val)}^`;
+    } else {
+      return `${toStr(t.val)}*`;
+    }
   }
   
   if (t.tag == 'generic') {
@@ -118,16 +121,11 @@ function isRes(type: Type): boolean {
 
 function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, Type>): boolean {
   if (supa.tag == 'generic') {
-    if (genericMap.has(supa.val)) {
+    if (sub.tag != 'generic' && genericMap.has(supa.val)) {
       return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap);
     }
     genericMap.set(supa.val, sub);
     return true;
-  }
-
-  // convert List[T] to T*
-  if (sub.tag == 'struct' && sub.val.id == 'std.List' && supa.tag == 'arr') {
-    return typeApplicableStateful(sub.val.generics[0], supa.val, genericMap);
   }
 
   if (sub.tag != supa.tag) {
@@ -139,6 +137,9 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
   }
 
   if (sub.tag == 'arr' && supa.tag == 'arr') {
+    if (sub.constant && !supa.constant) {
+      return false;
+    }
     return typeApplicableStateful(sub.val, supa.val, genericMap);
   }
 
@@ -207,7 +208,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
   }
   else if (input.tag == 'arr') {
-    return { tag: 'arr', val: applyGenericMap(input.val, map) };
+    return { tag: 'arr', constant: input.constant, val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'fn') {
     let newReturnType: Type = applyGenericMap(input.val.returnType, map);
@@ -313,19 +314,12 @@ function canEq(a: Type, b: Type): Type | null {
   if (typeApplicable(a, BOOL) && typeApplicable(b, BOOL)) {
     return BOOL;
   }
-  if (typeApplicable(a, CHAR_SLICE) && typeApplicable(b, CHAR_SLICE)) {
-    return BOOL;
-  }
   return null;
 }
 
 function canIndex(a: Type): Type | null {
   if (a.tag == 'arr') {
     return a.val;
-  }
-
-  if (a.tag == 'primative' && a.val == 'str') {
-    return CHAR;
   }
 
   if (a.tag == 'struct' && a.val.id == 'std.List') {
@@ -364,7 +358,7 @@ function resolveType(
   sourceLine: number
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'str' || def.val == 'byte') {
+    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte') {
       return { tag: 'primative', val: def.val };
     }
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
@@ -380,7 +374,14 @@ function resolveType(
     if (slice == null) {
       return null;
     }
-    return { tag: 'arr', val: slice };
+    return { tag: 'arr', constant: false, val: slice };
+  }
+  else if (def.tag == 'const_arr') {
+    let slice = resolveType(def.val, refTable, sourceLine);
+    if (slice == null) {
+      return null;
+    }
+    return { tag: 'arr', constant: true, val: slice };
   }
   else if (def.tag == 'generic') {
     let resolvedGenerics: Type[] = [];
@@ -540,9 +541,23 @@ function resolveFn(
         logError(calleeLine, 'compiler error return type invalid (checked before)');
         return null;
       }
-      if (returnType != null && !typeApplicableStateful(returnType, defReturnType, genericMap)) {
-        wrongTypeFns.push(fnDef);
-        continue;
+      if (returnType != null) {
+        let wrongType = false;
+        // TODO fix quick hack if it becomes a problem
+        if (defReturnType.tag == 'arr' && returnType.tag == 'arr') {
+          if (!typeApplicableStateful(returnType.val, defReturnType.val, genericMap) 
+            && !returnType.constant && defReturnType.constant) {
+
+            wrongType = true;
+          }
+        } else if (!typeApplicableStateful(returnType, defReturnType, genericMap)) { // backwards to allow generic returns
+          wrongType = true;
+        }
+
+        if (wrongType) {
+          wrongTypeFns.push(fnDef);
+          continue;
+        }
       }
       let concreteReturnType: Type = applyGenericMap(defReturnType, genericMap);
       let fnType: Type = {
