@@ -48,6 +48,11 @@ interface ForIn {
   body: Inst[]
 }
 
+interface Include {
+  lines: string[],
+  types: Type.Type[]
+}
+
 type Inst = { tag: 'if', val: CondBody, sourceLine: number }
   | { tag: 'elif', val: CondBody, sourceLine: number }
   | { tag: 'while', val: CondBody, sourceLine: number }
@@ -60,7 +65,7 @@ type Inst = { tag: 'if', val: CondBody, sourceLine: number }
   | { tag: 'match', val: Match, sourceLine: number }
   | { tag: 'declare', val: Declare, sourceLine: number }
   | { tag: 'assign', val: Assign, sourceLine: number }
-  | { tag: 'include', val: string[], sourceLine: number }
+  | { tag: 'include', val: Include, sourceLine: number }
 
 interface FnCall {
   fn: LeftExpr
@@ -83,6 +88,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'not', val: Expr, type: Type.Type }
   | { tag: 'try', val: Expr, type: Type.Type }
   | { tag: 'assert', val: Expr, type: Type.Type }
+  | { tag: 'assert_bool', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
@@ -520,7 +526,16 @@ function analyzeInst(
   let inst = instMeta.inst;
 
   if (inst.tag == 'include') {
-    return { tag: 'include', val: inst.val, sourceLine: instMeta.sourceLine };
+    let newTypes: Type.Type[] = [];
+    for (let type of inst.val.types) {
+      let newType: Type.Type | null = Type.resolveType(type, table, instMeta.sourceLine);
+      if (newType == null) {
+        return null;
+      }
+      newTypes.push(newType);
+    }
+
+    return { tag: 'include', val: { lines: inst.val.lines, types: newTypes }, sourceLine: instMeta.sourceLine };
   }
 
   if (inst.tag == 'for_in') {
@@ -616,12 +631,26 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'expr') {
-    let exprTuple = ensureExprValid(inst.val, Type.VOID, table, scope, instMeta.sourceLine);
-    if (exprTuple == null) {
-      return null;
+    if (inst.val.tag == 'assert' && inst.val.val.tag != 'fn_call') {
+      let exprTuple = ensureExprValid(inst.val.val, Type.BOOL, table, scope, instMeta.sourceLine);
+      if (exprTuple == null) {
+        return null;
+      }
+
+      Enum.applyCond(scope.variantScope, exprTuple, []);
+      let expr: Expr = { tag: 'assert_bool', val: exprTuple, type: Type.BOOL };
+      return { tag: 'expr', val: expr, sourceLine: instMeta.sourceLine }
+    }
+    else if (inst.val.tag == 'assert' || inst.val.tag == 'try' || inst.val.tag == 'fn_call') {
+      let exprTuple = ensureExprValid(inst.val, Type.VOID, table, scope, instMeta.sourceLine);
+      if (exprTuple == null) {
+        return null;
+      }
+      return { tag: 'expr', val: exprTuple, sourceLine: instMeta.sourceLine }
     }
 
-    return { tag: 'expr', val: exprTuple, sourceLine: instMeta.sourceLine }
+    logError(instMeta.sourceLine, 'expression can not be used as statement');
+    return null;
   } 
 
   if (inst.tag == 'declare') {

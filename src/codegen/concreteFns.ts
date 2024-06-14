@@ -1,7 +1,6 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError } from '../index';
 import { Type, typeApplicableStateful, applyGenericMap, RANGE } from '../analyze/types';
-import { codeGenType } from './codegen';
 
 export {
   replaceGenerics, CProgram, CFn
@@ -25,6 +24,7 @@ interface CStructImpl {
 
 interface CFn {
   name: string
+  genericMap: Map<string, Type>
   unitName: string
   type: Type
   paramNames: string[]
@@ -124,6 +124,7 @@ function resolveFn(
   return {
     name: genericFn.name,
     paramNames: genericFn.paramNames,
+    genericMap,
     unitName: genericFn.unitName,
     type: newType,
     body: resolveInstBody(genericFn.body, genericMap, ctx),
@@ -190,21 +191,11 @@ function resolveInst(
     return { tag: 'assign', val: { op: inst.val.op, to, expr }, sourceLine: inst.sourceLine };
   }
   else if (inst.tag == 'include') {
-    let outLines: string[] = [];
-    for (let line of inst.val) {
-      let outLine: string = '';
-      for (let i = 0; i < line.length; i++) {
-        if (i < line.length - 1 && line[i] == '$' && line[i + 1] >= 'A' && line[i + 1] <= 'Z') {
-          let type = applyGenericMap({ tag: 'generic', val: line[i + 1] }, genericMap);
-          outLine += codeGenType(type);
-          i = i + 1;
-        } else {
-          outLine += line[i];
-        }
-      }
-      outLines.push(outLine);
+    let newTypes: Type[] = [];
+    for (let type of inst.val.types) {
+      newTypes.push(applyGenericMap(type, genericMap));
     }
-    return { tag: 'include', val: outLines, sourceLine: inst.sourceLine };
+    return { tag: 'include', val: { lines: inst.val.lines, types: newTypes }, sourceLine: inst.sourceLine };
   }
 
   logError(-1, 'compiler erorr resolveInst unreachable');
@@ -226,7 +217,7 @@ function resolveExpr(
     let left = resolveLeftExpr(expr.left, genericMap, ctx);
     return { tag: 'is', left, variant: expr.variant, variantIndex: expr.variantIndex, type: expr.type };
   }
-  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert') {
+  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert' || expr.tag == 'assert_bool') {
     let inner = resolveExpr(expr.val, genericMap, ctx);
     if (expr.tag == 'not') {
       return { tag: expr.tag, val: inner, type: expr.type };
@@ -235,6 +226,9 @@ function resolveExpr(
       return { tag: expr.tag, val: inner, type: expr.type };
     }
     else if (expr.tag == 'assert') {
+      return { tag: expr.tag, val: inner, type: expr.type };
+    }
+    else if (expr.tag == 'assert_bool') {
       return { tag: expr.tag, val: inner, type: expr.type };
     }
   }
@@ -336,6 +330,8 @@ function resolveLeftExpr(
 
 function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<string>, output: CStruct[]) {
   if (type.tag == 'slice') {
+    typeTreeRecur(type.val, inStack, alreadyGenned, output);
+
     let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
       return;

@@ -147,6 +147,11 @@ interface Macro {
   body: string 
 }
 
+interface Include {
+  lines: string[]
+  types: Type[]
+}
+
 type Inst = { tag: 'if', val: CondBody }
   | { tag: 'elif', val: CondBody }
   | { tag: 'else', val: InstMeta[] }
@@ -161,7 +166,7 @@ type Inst = { tag: 'if', val: CondBody }
   | { tag: 'declare', val: Declare }
   | { tag: 'assign', val: Assign }
   | { tag: 'macro', val: Macro }
-  | { tag: 'include', val: string[] }
+  | { tag: 'include', val: Include }
 
 interface DotOp {
   left: Expr,
@@ -719,11 +724,17 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'macro', val: { name, body: output } };
   }
   else if(keyword == 'include') {
-    let val: string[] = [];
+    let lines: string[] = [];
+    let types: Type[] = [];
     for (let line of body) {
-      val.push(line.tokens[0]);
+      let result: string | null = parseIncludeLine(line.tokens[0], line.sourceLine, types);
+      if (result == null) {
+        logError(line.sourceLine, 'could not parse line');
+        return null;
+      }
+      lines.push(result);
     }
-    return { tag: 'include', val }
+    return { tag: 'include', val: { lines, types } };
   }
   else if (keyword == 'elif') {
     let cond = tryParseExpr(tokens.slice(1));
@@ -1067,6 +1078,123 @@ function tryParseBinOp(tokens: string[], op: string): Expr | null {
   return { tag: 'bin', val: { op, left, right }};
 }
 
+function parseIncludeLine(line: string, sourceLine: number, types: Type[]): string | null {
+  let outLine: string = '';
+  while (true) {
+    let nextIndex = line.indexOf('$(');
+    if (nextIndex == -1) {
+      break;
+    }
+
+    outLine += line.substring(0, nextIndex);
+
+    let nextSegment = nextIndex + 2;
+    let openCount = 1;
+    while (openCount > 0 && nextSegment < line.length) {
+      if (line[nextSegment] == '(') {
+        openCount += 1;
+      }
+      else if (line[nextSegment] == ')') {
+        openCount -= 1;
+      }
+      nextSegment += 1;
+    }
+
+    let typeStr = line.slice(nextIndex + 2, nextSegment - 1);
+    let typeTokens = splitTokens(typeStr);
+    let type = tryParseType(typeTokens);
+    if (type == null) {
+      logError(sourceLine, 'could not parse type');
+      return null;
+    }
+    types.push(type);
+
+    outLine += '$';
+    line = line.substring(nextSegment);
+  }
+
+  outLine += line;
+
+  return outLine;
+}
+
+function splitTokens(line: string): string[] {
+  // split tokens based on special characters
+  let tokens: string[] = [];
+  let tokenStart = 0;
+  const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':'];
+  for (let i = 0; i < line.length; i++) {
+    // process string as a single token
+    if (line[i] == '"') {
+      let possibleSlice = line.slice(tokenStart, i);
+      if (possibleSlice.length != 0) {
+        tokens.push(possibleSlice);
+      }
+      tokenStart = i + 1;
+      i += 1;
+      while (i < line.length && line[i] != '"') {
+        i += 1;
+      }
+      tokens.push('"' + line.slice(tokenStart, i) + '"');
+      tokenStart = i + 1;
+    }
+
+    // process chars as a single token
+    if (line[i] == '\'' && (line[i - 1] == ' ' || line[i - 1] == '(' || line[i - 1] == '[')) {
+      let possibleSlice = line.slice(tokenStart, i);
+      if (possibleSlice.length != 0) {
+        tokens.push(possibleSlice);
+      }
+      tokenStart = i + 1;
+      i += 1;
+      while (i < line.length && line[i] != '\'') {
+        i += 1;
+      }
+      tokens.push('\'' + line.slice(tokenStart, i) + '\'');
+      tokenStart = i + 1;
+    } else if (line[i] == '\''){
+      let possibleSlice = line.slice(tokenStart, i);
+      if (possibleSlice.length != 0) {
+        tokens.push(possibleSlice);
+      }
+      tokens.push('\'');
+      tokenStart = i + 1;
+    }
+
+    if (splitTokens.includes(line[i])) {
+      let possibleSlice = line.slice(tokenStart, i);
+      // protects against double space and spaces trailing other splits
+      if (possibleSlice.length != 0) {
+        tokens.push(possibleSlice);
+      }
+      tokenStart = i + 1;
+
+      if (line[i] != ' ') {
+        tokens.push(line[i]);
+      }
+    }
+  }
+
+  // push the last token if it does not follow a split token
+  if (!splitTokens.includes(line[line.length - 1]) && line[line.length - 1] != '"' && line[line.length - 1] != '\'') {
+    tokens.push(line.slice(tokenStart, line.length));
+  }
+
+  // combine the tokens that should not have been split
+  for (let i = tokens.length - 1; i >= 1; i--) {
+    if (tokens[i - 1] == '!' && tokens[i] == '=') {
+      tokens.splice(i, 1);
+      tokens[i - 1] = '!=';
+    }
+    else if (tokens[i - 1] == '&' && tokens[i] == '&') {
+      tokens.splice(i, 1);
+      tokens[i - 1] = '&&';
+    }
+  }
+
+  return tokens;
+}
+
 function getLines(data: string): SourceLine[] {
   let lines = data.split('\n');
   let sourceLines: SourceLine[] = [];
@@ -1135,79 +1263,7 @@ function getLines(data: string): SourceLine[] {
       continue;
     }
 
-    // split tokens based on special characters
-    let tokens: string[] = [];
-    let tokenStart = 0;
-    const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':'];
-    for (let i = 0; i < line.length; i++) {
-      // process string as a single token
-      if (line[i] == '"') {
-        let possibleSlice = line.slice(tokenStart, i);
-        if (possibleSlice.length != 0) {
-          tokens.push(possibleSlice);
-        }
-        tokenStart = i + 1;
-        i += 1;
-        while (i < line.length && line[i] != '"') {
-          i += 1;
-        }
-        tokens.push('"' + line.slice(tokenStart, i) + '"');
-        tokenStart = i + 1;
-      }
-
-      // process chars as a single token
-      if (line[i] == '\'' && (line[i - 1] == ' ' || line[i - 1] == '(' || line[i - 1] == '[')) {
-        let possibleSlice = line.slice(tokenStart, i);
-        if (possibleSlice.length != 0) {
-          tokens.push(possibleSlice);
-        }
-        tokenStart = i + 1;
-        i += 1;
-        while (i < line.length && line[i] != '\'') {
-          i += 1;
-        }
-        tokens.push('\'' + line.slice(tokenStart, i) + '\'');
-        tokenStart = i + 1;
-      } else if (line[i] == '\''){
-        let possibleSlice = line.slice(tokenStart, i);
-        if (possibleSlice.length != 0) {
-          tokens.push(possibleSlice);
-        }
-        tokens.push('\'');
-        tokenStart = i + 1;
-      }
-
-      if (splitTokens.includes(line[i])) {
-        let possibleSlice = line.slice(tokenStart, i);
-        // protects against double space and spaces trailing other splits
-        if (possibleSlice.length != 0) {
-          tokens.push(possibleSlice);
-        }
-        tokenStart = i + 1;
-
-        if (line[i] != ' ') {
-          tokens.push(line[i]);
-        }
-      }
-    }
-
-    // push the last token if it does not follow a split token
-    if (!splitTokens.includes(line[line.length - 1]) && line[line.length - 1] != '"' && line[line.length - 1] != '\'') {
-      tokens.push(line.slice(tokenStart, line.length));
-    }
-
-    // combine the tokens that should not have been split
-    for (let i = tokens.length - 1; i >= 1; i--) {
-      if (tokens[i - 1] == '!' && tokens[i] == '=') {
-        tokens.splice(i, 1);
-        tokens[i - 1] = '!=';
-      }
-      else if (tokens[i - 1] == '&' && tokens[i] == '&') {
-        tokens.splice(i, 1);
-        tokens[i - 1] = '&&';
-      }
-    }
-
+    let tokens: string[] = splitTokens(line);
     sourceLines.push({ sourceLine: lineNumber, indent, tokens });
   }
 

@@ -5,7 +5,7 @@ export {
   CHAR_SLICE, INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
-  getUnitReferences, resolveType, resolveFn,
+  getUnitReferences, resolveType, resolveFn, 
   isRes, createRes, getVariantIndex
 }
 
