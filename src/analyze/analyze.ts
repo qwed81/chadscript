@@ -93,6 +93,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
   | { tag: 'str_const', val: string, type: Type.Type }
+  | { tag: 'fmt_str', val: Expr[], type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
   | { tag: 'bool_const', val: boolean, type: Type.Type }
@@ -1337,6 +1338,46 @@ function ensureExprValid(
   if (expr.tag == 'str_const') {
     computedExpr = { tag: 'str_const', val: expr.val, type: Type.STR };
   } 
+
+  if (expr.tag == 'fmt_str') {
+    let newExprs: Expr[] = [];
+    for (let fmtExpr of expr.val) {
+      let e: Expr | null = ensureExprValid(fmtExpr, null, table, scope, sourceLine);
+
+      if (e == null) {
+        return null;
+      }
+
+      // if the type is not a string, look of the implementation of str and use
+      // that instead
+      if (!Type.typeApplicable(e.type, Type.STR)) {
+        let fn = Type.resolveFn('str', Type.STR, [e.type], table, sourceLine);
+        if (fn == null) {
+          logError(sourceLine, `hint: no implementation of str(${Type.toStr(e.type)})`)
+          return null;
+        }
+
+        let fnLiteral: LeftExpr = {
+          tag: 'fn',
+          unitName: fn.unitName,
+          fnName: fn.fnName,
+          type: fn.fnType
+        };
+
+        let fnCall: Expr = {
+          tag: 'fn_call',
+          val: {
+            fn: fnLiteral,
+            exprs: [e]
+          },
+          type: Type.STR
+        };
+        e = fnCall;
+      }
+      newExprs.push(e);
+    }
+    computedExpr = { tag: 'fmt_str', val: newExprs, type: Type.MUT_STR }
+  }
 
   if (expr.tag == 'char_const') {
     computedExpr = { tag: 'char_const', val: expr.val, type: Type.CHAR };

@@ -202,6 +202,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'fn_call', val: FnCall }
   | { tag: 'struct_init', val: StructInitField[] }
   | { tag: 'str_const', val: string }
+  | { tag: 'fmt_str', val: Expr[] }
   | { tag: 'char_const', val: string }
   | { tag: 'int_const', val: number }
   | { tag: 'bool_const', val: boolean }
@@ -1038,7 +1039,17 @@ function tryParseExpr(tokens: string[]): Expr | null {
     }
 
     if (ident.length >= 2 && ident[0] == '"' && ident[ident.length - 1] == '"') {
-      return { tag: 'str_const', val: ident.slice(1, -1) };
+      let str = ident.slice(1, -1);
+      let parsed: Expr[] | null = tryParseFmtString(str);
+      if (parsed == null) {
+        return null;
+      }
+
+      if (parsed.length == 1) {
+        return parsed[0];
+      } else {
+        return { tag: 'fmt_str', val: parsed };
+      }
     }
 
     if (ident.length >= 2 && ident[0] == '\'' && ident[ident.length - 1] == '\'') {
@@ -1064,6 +1075,41 @@ function tryParseExpr(tokens: string[]): Expr | null {
   }
 
   return null;
+}
+
+function tryParseFmtString(lineExpr: string): Expr[] | null {
+  let exprs: Expr[] = [];
+  let constStrStart = 0;
+  for (let i = 0; i < lineExpr.length; i++) {
+    if (lineExpr[i] == '{') {
+      let constStr = lineExpr.slice(constStrStart, i);
+      exprs.push({ tag: 'str_const', val: constStr });
+
+      let exprStart = i + 1;
+      let openCount = 0;
+      while (i < lineExpr.length && (lineExpr[i] != '}' || openCount > 1)) {
+        if (lineExpr[i] == '{') {
+          openCount += 1;
+        } else if (lineExpr[i] == '}'){
+          openCount -= 1;
+        }
+        i += 1;
+      }
+
+      let exprStr = lineExpr.slice(exprStart, i);
+      let tokens = splitTokens(exprStr);
+      let expr = tryParseExpr(tokens);
+      if (expr == null) {
+        return null;
+      }
+      exprs.push(expr);
+      constStrStart = i + 1;
+    }
+  }
+
+  let constStr = lineExpr.slice(constStrStart);
+  exprs.push({ tag: 'str_const', val: constStr });
+  return exprs;
 }
 
 function tryParseBinOp(tokens: string[], op: string): Expr | null {
@@ -1136,7 +1182,15 @@ function splitTokens(line: string): string[] {
       }
       tokenStart = i + 1;
       i += 1;
-      while (i < line.length && line[i] != '"') {
+
+      let openCount = 0;
+      while (i < line.length && !(line[i] == '"' && openCount == 0)) {
+        if ((i == 0 || line[i - 1] != '\\') && line[i] == '{') {
+          openCount += 1;
+        }
+        else if ((i == 0 || line[i - 1] != '\\') && line[i] == '}') {
+          openCount -= 1;
+        }
         i += 1;
       }
       tokens.push('"' + line.slice(tokenStart, i) + '"');

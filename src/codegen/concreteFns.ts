@@ -1,6 +1,9 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError } from '../index';
-import { Type, typeApplicableStateful, applyGenericMap, RANGE } from '../analyze/types';
+import {
+  Type, typeApplicable, typeApplicableStateful, applyGenericMap, RANGE,
+  VOID, CHAR, createList
+} from '../analyze/types';
 
 export {
   replaceGenerics, CProgram, CFn
@@ -42,14 +45,6 @@ interface ResolveContext {
   queuedFns: Set<string>
   typeResolveQueue: Type[]
   queuedTypes: Set<string>,
-}
-
-function queueType(ctx: ResolveContext, type: Type) {
-  let key = JSON.stringify(type);
-  if (!ctx.queuedTypes.has(key)) {
-    ctx.typeResolveQueue.push(type);
-    ctx.queuedTypes.add(key);
-  }
 }
 
 function replaceGenerics(prog: Program): CProgram {
@@ -104,6 +99,14 @@ function replaceGenerics(prog: Program): CProgram {
 
   let orderedStructs = orderStructs(ctx.typeResolveQueue);
   return { orderedStructs, fns: resolved, entry };
+}
+
+function queueType(ctx: ResolveContext, type: Type) {
+  let key = JSON.stringify(type);
+  if (!ctx.queuedTypes.has(key)) {
+    ctx.typeResolveQueue.push(type);
+    ctx.queuedTypes.add(key);
+  }
 }
 
 function resolveFn(
@@ -262,6 +265,13 @@ function resolveExpr(
   else if (expr.tag == 'left_expr') {
     let val = resolveLeftExpr(expr.val, genericMap, ctx);
     return { tag: 'left_expr', val, type: val.type };
+  }
+  else if (expr.tag == 'fmt_str') {
+    let resolvedExprs: Expr[] = [];
+    for (let val of expr.val) {
+      resolvedExprs.push(resolveExpr(val, genericMap, ctx));
+    }
+    return { tag: 'fmt_str', val: resolvedExprs, type: expr.type };
   }
   else if (expr.tag == 'char_const'
     || expr.tag == 'int_const'

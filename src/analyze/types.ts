@@ -2,13 +2,14 @@ import { logError } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
-  getUnitReferences, resolveType, resolveFn, 
+  getUnitReferences, resolveType, resolveFn, createList,
   isRes, createRes, getVariantIndex
 }
 
+const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
 const STR: Type = { tag: 'arr', constant: true, val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
@@ -45,6 +46,20 @@ function createRes(genericType: Type): Type {
       fields: [
         { name: 'ok', type: genericType },
         { name: 'err', type: STR }
+      ],
+      generics: [genericType]
+    }
+  }
+}
+
+function createList(genericType: Type): Type {
+  return {
+    tag: 'struct',
+    val: {
+      id: 'std.List',
+      fields: [
+        { name: 'arr', type: { tag: 'arr', constant: false, val: genericType } },
+        { name: 'len', type: INT }
       ],
       generics: [genericType]
     }
@@ -266,9 +281,9 @@ function canMath(a: Type, b: Type): Type | null {
     } else if (typeApplicable(b, NUM)) {
       return NUM;
     } else if (typeApplicable(b, BYTE)) {
-      return BYTE;
+      return INT;
     } else if (typeApplicable(b, CHAR)) {
-      return CHAR;
+      return INT;
     }
   }
   else if (typeApplicable(a, BYTE)) {

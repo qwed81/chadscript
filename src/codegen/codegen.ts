@@ -279,6 +279,32 @@ function codeGenExpr(expr: Expr, addInst: string[], ctx: FnContext): string {
     return codeGenStructInit(expr, addInst, ctx)
   } else if (expr.tag == 'str_const') {
     return `(${ codeGenType(STR) }){ ._refCount = 2, ._ptr = "${expr.val}", ._len = strlen("${expr.val}") }`;
+  } else if (expr.tag == 'fmt_str') {
+    let exprs = expr.val;
+    let str = codeGenType(STR);
+
+    let total = `__temp_${ctx.uniqueExprIndex}`;
+    let totalLen = `__temp_${ctx.uniqueExprIndex + 1}`;
+    let output = `__temp_${ctx.uniqueExprIndex + 2}`;
+    let idx = `__temp_${ctx.uniqueExprIndex + 3}`;
+    ctx.uniqueExprIndex += 3;
+
+    addInst.push(`${str}* ${total} = malloc(sizeof(${str}) * ${exprs.length});`);
+    addInst.push(`size_t ${totalLen} = 0;`);
+
+    for (let i = 0; i < exprs.length; i++) {
+      addInst.push(`${total}[${i}] = ${ codeGenExpr(exprs[i], addInst, ctx) };`);
+      addInst.push(`${totalLen} += ${total}[${i}]._len;`);
+    }
+    
+    addInst.push(`char* ${output} = malloc(${totalLen});`);
+    addInst.push(`size_t ${idx} = 0;`)
+    for (let i = 0; i < exprs.length; i++) {
+      addInst.push(`memcpy(${output} + ${idx}, ${total}[${i}]._ptr, ${total}[${i}]._len);`)
+      addInst.push(`${idx} += ${total}[${i}]._len;`)
+    }
+
+    return `(${str}){ ._refCount = 1, ._ptr = ${output}, ._len = ${totalLen} }`;
   } else if (expr.tag == 'char_const') {
     return `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
