@@ -128,7 +128,7 @@ function codeGenFnHeader(fn: CFn): string {
 
   for (let i = 0; i < fn.paramNames.length; i++) {
     paramStr += codeGenType(fn.type.val.paramTypes[i]);
-    paramStr += ' _' + fn.paramNames[i];
+    paramStr += ' *_' + fn.paramNames[i];
     if (i != fn.paramNames.length - 1) {
       paramStr += ', ';
     }
@@ -349,7 +349,15 @@ function codeGenStructInit(expr: Expr, addInst: string[], ctx: FnContext): strin
 function codeGenFnCall(fnCall: FnCall, addInst: string[], ctx: FnContext): string {
   let output = codeGenLeftExpr(fnCall.fn, addInst, ctx) + '(';
   for (let i = 0; i < fnCall.exprs.length; i++) {
-    output += codeGenExpr(fnCall.exprs[i], addInst, ctx);
+    if (fnCall.exprs[i].tag == 'left_expr') {
+      output += `&(${ codeGenExpr(fnCall.exprs[i], addInst, ctx) })`;
+    }
+    else {
+      let temp = `__temp_${ctx.uniqueExprIndex}`;
+      ctx.uniqueExprIndex += 1;
+      addInst.push(`${codeGenType(fnCall.exprs[i].type)} ${temp} = ${ codeGenExpr(fnCall.exprs[i], addInst, ctx) };`);
+      output += `&${temp}`;
+    }
     if (i != fnCall.exprs.length - 1) {
       output += ', ';
     }
@@ -373,9 +381,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], ctx: FnContext):
     return `${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}._arr._ptr[${codeGenExpr(leftExpr.val.index, addInst, ctx)}]`;
   } 
   else if (leftExpr.tag == 'arr_offset_slice') {
-    let start = codeGenExpr(leftExpr.val.start, addInst, ctx);
-    let end = codeGenExpr(leftExpr.val.end, addInst, ctx);
-    return `{ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)} + start, ._len = ${end} - ${start}, ._refCount = 2 }`;
+    let range = `__temp_${ctx.uniqueExprIndex}`;
+    addInst.push(`${ codeGenType(leftExpr.val.range.type) } ${range} = ${codeGenExpr(leftExpr.val.range, addInst, ctx)};`);
+    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = 2 }`;
   }
   else if (leftExpr.tag == 'prime') {
     return `${ codeGenExpr(leftExpr.val, addInst, ctx) }._${leftExpr.variant}`;
@@ -384,7 +392,12 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], ctx: FnContext):
     return getFnUniqueId(leftExpr.unitName, leftExpr.fnName, leftExpr.type);
   }
   else {
-    return '_' + leftExpr.val;
+    if (leftExpr.isParam) {
+      return `(*_${leftExpr.val})`;
+    }
+    else {
+      return `_${leftExpr.val}`;
+    }
   }
 }
 

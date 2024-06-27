@@ -313,15 +313,14 @@ function resolveLeftExpr(
     return { tag: 'arr_offset_int', val: { var: v, index }, type };
   }
   else if (leftExpr.tag == 'arr_offset_slice') {
-    let start = resolveExpr(leftExpr.val.start, genericMap, ctx);
-    let end = resolveExpr(leftExpr.val.end, genericMap, ctx);
+    let range = resolveExpr(leftExpr.val.range, genericMap, ctx);
     let v = resolveLeftExpr(leftExpr.val.var, genericMap, ctx);
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'arr_offset_slice', val: { var: v, start, end }, type };
+    return { tag: 'arr_offset_slice', val: { var: v, range }, type };
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'var', val: leftExpr.val, type };
+    return { tag: 'var', val: leftExpr.val, isParam: leftExpr.isParam, type };
   }
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);

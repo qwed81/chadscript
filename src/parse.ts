@@ -491,7 +491,7 @@ function tryParseType(tokens: string[]): Type | null {
   }
 
   let lastToken = tokens[tokens.length - 1]; 
-  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*' || lastToken == '^') {
+  if (lastToken == '!' || lastToken == '&' || lastToken == '?') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
@@ -502,12 +502,6 @@ function tryParseType(tokens: string[]): Type | null {
     else if (lastToken == '?') {
       return { tag: 'generic', val: { name: 'Opt', generics: [innerType] } };
     } 
-    else if (lastToken == '*') {
-      return { tag: 'arr', val: innerType };
-    }
-    else if (lastToken == '^') {
-      return { tag: 'const_arr', val: innerType }
-    }
     else {
       return { tag: 'link', val: innerType };
     }
@@ -537,8 +531,28 @@ function tryParseType(tokens: string[]): Type | null {
       }
     }
     return { tag: 'fn', val: { returnType, paramTypes } };
-  } else if (tokens[tokens.length - 1] == ']') { // parse generic
+  } else if (tokens[tokens.length - 1] == ']') { // parse generic or array
     let inner = tokens.slice(2, -1);
+    if (inner.length == 0 || inner.length == 1 && inner[0] == '&') {
+      let end = tokens.length - 2;
+      if (inner[0] == '&') {
+        end = tokens.length - 3;
+      }
+
+      let restOfType: string[] = tokens.slice(0, end);
+      let t: Type | null = tryParseType(restOfType);
+      if (t == null) {
+        return null;
+      }
+
+      if (inner[0] == '&') {
+        return { tag: 'arr', val: t };
+      } 
+      else {
+        return { tag: 'const_arr', val: t };
+      }
+    }
+
     let splits = balancedSplit(inner, ',');
 
     let generics: Type[] = [];
@@ -553,6 +567,9 @@ function tryParseType(tokens: string[]): Type | null {
     return { tag: 'generic', val: { name: tokens[0], generics }};
   }
 
+  if (tokens.length != 1) {
+    return null;
+  }
   return { tag: 'basic', val: tokens[0] };
 }
 

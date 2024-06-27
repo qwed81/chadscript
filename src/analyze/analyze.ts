@@ -112,15 +112,14 @@ interface ArrOffsetInt {
 
 interface ArrOffsetSlice {
   var: LeftExpr
-  start: Expr
-  end: Expr
+  range: Expr
 }
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'prime', val: Expr, variant: string, variantIndex: number, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
-  | { tag: 'var', val: string, type: Type.Type }
+  | { tag: 'var', val: string, isParam: boolean, type: Type.Type }
   | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
 
 export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
@@ -331,6 +330,7 @@ function analyzeFn(
       paramType = paramType.val;
       mut = true;
     }
+
     linkedParams.push(mut);
 
     let resolvedParamType = Type.resolveType(fn.t.paramTypes[i], table, fn.sourceLine);
@@ -338,7 +338,7 @@ function analyzeFn(
       return null;
     }
 
-    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut);
+    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut, true);
     paramTypes.push(resolvedParamType);
   }
 
@@ -553,7 +553,7 @@ function analyzeInst(
 
     scope.inLoop = true;
     enterScope(scope);
-    setValToScope(scope, inst.val.varName, Type.INT, false);
+    setValToScope(scope, inst.val.varName, Type.INT, false, false);
     let body = analyzeInstBody(inst.val.body, table, scope);
     exitScope(scope);
     if (body == null) {
@@ -671,7 +671,7 @@ function analyzeInst(
       return null;
     }
 
-    setValToScope(scope, inst.val.name, declareType, true);
+    setValToScope(scope, inst.val.name, declareType, true, false);
 
     let expr = null;
     if (inst.val.expr) {
@@ -681,7 +681,7 @@ function analyzeInst(
       }
     }
 
-    let leftExpr: LeftExpr = { tag: 'var', val: inst.val.name, type: declareType };
+    let leftExpr: LeftExpr = { tag: 'var', isParam: false, val: inst.val.name, type: declareType };
     Enum.remove(scope.variantScope, leftExpr);
     if (expr != null) {
       Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
@@ -763,10 +763,10 @@ function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
     return v.mut;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
-    return canMutate(leftExpr.val.var, scope);
+    return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
   }
   else if (leftExpr.tag == 'arr_offset_slice')  {
-    return canMutate(leftExpr.val.var, scope);
+    return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
   }
   return false;
 }
@@ -842,36 +842,11 @@ function ensureLeftExprValid(
       };
       return newExpr;
     } else if (Type.typeApplicable(index.type, Type.RANGE)) {
-      let start: Expr = {
-        tag: 'left_expr',
-        val: {
-          tag: 'dot',
-          val: {
-            left: index,
-            varName: 'start'
-          },
-          type: Type.INT
-        },
-        type: Type.INT
-      };
-      let end: Expr = {
-        tag: 'left_expr',
-        val: {
-          tag: 'dot',
-          val: {
-            left: index,
-            varName: 'end'
-          },
-          type: Type.INT
-        },
-        type: Type.INT
-      };
       let newExpr: LeftExpr = { 
         tag: 'arr_offset_slice',
         val: {
           var: arr,
-          start,
-          end
+          range: index
         },
         type: arr.type  
       };
@@ -884,7 +859,7 @@ function ensureLeftExprValid(
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
     if (v != null && fnTypeHint == null) { // possible bug? seems fine
-      return { tag: 'var', val: leftExpr.val, type: v.type };
+      return { tag: 'var', val: leftExpr.val, isParam: v.isParam, type: v.type };
     }
 
     if (fnTypeHint != null) {
@@ -1443,6 +1418,7 @@ function ensureExprValid(
 
 interface Var {
   type: Type.Type
+  isParam: boolean
   mut: boolean
 }
 
@@ -1462,8 +1438,8 @@ function exitScope(scope: FnContext) {
   scope.typeScope.pop();
 }
 
-function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boolean) {
-  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut });
+function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boolean, isParam: boolean) {
+  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, isParam });
 }
 
 function getVar(scope: FnContext, name: string): Var | null {
