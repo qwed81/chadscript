@@ -1,6 +1,6 @@
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
-import { toStr, Type, RANGE, STR } from '../analyze/types';
+import { toStr, Type, RANGE, STR, VOID, createRes } from '../analyze/types';
 import { replaceGenerics, CProgram, CFn } from './concreteFns';
 
 export {
@@ -70,7 +70,6 @@ function codegen(prog: Program): string {
       programStr += '\n' + codeGenType(struct.val) + ' {';
       programStr += '\n  ' + codeGenType(struct.val.val) + ' *_ptr;';
       programStr += '\n  int _len;'
-      programStr += '\n  int _refCount;'
       programStr += '\n};'
     }
   }
@@ -112,7 +111,8 @@ function codegen(prog: Program): string {
     }
   programStr +=
   `
-    return ${entryName}();
+    ${ codeGenType(createRes(VOID)) } result = ${entryName}();
+    return result.tag;
   }
   `;
   return programStr;
@@ -308,8 +308,19 @@ function codeGenExpr(expr: Expr, addInst: string[], ctx: FnContext): string {
     return codeGenFnCall(expr.val, addInst, ctx);
   } else if (expr.tag == 'struct_init') {
     return codeGenStructInit(expr, addInst, ctx)
+  } else if (expr.tag == 'arr_init') {
+    if (expr.type.tag != 'arr') {
+      return 'undefined';
+    }
+    let type = codeGenType(expr.type.val);
+    let ptr = `__temp_${ctx.uniqueExprIndex}`;
+    addInst.push(`${ type } *${ptr} = malloc(${expr.val.length} * sizeof(${type}));`);
+    for (let i = 0; i < expr.val.length; i++) {
+      addInst.push(`${ptr}[${i}] = ${ codeGenExpr(expr.val[i], addInst, ctx) };`);
+    }
+    return `(${ codeGenType(expr.type) }){ ._ptr = ${ptr}, ._len = ${expr.val.length} }`;
   } else if (expr.tag == 'str_const') {
-    return `(${ codeGenType(STR) }){ ._refCount = 2, ._ptr = strTable[${expr.val}], ._len = ${ ctx.strTable[expr.val].length }}`;
+    return `(${ codeGenType(STR) }){ ._ptr = strTable[${expr.val}], ._len = ${ ctx.strTable[expr.val].length } }`;
   } else if (expr.tag == 'fmt_str') {
     let exprs = expr.val;
     let str = codeGenType(STR);
@@ -335,7 +346,7 @@ function codeGenExpr(expr: Expr, addInst: string[], ctx: FnContext): string {
       addInst.push(`${idx} += ${total}[${i}]._len;`)
     }
 
-    return `(${str}){ ._refCount = 1, ._ptr = ${output}, ._len = ${totalLen} }`;
+    return `(${str}){ ._ptr = ${output}, ._len = ${totalLen} }`;
   } else if (expr.tag == 'char_const') {
     return `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
@@ -414,7 +425,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: string[], ctx: FnContext):
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = `__temp_${ctx.uniqueExprIndex}`;
     addInst.push(`${ codeGenType(leftExpr.val.range.type) } ${range} = ${codeGenExpr(leftExpr.val.range, addInst, ctx)};`);
-    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = 2 }`;
+    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${codeGenLeftExpr(leftExpr.val.var, addInst, ctx)}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start }`;
   }
   else if (leftExpr.tag == 'prime') {
     return `${ codeGenExpr(leftExpr.val, addInst, ctx) }._${leftExpr.variant}`;

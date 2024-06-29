@@ -92,6 +92,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'assert_bool', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
+  | { tag: 'arr_init', val: Expr[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
   | { tag: 'str_const', val: number, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
@@ -1253,6 +1254,36 @@ function ensureExprValid(
       computedExpr = fnExpr;
     }
   } 
+
+  if (expr.tag == 'arr_init') {
+    let exprType: Type.Type | null = null;
+    if (expectedReturn != null) {
+      if (expectedReturn.tag != 'arr') {
+        logError(sourceLine, 'arr not expected');
+        return null;
+      }
+      exprType = expectedReturn.val;
+    }
+
+    let newExprs: Expr[] = []
+    for (let i = 0; i < expr.val.length; i++) {
+      let e = ensureExprValid(expr.val[i], exprType, table, scope, sourceLine);
+      if (e == null) {
+        return null;
+      }
+      newExprs.push(e);
+      exprType = e.type;
+    }
+
+    // ensure that the type is actually known when done
+    if (exprType == null) {
+      logError(sourceLine, "unknown arr type")
+      return null;
+    }
+
+    let type: Type.Type = { tag: 'arr', constant: false, val: exprType };
+    computedExpr = { tag: 'arr_init', val: newExprs, type };
+  }
 
   if (expr.tag == 'struct_init') {
     if (expectedReturn == null) {

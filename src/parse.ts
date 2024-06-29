@@ -201,6 +201,7 @@ type Expr = { tag: 'bin', val: BinExpr }
   | { tag: 'assert', val: Expr }
   | { tag: 'fn_call', val: FnCall }
   | { tag: 'struct_init', val: StructInitField[] }
+  | { tag: 'arr_init', val: Expr[] }
   | { tag: 'str_const', val: string }
   | { tag: 'fmt_str', val: Expr[] }
   | { tag: 'char_const', val: string }
@@ -491,10 +492,13 @@ function tryParseType(tokens: string[]): Type | null {
   }
 
   let lastToken = tokens[tokens.length - 1]; 
-  if (lastToken == '!' || lastToken == '&' || lastToken == '?') {
+  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
+    }
+    if (lastToken == '*') {
+      return { tag: 'arr', val: innerType };
     }
     if (lastToken == '!') {
       return { tag: 'generic', val: { name: 'Res', generics: [innerType] } };
@@ -883,6 +887,24 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
   return null;
 }
 
+function tryParseArrInit(tokens:  string[]): Expr | null {
+  if (tokens.length < 2 || tokens[0] != '[' || tokens[tokens.length - 1] != ']') {
+    return null;
+  } 
+
+  let splits = balancedSplit(tokens.slice(1, -1), ',');
+  let exprs: Expr[] = [];
+  for (let split of splits) {
+    let expr = tryParseExpr(split);
+    if (expr == null) {
+      return null;
+    }
+    exprs.push(expr);
+  }
+
+  return { tag: 'arr_init', val: exprs };
+}
+
 function tryParseStructInit(tokens: string[]): Expr | null {
   if (tokens.length < 2 || tokens[0] != '{' || tokens[tokens.length - 1] != '}') {
     return null;
@@ -1027,6 +1049,11 @@ function tryParseExpr(tokens: string[]): Expr | null {
   if (fnCall != null) {
     return { tag: 'fn_call', val: fnCall };
   }
+
+  let arrInit = tryParseArrInit(tokens);
+  if (arrInit != null) {
+    return arrInit;
+  } 
 
   let structInit = tryParseStructInit(tokens);
   if (structInit != null) {
