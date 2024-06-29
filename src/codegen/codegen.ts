@@ -8,6 +8,7 @@ export {
 }
 
 interface FnContext {
+  strTable: string[]
   genericMap: Map<string, Type>,
   uniqueExprIndex: number
 }
@@ -25,6 +26,9 @@ function codegen(prog: Program): string {
   for (let include of includes) {
     programStr += '\n#include <' + include + '>';
   }
+
+  // reserve the strTable
+  programStr += `\nchar *strTable[${prog.strTable.length}];`
 
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
@@ -76,14 +80,41 @@ function codegen(prog: Program): string {
   }
 
   for (let fn of newProg.fns) {
-    let ctx: FnContext = { uniqueExprIndex: 0, genericMap: fn.genericMap };
+    let ctx: FnContext = { uniqueExprIndex: 0, genericMap: fn.genericMap, strTable: prog.strTable };
     let fnCode = codeGenFnHeader(fn) + codeGenBody(fn.body, 1, false, ctx);
     programStr += fnCode;
   }
 
   let entry = newProg.entry;
   let entryName = getFnUniqueId(entry.unitName, entry.name, entry.type);
-  programStr += `\nint main() { return ${entryName}(); }`;
+
+  // output the strTable
+  let totalStrLen = 0;
+  for (let i = 0; i < prog.strTable.length; i++) {
+    totalStrLen += prog.strTable[i].length + 4 + 1
+  }
+  
+  programStr += 
+  `
+  int main() {
+    char* totalStr = malloc(${totalStrLen});
+    memset(totalStr, 0, ${totalStrLen});
+    size_t index = 0;
+  `
+    for (let i = 0; i < prog.strTable.length; i++) {
+      programStr +=
+      `
+      memcpy(&totalStr[index + 4], "${prog.strTable[i]}", ${prog.strTable[i].length + 1});
+      strTable[${i}] = &totalStr[index + 4];
+      *((int32_t*)(&totalStr[index])) = 0x50505050;
+      index += 4 + 1 + ${prog.strTable[i].length};
+      `
+    }
+  programStr +=
+  `
+    return ${entryName}();
+  }
+  `;
   return programStr;
 }
 
@@ -278,7 +309,7 @@ function codeGenExpr(expr: Expr, addInst: string[], ctx: FnContext): string {
   } else if (expr.tag == 'struct_init') {
     return codeGenStructInit(expr, addInst, ctx)
   } else if (expr.tag == 'str_const') {
-    return `(${ codeGenType(STR) }){ ._refCount = 2, ._ptr = "${expr.val}", ._len = strlen("${expr.val}") }`;
+    return `(${ codeGenType(STR) }){ ._refCount = 2, ._ptr = strTable[${expr.val}], ._len = ${ ctx.strTable[expr.val].length }}`;
   } else if (expr.tag == 'fmt_str') {
     let exprs = expr.val;
     let str = codeGenType(STR);

@@ -5,6 +5,7 @@ import * as Enum from './enum';
 
 interface Program {
   fns: Fn[]
+  strTable: string[]
 }
 
 interface Fn {
@@ -92,7 +93,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
-  | { tag: 'str_const', val: string, type: Type.Type }
+  | { tag: 'str_const', val: number, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
@@ -125,7 +126,8 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
 export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
-  let validProgram: Program | null = { fns: [] };
+  let strTable: string[] = [];
+  let validProgram: Program | null = { fns: [], strTable };
 
   for (let i = 0; i < units.length; i++) {
     if (analyzeUnitDataTypes(units, i) == false) {
@@ -134,7 +136,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   }
 
   for (let i = 0; i < units.length; i++) {
-    let unitFns: Fn[] | null = analyzeUnitFns(units, i); 
+    let unitFns: Fn[] | null = analyzeUnitFns(units, i, strTable); 
     if (unitFns == null) {
       validProgram = null;
     } else if (validProgram != null) {
@@ -147,13 +149,13 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   return validProgram;
 }
 
-function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number): Fn[] | null {
+function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, strTable: string[]): Fn[] | null {
   let unit = units[unitIndex];
   let lookupTable = Type.getUnitReferences(units[unitIndex], units);
 
   let fns: Fn[] | null = [];
   for (let fn of unit.fns) {
-    let validFn = analyzeFn(fn, lookupTable, unit);
+    let validFn = analyzeFn(fn, lookupTable, unit, strTable);
     if (validFn == null) {
       fns = null;
     } else if (fns != null) {
@@ -291,7 +293,8 @@ function addGenerics(paramType: Parse.Type, generics: Set<string>) {
 function analyzeFn(
   fn: Parse.Fn,
   table: Type.RefTable,
-  unit: Parse.ProgramUnit
+  unit: Parse.ProgramUnit,
+  strTable: string[]
 ): Fn | null {
   let generics: Set<string> = new Set();
 
@@ -312,6 +315,7 @@ function analyzeFn(
     generics,
     returnType: returnType,
     inLoop: false,
+    strTable
   };
 
   enterScope(scope);
@@ -1311,7 +1315,8 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'str_const') {
-    computedExpr = { tag: 'str_const', val: expr.val, type: Type.STR };
+    computedExpr = { tag: 'str_const', val: scope.strTable.length, type: Type.STR };
+    scope.strTable.push(expr.val);
   } 
 
   if (expr.tag == 'fmt_str') {
@@ -1428,6 +1433,7 @@ interface FnContext {
   returnType: Type.Type
   inLoop: boolean
   variantScope: Enum.VariantScope 
+  strTable: string[]
 };
 
 function enterScope(scope: FnContext) {

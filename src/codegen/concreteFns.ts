@@ -11,6 +11,7 @@ export {
 
 interface CProgram {
   fns: CFn[]
+  strTable: string[]
   orderedStructs: CStruct[]
   entry: CFn
 }
@@ -98,7 +99,7 @@ function replaceGenerics(prog: Program): CProgram {
   }
 
   let orderedStructs = orderStructs(ctx.typeResolveQueue);
-  return { orderedStructs, fns: resolved, entry };
+  return { orderedStructs, fns: resolved, strTable: prog.strTable, entry };
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
