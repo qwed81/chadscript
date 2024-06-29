@@ -274,6 +274,18 @@ function parse(unitText: string, progName: string): ProgramUnit | null {
   return program;
 }
 
+function isAlphaNumeric(str: string): boolean {
+  for (var i = 0, len = str.length; i < len; i++) {
+      var code = str.charCodeAt(i);
+      if (!(code > 47 && code < 58) && // numeric (0-9)
+          !(code > 64 && code < 91) && // upper alpha (A-Z)
+          !(code > 96 && code < 123)) { // lower alpha (a-z)
+          return false;
+      }
+  }
+  return true;
+}
+
 // returns the segment of lines, starting from the start index until there
 // is a line with less indent than the bodyLevelIndent
 function getIndentedSegment(
@@ -615,11 +627,28 @@ function parseFnHeader(
   }
 
   let returnTokens = tokens.slice(paramEnd + 1);
-  let returnType: Type | null = tryParseType(['void']);
+  let returnType: Type | null = { tag: 'basic', val: 'void' };
   if (returnTokens.length != 0) {
-    returnType = tryParseType(returnTokens);
+    let possibleReturn: Type | null = null;
+    // attempt to parse as 
+    if (returnTokens.length > 1) {
+      let lastToken = returnTokens[returnTokens.length - 1];
+      if (isAlphaNumeric(lastToken)) {
+        let t = tryParseType(returnTokens.slice(0, -1));
+        if (t != null) {
+          possibleReturn = t;
+        }
+      }
+    }
+
+    if (possibleReturn == null) {
+      possibleReturn = tryParseType(returnTokens);
+    }
+
+    returnType = possibleReturn;
   }
   if (returnType == null) {
+    logError(header.sourceLine, 'could not parse return type');
     return null;
   }
 
