@@ -6,7 +6,7 @@ import {
 } from '../analyze/types';
 
 export {
-  replaceGenerics, CProgram, CFn
+  replaceGenerics, CProgram, CFn, CStruct
 }
 
 interface CProgram {

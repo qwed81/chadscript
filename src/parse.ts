@@ -384,6 +384,34 @@ function balancedSplitTwo(tokens: string[], op: string): string[][] {
   return [tokens];
 }
 
+function balancedSplitTwoBackwards(tokens: string[], op: string): string[][] {
+  let oParenCount = 0;
+  let oSquareCount = 0;
+  let oCurlyCount = 0;
+
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (tokens[i] == ')') {
+      oParenCount += 1;
+    } else if (tokens[i] == '(') {
+      oParenCount -= 1;
+    } else if (tokens[i] == ']') {
+      oSquareCount += 1;
+    } else if (tokens[i] == '[') {
+      oSquareCount -= 1;
+    } else if (tokens[i] == '}') {
+      oCurlyCount += 1;
+    } else if (tokens[i] == '{') {
+      oCurlyCount -= 1;
+    }
+
+    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+      return [tokens.slice(0, i), tokens.slice(i + 1)];
+    }
+  }
+
+  return [tokens];
+}
+
 // returns an array of token arrays which are a balanced split of the operator
 function balancedSplit(tokens: string[], op: string): string[][] {
   let oParenCount = 0;
@@ -1186,7 +1214,7 @@ function tryParseFmtString(lineExpr: string): Expr[] | null {
 }
 
 function tryParseBinOp(tokens: string[], op: string): Expr | null {
-  let splits = balancedSplitTwo(tokens, op);
+  let splits = balancedSplitTwoBackwards(tokens, op);
   if (splits.length == 1) {
     return null;
   }
