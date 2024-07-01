@@ -91,9 +91,9 @@ function toStr(t: Type | null): string {
 
   if (t.tag == 'arr') {
     if (t.constant) {
-      return `${toStr(t.val)}^`;
+      return `${toStr(t.val)}[]`;
     } else {
-      return `${toStr(t.val)}*`;
+      return `${toStr(t.val)}[&]`;
     }
   }
   

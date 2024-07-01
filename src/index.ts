@@ -2,6 +2,8 @@ import arg from 'arg';
 import { parseDir } from './parse';
 import { analyze } from './analyze/analyze';
 import { codegen } from './codegen/codegen';
+import { docgen } from './docgen';
+
 import fs from 'node:fs';
 
 export {
@@ -14,6 +16,7 @@ function logError(line: number, message: string) {
 
 const args = arg({
 	'-o': String, 
+  '-d': String,
   '-v': Boolean
 });
 
@@ -49,6 +52,15 @@ function compile() {
     outputPath = './a.out';
   }
 
+  let docs = docgen(analyzedProgram);
+  let docsPath;
+  if (args['-d']) {
+    docsPath = args['-d'];
+  } else {
+    docsPath = './docs.html';
+  }
+
+  fs.writeFileSync(docsPath, docs);
   fs.writeFileSync(outputPath, output);
   if (args['-v']) {
     console.log(output);
