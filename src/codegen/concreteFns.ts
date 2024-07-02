@@ -17,6 +17,7 @@ interface CProgram {
 }
 
 type CStruct = { tag: 'arr', val: Type }
+  | { tag: 'fn', val: Type }
   | { tag: 'struct', val: CStructImpl }
   | { tag: 'enum', val: CStructImpl }
 
@@ -362,6 +363,18 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
     alreadyGenned.add(typeKey);
     output.push({ tag: 'arr', val: type });
     return;
+  }
+  else if (type.tag == 'fn') {
+    let typeKey = JSON.stringify(type);
+    if (alreadyGenned.has(typeKey)) {
+      return;
+    }
+    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output);
+    for (let i = 0; i < type.val.paramTypes.length; i++) {
+      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output);
+    }
+    alreadyGenned.add(typeKey);
+    output.push({ tag: 'fn', val: type });
   }
 
   if (type.tag != 'struct' && type.tag != 'enum') {

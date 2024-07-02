@@ -40,6 +40,17 @@ function codegen(prog: Program): string {
     else if (struct.tag == 'arr') {
       programStr += '\n' + codeGenType(struct.val) + ';';
     }
+    if (struct.tag == 'fn' && struct.val.tag == 'fn') {
+      let fnType = struct.val.val;
+      programStr += `\ntypedef ${codeGenType(fnType.returnType)} (*${codeGenType(struct.val)})(`;
+      for (let i = 0; i < fnType.paramTypes.length; i++) {
+        programStr += `${codeGenType(fnType.paramTypes[i])}*`;
+        if (i != fnType.paramTypes.length - 1) {
+          programStr += ', ';
+        }
+      }
+      programStr += ');';
+    }
   }
 
   // generate implementations of types
@@ -176,8 +187,12 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, '.', '_');
   typeStr = replaceAll(typeStr, '*', '_op_cp');
   typeStr = replaceAll(typeStr, '&', '');
+  typeStr = replaceAll(typeStr, ' ', '');
 
-  return 'struct ' + typeStr.replace(' ', '');
+  if (type.tag == 'struct' || type.tag == 'enum' || type.tag == 'arr') {
+    return 'struct ' + typeStr;
+  }
+  return typeStr;
 }
 
 function codeGenFnHeader(fn: CFn): string {
@@ -486,6 +501,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext): string {
   // reserve a spot on the stack for the expression so it can be reference counted
   // and so it can be passed to a function by pointer
   let exprName = reserveVar(ctx, expr.type);
+  changeRefCount(addInst.before, exprName, expr.type, -1);
   let exprAssign = `${ exprName } = ${ exprText }`; 
   addInst.before.push(`${exprAssign};`);
   return exprName;
@@ -576,6 +592,10 @@ function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: 
 function codeGenStructs(structs: CStruct[]): string {
   let structStr = '';
   for (let struct of structs) {
+    if (struct.tag == 'fn') {
+      continue;
+    }
+
     let type: Type = { tag: 'primative', val: 'void' };
     if (struct.tag == 'struct') {
       type = struct.val.name;

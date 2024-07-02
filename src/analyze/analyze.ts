@@ -863,7 +863,7 @@ function ensureLeftExprValid(
   } 
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
-    if (v != null && fnTypeHint == null) { // possible bug? seems fine
+    if (v != null) { // possible bug? seems fine
       return { tag: 'var', val: leftExpr.val, isParam: v.isParam, type: v.type };
     }
 
