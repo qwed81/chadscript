@@ -25,7 +25,6 @@ compile();
 function compile() {
   let sourceDir: string = args._[0];
 
-  // console.log('building: ')
   // console.log(sourceDir);
   let parsedProgram = parseDir(sourceDir, null);
 

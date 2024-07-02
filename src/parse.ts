@@ -1068,7 +1068,7 @@ function tryParseExpr(tokens: string[]): Expr | null {
     if (parsed == null) {
       return null;
     }
-    if (tokens[tokens.length - 1] == '?') {
+    if (tokens[0] == 'try') {
       return { tag: 'try', val: parsed };
     } else {
       return { tag: 'assert', val: parsed };
