@@ -77,6 +77,7 @@ type Type = { tag: 'basic', val: string }
 interface Fn {
   t: FnType
   paramNames: string[]
+  defaultExprs: (Expr | null)[]
   name: string
   body: InstMeta[]
   sourceLine: number
@@ -141,6 +142,7 @@ interface Match {
 interface FnCall {
   fn: LeftExpr
   exprs: Expr[]
+  names: string[] // name will be '' in case of unamed expr
 }
 
 interface Macro {
@@ -517,13 +519,20 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     return null;
   }
 
-  let { paramNames, name, t } = fnHeader;
+  let { paramNames, name, t, defaultExprs } = fnHeader;
   let fnBody = parseInstBody(body);
   if (fnBody == null) {
     return null;
   }
 
-  return { name, paramNames, t, body: fnBody, sourceLine: header.sourceLine };
+  return {
+    name,
+    paramNames,
+    t,
+    body: fnBody,
+    sourceLine: header.sourceLine ,
+    defaultExprs 
+  };
 }
 
 function tryParseType(tokens: string[]): Type | null {
@@ -619,7 +628,12 @@ function tryParseType(tokens: string[]): Type | null {
 
 function parseFnHeader(
   header: SourceLine
-): { name: string, paramNames: string[], t: FnType } | null 
+): {
+  name: string,
+  paramNames: string[],
+  defaultExprs: (Expr | null)[]
+  t: FnType 
+} | null 
 {
   let tokens = header.tokens;
 
@@ -640,17 +654,31 @@ function parseFnHeader(
   let paramSplits = balancedSplit(innerTokens, ',');
   let paramTypes: Type[] = [];
   let paramNames = [];
+  let defaultExprs: (Expr | null)[] = [];
 
   if (paramSplits[0].length > 0) { // for () functions
     for (let param of paramSplits) {
-      let name = param[param.length - 1];
+      let exprNameSplit: string[][] = balancedSplitTwo(param, '=');
+      let initExpr: Expr | null = null;
+      if (exprNameSplit.length > 1) {
+        initExpr = tryParseExpr(exprNameSplit[1]);
+        if (initExpr == null) {
+          logError(header.sourceLine, 'expected expr');
+          return null;
+        }
+      }
+      param = exprNameSplit[0];
       let t = tryParseType(param.slice(0, -1));
       if (t == null) {
         logError(header.sourceLine, 'could not parse parameters');
         return null;
       }
+
+      let paramName = param[param.length - 1];
+
+      paramNames.push(paramName);
       paramTypes.push(t);
-      paramNames.push(name);
+      defaultExprs.push(initExpr);
     }
   }
 
@@ -658,7 +686,7 @@ function parseFnHeader(
   let returnType: Type | null = { tag: 'basic', val: 'void' };
   if (returnTokens.length != 0) {
     let possibleReturn: Type | null = null;
-    // attempt to parse as 
+    // attempt to parse as named return
     if (returnTokens.length > 1) {
       let lastToken = returnTokens[returnTokens.length - 1];
       if (isAlphaNumeric(lastToken)) {
@@ -680,7 +708,12 @@ function parseFnHeader(
     return null;
   }
 
-  return { name, paramNames, t: { returnType, paramTypes } };
+  return {
+    name,
+    paramNames,
+    t: { returnType, paramTypes },
+    defaultExprs
+  };
 }
 
 function parseInstBody(lines: SourceLine[]): InstMeta[] | null {
@@ -761,17 +794,35 @@ function tryParseFnCall(tokens: string[]): FnCall | null {
 
   let paramExprs = balancedSplit(tokens.slice(paramStart + 1, -1), ',');
   let exprs = [];
+  let names: string[] = [];
   if (tokens.length - paramStart != 2) {
     for (let param of paramExprs) {
-      let expr = tryParseExpr(param);
-      if (expr == null) {
-        return null;
+      // for implicit params
+      let splitParam: string[][] = balancedSplitTwo(param, '=');
+      if (splitParam.length == 1) {
+        let expr = tryParseExpr(splitParam[0]);
+        if (expr == null) {
+          return null;
+        }
+        names.push('');
+        exprs.push(expr);
       }
-      exprs.push(expr);
+      else {
+        let expr = tryParseExpr(splitParam[1]);
+        if (expr == null) {
+          return null;
+        }
+        if (splitParam[0].length != 1) {
+          return null;
+        }
+
+        names.push(splitParam[0][0]);
+        exprs.push(expr);
+      }
     }
   }
 
-  return { fn: leftExpr, exprs };
+  return { fn: leftExpr, exprs, names };
 }
 
 function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
@@ -1273,7 +1324,7 @@ function splitTokens(line: string): string[] {
   // split tokens based on special characters
   let tokens: string[] = [];
   let tokenStart = 0;
-  const splitTokens = [' ', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^'];
+  const splitTokens = [' ', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^'];
   for (let i = 0; i < line.length; i++) {
     // process string as a single token
     if (line[i] == '"') {
@@ -1344,6 +1395,11 @@ function splitTokens(line: string): string[] {
     if (tokens[i - 1] == '!' && tokens[i] == '=') {
       tokens.splice(i, 1);
       tokens[i - 1] = '!=';
+    }
+    else if (tokens[i] == '=' && (tokens[i - 1] == '>' || tokens[i - 1] == '<'
+      || tokens[i - 1] == '+' || tokens[i - 1] == '-' || tokens[i - 1] == '=')) {
+      tokens[i - 1] = tokens[i - 1] + '' + tokens[i];
+      tokens.splice(i, 1);
     }
     else if (tokens[i - 1] == '&' && tokens[i] == '&') {
       tokens.splice(i, 1);

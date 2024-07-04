@@ -205,8 +205,12 @@ function codeGenFnHeader(fn: CFn): string {
   let paramStr = '';
 
   for (let i = 0; i < fn.paramNames.length; i++) {
+    let ref = true;
+    if (fn.type.val.paramTypes[i].tag == 'fn') {
+      ref = false;
+    }
     paramStr += codeGenType(fn.type.val.paramTypes[i]);
-    paramStr += ' *_' + fn.paramNames[i];
+    paramStr += ` ${ref ? '*' : ''}_${fn.paramNames[i]}`
     if (i != fn.paramNames.length - 1) {
       paramStr += ', ';
     }
@@ -532,7 +536,11 @@ function codeGenStructInit(expr: Expr, addInst: AddInst, ctx: FnContext): string
 function codeGenFnCall(fnCall: FnCall, addInst: AddInst, ctx: FnContext): string {
   let output = codeGenLeftExpr(fnCall.fn, addInst, ctx) + '(';
   for (let i = 0; i < fnCall.exprs.length; i++) {
-    output += `&${ codeGenExpr(fnCall.exprs[i], addInst, ctx) }`;
+    let ref = true;
+    if (fnCall.exprs[i].type.tag == 'fn') {
+      ref = false;
+    }
+    output += `${ref ? '&' : ''}${ codeGenExpr(fnCall.exprs[i], addInst, ctx) }`;
     if (i != fnCall.exprs.length - 1) {
       output += ', ';
     }

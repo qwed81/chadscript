@@ -744,9 +744,6 @@ function analyzeInst(
 }
 
 function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
-  if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
-    return false;
-  }
 
   if (leftExpr.tag == 'dot') {
     if (leftExpr.val.left.tag != 'left_expr') {
@@ -768,9 +765,15 @@ function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
     return v.mut;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
+    if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
+      return false;
+    }
     return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
   }
   else if (leftExpr.tag == 'arr_offset_slice')  {
+    if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
+      return false;
+    }
     return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
   }
   return false;
@@ -930,7 +933,6 @@ function ensureLeftExprValid(
   return null;
 }
 
-// modifies fnCall to have proper link
 function ensureFnCallValid(
   fnCall: Parse.FnCall,
   expectedReturn: Type.Type | null,
@@ -943,6 +945,10 @@ function ensureFnCallValid(
   let paramTypes: Type.Type[] = [];
   let paramExprs: Expr[] = [];
   for (let i = 0; i < fnCall.exprs.length; i++) {
+    if (fnCall.names[i] != '') {
+      continue;
+    }
+
     let expr: Parse.Expr = fnCall.exprs[i] ;
     let validExpr = ensureExprValid(expr, null, table, scope, sourceLine);
     if (validExpr == null) {
@@ -964,6 +970,61 @@ function ensureFnCallValid(
   if (fnType.tag != 'fn') {
     logError(sourceLine, 'type is not a function');
     return null;
+  }
+
+  if (fnResult.tag == 'fn') {
+    // we now have the function so we can do analysis on named params
+    let namedParams: Type.NamedParam[] = Type.getFnNamedParams(fnResult.unitName, fnResult.fnName, fnResult.type, table, sourceLine);
+    for (let i = 0; i < namedParams.length; i++) {
+      let namedParamExpr: Parse.Expr = namedParams[i].expr;
+      let overruled = false;
+      for (let j = 0; j < fnCall.names.length; j++) {
+        if (namedParams[i].name == fnCall.names[j]) {
+          // overrule the named parameter expression
+          namedParamExpr = fnCall.exprs[j];
+          overruled = true;
+        }
+      }
+
+      let expr: Expr;
+      let paramType = namedParams[i].type;
+      // for fn='resolve'
+      if (!overruled && namedParamExpr.tag == 'left_expr'
+        && namedParamExpr.val.val && namedParamExpr.val.val == 'resolve') {
+        if (paramType.tag != 'fn') {
+          logError(sourceLine, 'resolve only valid on fn types');
+          return null;
+        }
+
+        let returnType = paramType.val.returnType;
+        let thisParamTypes = paramType.val.paramTypes;
+        let fnResult = Type.resolveFn(namedParams[i].name, returnType, thisParamTypes, table, sourceLine);
+        if (fnResult == null) {
+          return null;
+        }
+
+        expr = {
+          tag: 'left_expr',
+          val: {
+            tag: 'fn',
+            type: paramType,
+            fnName: fnResult.fnName,
+            unitName: fnResult.unitName
+          },
+          type: paramType,
+        };
+      }
+      else {
+        let exprResult = ensureExprValid(namedParamExpr, namedParams[i].type, table, scope, sourceLine);
+        if (exprResult == null) {
+          return null;
+        }
+        expr = exprResult;
+      }
+
+      paramExprs.push(expr);
+      paramTypes.push(paramType);
+    }
   }
 
   if (fnType.val.paramTypes.length != paramTypes.length) {
@@ -1362,9 +1423,14 @@ function ensureExprValid(
       // if the type is not a string, look of the implementation of str and use
       // that instead
       if (!Type.typeApplicable(e.type, Type.STR)) {
-        let fn = Type.resolveFn('str', Type.STR, [e.type], table, sourceLine);
+        let fn = Type.resolveFn('toStr', Type.STR, [e.type], table, sourceLine);
         if (fn == null) {
-          logError(sourceLine, `hint: no implementation of str(${Type.toStr(e.type)})`)
+          if (e.type.tag == 'generic') {
+            logError(sourceLine, `hint: no implementation of toStr(${Type.toStr(e.type)}). generic may not have toStr`)
+          }
+          else {
+            logError(sourceLine, `hint: no implementation of toStr(${Type.toStr(e.type)})`)
+          }
           return null;
         }
 
@@ -1372,7 +1438,7 @@ function ensureExprValid(
           tag: 'fn',
           unitName: fn.unitName,
           fnName: fn.fnName,
-          type: fn.fnType
+          type: fn.fnType,
         };
 
         let fnCall: Expr = {

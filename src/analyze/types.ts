@@ -6,7 +6,7 @@ export {
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
   getUnitReferences, resolveType, resolveFn, createList,
-  isRes, createRes, getVariantIndex
+  isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams
 }
 
 const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
@@ -493,6 +493,78 @@ function resolveStruct(
   return possibleStructs[0];
 }
 
+interface NamedParam {
+  name: string,
+  type: Type,
+  expr: Parse.Expr
+}
+
+// this will perform a lookup including the named param types
+// which should be unique as there is no overloading with normal
+// and named parameters
+function getFnNamedParams(
+  unitName: string,
+  fnName: string,
+  fnType: Type,
+  refTable: RefTable,
+  sourceLine: number
+): NamedParam[] {
+  if (fnType.tag != 'fn') {
+    logError(sourceLine, 'compiler error should be fn type');
+    return [];
+  }
+
+  for (let i = 0; i < refTable.units.length; i++) {
+    if (refTable.units[i].fullName != unitName) {
+      continue;
+    }
+    for (let fn of refTable.units[i].fns) {
+      if (fn.name != fnName) {
+        continue;
+      }
+
+      let genericMap: Map<string, Type> = new Map();
+      let returnType = resolveType(fn.t.returnType, refTable, sourceLine);
+      if (returnType == null) {
+        return [];
+      }
+
+      if (typeApplicableStateful(returnType, fnType.val.returnType, genericMap) == false) {
+        return [];
+      }
+
+      let namedParams: NamedParam[] = [];
+      let fnMatches = true;
+      for (let j = 0; j < fn.paramNames.length; j++) {
+        let paramType = resolveType(fn.t.paramTypes[j], refTable, sourceLine);
+        if (paramType == null) {
+          fnMatches = false;
+          break;
+        }
+
+        if (typeApplicableStateful(fnType.val.paramTypes[j], paramType, genericMap) == false) {
+          fnMatches = false;
+          break;
+        }
+
+        if (fn.defaultExprs[j] != null) {
+          namedParams.push({
+            name: fn.paramNames[j],
+            type: applyGenericMap(paramType, genericMap),
+            expr: fn.defaultExprs[j]!
+          });
+        }
+      }
+
+      if (fnMatches) {
+        return namedParams;
+      }
+    }
+  }
+
+  return [];
+}
+
 interface FnResult {
   fnType: Type,
   unitName: string
@@ -517,7 +589,13 @@ function resolveFn(
       }
       
       let genericMap = new Map<string, Type>();
-      if (paramTypes != null && fnDef.t.paramTypes.length != paramTypes.length) {
+      let namedParamCount = 0;
+      for (let i = 0; i < fnDef.defaultExprs.length; i++) {
+        if (fnDef.defaultExprs[i] != null) {
+          namedParamCount += 1;
+        }
+      }
+      if (paramTypes != null && fnDef.t.paramTypes.length - namedParamCount != paramTypes.length) {
         wrongTypeFns.push(fnDef);
         continue;
       }
@@ -538,9 +616,11 @@ function resolveFn(
           return null;
         }
 
+        // named parameters influence the type of the function but can not
+        // be used in generics
         if (paramTypes != null) {
           let paramType = paramTypes[i];
-          if (paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap)) {
+          if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap)) {
             wrongTypeFns.push(fnDef);
             allParamsOk = false;
             break;
@@ -584,7 +664,11 @@ function resolveFn(
         }
       };
 
-      possibleFns.push({ unitName: unit.fullName, fnName: fnDef.name, fnType });
+      possibleFns.push({
+        unitName: unit.fullName,
+        fnName: fnDef.name,
+        fnType,
+      });
     }
   }
 
@@ -599,6 +683,7 @@ function resolveFn(
   }
 
   if (wrongTypeFns.length > 0) {
+    console.log(JSON.stringify(wrongTypeFns.length, null, 2));
     logError(calleeLine, 'function does not match type signature');
     return null;
   }
