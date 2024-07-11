@@ -1,9 +1,10 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError } from '../index';
 import {
-  Type, typeApplicable, typeApplicableStateful, applyGenericMap, RANGE,
-  VOID, CHAR, createList
+  Type, typeApplicableStateful, applyGenericMap, RANGE,
+  getFnNamedParams, RefTable, resolveFn as typeResolveFn,
 } from '../analyze/types';
+import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
 
 export {
   replaceGenerics, CProgram, CFn, CStruct
@@ -67,7 +68,8 @@ function replaceGenerics(prog: Program): CProgram {
     queuedTypes: new Set()
   };
 
-  let entry = resolveFn(entries[0], new Map(), ctx);
+  let entry: CFn = resolveFn(entries[0], new Map(), ctx);
+
   let resolved: CFn[] = [];
   resolved.push(entry);
 
@@ -77,10 +79,15 @@ function replaceGenerics(prog: Program): CProgram {
     let dep = ctx.fnResolveQueue.pop()!;
     let genericMap: Map<string, Type>;
     let selectedIndex = -1;
+    let refTable: RefTable | null = null;
 
     // find which function its referencing
     for (let i = 0; i < prog.fns.length; i++) {
       let map: Map<string, Type> = new Map();
+      if (prog.fns[i].unitName == dep.unitName) {
+        refTable = prog.fns[i].refTable;
+      }
+
       if (prog.fns[i].name == dep.fnName && prog.fns[i].unitName == dep.unitName) {
         if (typeApplicableStateful(dep.fnType, prog.fns[i].type, map)) {
           genericMap = map;
@@ -90,12 +97,26 @@ function replaceGenerics(prog: Program): CProgram {
       }
     }
 
+    let fnToResolve: Fn;
+    // this is the default fn
     if (selectedIndex == -1) {
-      logError(-1, 'compiler error no matching fn replaceGenerics');
-      continue;
+      if (refTable == null || dep.fnType.tag != 'fn') {
+        logError(-1, 'compiler error ref table null')
+        continue;
+      }
+      
+      let scope: FnContext = newScope(dep.fnType.val.returnType, new Set(), []);
+      let defaultFn = createDefaultFn(dep, refTable, scope);
+      if (defaultFn == null) {
+        continue;
+      }
+      fnToResolve = defaultFn;
+    }
+    else {
+      fnToResolve = prog.fns[selectedIndex]
     }
 
-    let cFn = resolveFn(prog.fns[selectedIndex], genericMap!, ctx);
+    let cFn = resolveFn(fnToResolve, genericMap!, ctx);
     resolved.push(cFn);
   }
 
@@ -126,14 +147,15 @@ function resolveFn(
   }
   queueType(ctx, newType.val.returnType)
 
+  let body: Inst[] = resolveInstBody(genericFn.body, genericMap, ctx);
   return {
     name: genericFn.name,
     paramNames: genericFn.paramNames,
     genericMap,
     unitName: genericFn.unitName,
     type: newType,
-    body: resolveInstBody(genericFn.body, genericMap, ctx),
-  }
+    body
+  };
 }
 
 function resolveInstBody(
@@ -336,6 +358,7 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
+    standardizeType(depType);
     let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType };
     let key = JSON.stringify(newLeftExpr);
     if (!ctx.queuedFns.has(key)) {
@@ -349,14 +372,176 @@ function resolveLeftExpr(
   return undefined!;
 }
 
+// replaces all mutablility of the type so that it can be created into a key
+function standardizeType(type: Type) {
+  if (type.tag == 'arr') {
+    type.constant = false;
+    standardizeType(type.val);
+  }
+  else if (type.tag == 'struct' || type.tag == 'enum') {
+    for (let i = 0; i < type.val.fields.length; i++) {
+      standardizeType(type.val.fields[i].type);
+    }
+  }
+  else if (type.tag == 'fn') {
+    standardizeType(type.val.returnType);
+    for (let i = 0; i < type.val.paramTypes.length; i++) {
+      standardizeType(type.val.paramTypes[i]);
+    }
+  }
+}
+
+// the default function is just a function with no named params
+// that calls the template function with the default named params.
+// used for resolve fns
+function createDefaultFn(
+  fnDep: NeedResolveFn,
+  refTable: RefTable,
+  scope: FnContext,
+): Fn | null {
+  if (fnDep.fnType.tag != 'fn') {
+    return null;
+  }
+
+  let returnType: Type = fnDep.fnType.val.returnType;
+  let paramTypes: Type[] = fnDep.fnType.val.paramTypes;
+  let template = typeResolveFn(fnDep.fnName, returnType, paramTypes, refTable, 0);
+  if (template == null) {
+    return null;
+  }
+
+  let namedParams = getFnNamedParams(fnDep.unitName, fnDep.fnName, fnDep.fnType, refTable, -1);
+  if (namedParams.length == 0) {
+    return null;
+  }
+
+  let defaultParamNames: string[] = [];
+  let defaultLinkedParams: boolean[] = [];
+
+  let defaultFnCallExprs: Expr[] = [];
+  if (template.fnType.tag != 'fn') {
+    return null;
+  }
+
+  for (let i = 0; i < template.paramNames.length; i++) {
+    let defaultExpr: Expr | null | 'resolve' = null;
+    let paramType: Type | null = null;
+
+    let paramIsNamed = false;
+    for (let j = 0; j < namedParams.length; j++) {
+      if (namedParams[j].name == template.paramNames[i]) {
+        let parseExpr = namedParams[j].expr;
+        if (parseExpr.tag != 'left_expr' || parseExpr.val.tag != 'var' || parseExpr.val.val != 'resolve') {
+          defaultExpr = ensureExprValid(parseExpr, namedParams[j].type, refTable, scope, -1);
+          paramType = template.fnType.val.paramTypes[i];
+        }
+        else {
+          defaultExpr = 'resolve';
+          paramType = template.fnType.val.paramTypes[i];
+        }
+        paramIsNamed = true;
+      }
+    }
+
+    if (paramIsNamed == false) {
+      defaultLinkedParams.push(fnDep.fnType.val.linkedParams[i]);
+      paramTypes.push(fnDep.fnType.val.paramTypes[i]);
+      defaultParamNames.push(template.paramNames[i]);
+    }
+
+    if (defaultExpr == null || paramType == null) {
+      let expr: Expr = {
+        tag: 'left_expr',
+        val: {
+          tag: 'var',
+          val: template.paramNames[i],
+          isParam: true,
+          type: fnDep.fnType.val.paramTypes[i]
+        },
+        type: fnDep.fnType.val.paramTypes[i]
+      };
+      defaultFnCallExprs.push(expr);
+    }
+    else {
+      if (defaultExpr === 'resolve') {
+        if (paramType.tag != 'fn') {
+          logError(-1, 'resolve only valid on fn types');
+          return null;
+        }
+
+        let returnType = paramType.val.returnType;
+        let thisParamTypes = paramType.val.paramTypes;
+        let fnResult = typeResolveFn(template.paramNames[i], returnType, thisParamTypes, refTable, -1);
+        if (fnResult == null) {
+          return null;
+        }
+
+        defaultExpr = {
+          tag: 'left_expr',
+          val: {
+            tag: 'fn',
+            type: paramType,
+            fnName: fnResult.fnName,
+            unitName: fnResult.unitName
+          },
+          type: paramType,
+        };
+      }
+
+      defaultFnCallExprs.push(defaultExpr);
+    }
+  }
+
+  let defaultFnType: Type = {
+    tag: 'fn',
+    val: {
+      returnType: returnType,
+      paramTypes: paramTypes,
+      linkedParams: defaultLinkedParams
+    }
+  };
+
+  let leftExpr: LeftExpr = {
+    tag: 'fn',
+    unitName: template.unitName,
+    fnName: template.fnName,
+    type: template.fnType
+  };
+
+  let callExpr: Expr = {
+    tag: 'fn_call',
+    type: template.fnType.val.returnType,
+    val: {
+      exprs: defaultFnCallExprs,
+      fn: leftExpr
+    } 
+  };
+  let callInst: Inst = {
+    tag: 'return',
+    val: callExpr,
+    sourceLine: -1
+  };
+  let defaultFn: Fn = {
+    name: fnDep.fnName,
+    unitName: fnDep.unitName,
+    paramNames: defaultParamNames,
+    type: defaultFnType,
+    body: [callInst],
+    scope,
+    refTable
+  };
+
+  return defaultFn;
+}
+
 function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<string>, output: CStruct[]) {
   if (type.tag == 'arr') {
     typeTreeRecur(type.val, inStack, alreadyGenned, output);
 
-    // prevent redefinition of slices based on mutability
-    let t2 = Object.assign({}, type);
-    t2.constant = false;
-    let typeKey = JSON.stringify(t2);
+    // prevent redefinition of slices based on mutability, will remove mutability
+    // from the recurse tree completely
+    standardizeType(type);
+    let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
       return;
     }

@@ -1,6 +1,6 @@
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
-import { toStr, Type, RANGE, STR, VOID, createRes } from '../analyze/types';
+import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
 export {
@@ -92,6 +92,9 @@ int main() {
   programStr +=
   `
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
+  if (result.tag == 1) {
+    fprintf(stderr, "%s", result._err._ptr);
+  }
   free(totalStr);
   return result.tag;
 }
@@ -648,6 +651,8 @@ function codeGenStructs(structs: CStruct[]): string {
       if (type.tag != 'arr') {
         continue;
       }
+      let innerTypeStr = codeGenType(type.val);
+      let innerTypeStrNoSpace = innerTypeStr.replace(' ', '');
 
       structStr += 
       `
@@ -659,10 +664,10 @@ function codeGenStructs(structs: CStruct[]): string {
         structStr +=
         `
     for (size_t i = 0; i < s->_len; i++) {
-      changeRefCount_${codeGenType(type.val)}(&s[i], amt);
+      changeRefCount_${innerTypeStrNoSpace}(&s->_ptr[i], amt);
     }`
       }
-      structStr += `  free(s->_ptr);\n  }`
+      structStr += `\n  free(s->_ptr);\n  }`
     }
     else if (struct.tag == 'struct'){
       if (type.tag != 'struct') {

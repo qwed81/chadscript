@@ -542,7 +542,8 @@ function getFnNamedParams(
           break;
         }
 
-        if (typeApplicableStateful(fnType.val.paramTypes[j], paramType, genericMap) == false) {
+        if (j < fnType.val.paramTypes.length 
+          && typeApplicableStateful(fnType.val.paramTypes[j], paramType, genericMap) == false) {
           fnMatches = false;
           break;
         }
@@ -568,7 +569,8 @@ function getFnNamedParams(
 interface FnResult {
   fnType: Type,
   unitName: string
-  fnName: string
+  fnName: string,
+  paramNames: string[]
 }
 
 function resolveFn(
@@ -602,6 +604,7 @@ function resolveFn(
 
       let linkedParams: boolean[] = [];
       let concreteParamTypes: Type[] = [];
+      let paramNames: string[] = [];
       let allParamsOk = true;
       for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
         if (fnDef.t.paramTypes[i].tag == 'link') {
@@ -609,6 +612,8 @@ function resolveFn(
         } else {
           linkedParams.push(false);
         }
+
+        paramNames.push(fnDef.paramNames[i]);
 
         let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleeLine);
         if (defParamType == null) {
@@ -665,6 +670,7 @@ function resolveFn(
       };
 
       possibleFns.push({
+        paramNames,
         unitName: unit.fullName,
         fnName: fnDef.name,
         fnType,
@@ -683,7 +689,6 @@ function resolveFn(
   }
 
   if (wrongTypeFns.length > 0) {
-    console.log(JSON.stringify(wrongTypeFns.length, null, 2));
     logError(calleeLine, 'function does not match type signature');
     return null;
   }

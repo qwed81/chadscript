@@ -585,8 +585,12 @@ function tryParseType(tokens: string[]): Type | null {
     }
     return { tag: 'fn', val: { returnType, paramTypes } };
   } else if (tokens[tokens.length - 1] == ']') { // parse generic or array
-    let inner = tokens.slice(2, -1);
-    if (inner.length == 0 || inner.length == 1 && inner[0] == '&') {
+    let inner = tokens.slice(-2, -1);
+    if (inner[0] == '[' || inner.length == 1 && inner[0] == '&') {
+      if (inner[0] == '[') {
+        inner = [];
+      }
+
       let end = tokens.length - 2;
       if (inner[0] == '&') {
         end = tokens.length - 3;

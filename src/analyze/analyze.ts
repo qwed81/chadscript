@@ -14,6 +14,8 @@ interface Fn {
   paramNames: string[]
   type: Type.Type 
   body: Inst[]
+  refTable: Type.RefTable,
+  scope: FnContext
 }
 
 interface CondBody {
@@ -124,7 +126,7 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'var', val: string, isParam: boolean, type: Type.Type }
   | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
 
-export { analyze, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
+export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let strTable: string[] = [];
@@ -156,7 +158,22 @@ function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, strTable:
 
   let fns: Fn[] | null = [];
   for (let fn of unit.fns) {
-    let validFn = analyzeFn(fn, lookupTable, unit, strTable);
+    let generics: Set<string> = new Set();
+
+    for (let i = 0; i < fn.t.paramTypes.length; i++) {
+      let paramType = fn.t.paramTypes[i]; 
+      addGenerics(paramType, generics);
+    }
+
+    let returnType = Type.resolveType(fn.t.returnType, lookupTable, fn.sourceLine);
+    if (returnType == null) {
+      logError(fn.sourceLine, 'could not resolve return type');
+      return null;
+    }
+
+    let scope = newScope(returnType, generics, strTable);
+    let validFn = analyzeFn(fn, lookupTable, unit, scope);
+
     if (validFn == null) {
       fns = null;
     } else if (fns != null) {
@@ -295,29 +312,8 @@ function analyzeFn(
   fn: Parse.Fn,
   table: Type.RefTable,
   unit: Parse.ProgramUnit,
-  strTable: string[]
+  scope: FnContext,
 ): Fn | null {
-  let generics: Set<string> = new Set();
-
-  for (let i = 0; i < fn.t.paramTypes.length; i++) {
-    let paramType = fn.t.paramTypes[i]; 
-    addGenerics(paramType, generics);
-  }
-
-  let returnType = Type.resolveType(fn.t.returnType, table, fn.sourceLine);
-  if (returnType == null) {
-    logError(fn.sourceLine, 'could not resolve return type');
-    return null;
-  }
-
-  let scope: FnContext = { 
-    typeScope: [],
-    variantScope: [[]],
-    generics,
-    returnType: returnType,
-    inLoop: false,
-    strTable
-  };
 
   enterScope(scope);
 
@@ -356,19 +352,28 @@ function analyzeFn(
     return null;
   }
 
-  if (!Type.typeApplicable(returnType, Type.VOID) && allPathsReturn(body) == false) {
+  if (!Type.typeApplicable(scope.returnType, Type.VOID) && allPathsReturn(body) == false) {
     logError(fn.sourceLine, 'function does not always return');
     return null;
   }
 
 
-  let fnType: Type.Type = { tag: 'fn', val: { paramTypes, returnType, linkedParams } };
+  let fnType: Type.Type = { 
+    tag: 'fn',
+    val: {
+      paramTypes,
+      returnType: scope.returnType,
+      linkedParams 
+    }
+  };
   return {
     name: fn.name,
     unitName: unit.fullName,
     body,
     type: fnType,
     paramNames: fn.paramNames,
+    scope,
+    refTable: table
   };
 }
 
@@ -1532,6 +1537,17 @@ interface FnContext {
   variantScope: Enum.VariantScope 
   strTable: string[]
 };
+
+function newScope(returnType: Type.Type, generics: Set<string>, strTable: string[]): FnContext {
+  return {
+    typeScope: [],
+    variantScope: [[]],
+    generics,
+    returnType: returnType,
+    inLoop: false,
+    strTable
+  };
+}
 
 function enterScope(scope: FnContext) {
   scope.typeScope.push(new Map());
