@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError } from './index';
+import { logError, Position } from './index';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
@@ -38,15 +38,20 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 }
 
 export {
-  SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, InstMeta, CondBody,
-  ForIn, Declare, Assign, MatchBranch, Match, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
+  SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
+  ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
   BinExpr, Expr, parseDir
 }
 
 interface SourceLine {
-  sourceLine: number
+  position: Position
   indent: number
-  tokens: string[]
+  tokens: Token[]
+}
+
+interface Token {
+  position: Position
+  val: string
 }
 
 interface ProgramUnit {
@@ -79,14 +84,14 @@ interface Fn {
   paramNames: string[]
   defaultExprs: (Expr | null)[]
   name: string
-  body: InstMeta[]
-  sourceLine: number
+  body: Inst[]
+  position: Position
 }
 
 interface Var {
   t: Type,
   name: string
-  sourceLine: number
+  position: Position
 }
 
 interface StructHeader {
@@ -97,23 +102,18 @@ interface StructHeader {
 interface Struct {
   header: StructHeader
   fields: Var[]
-  sourceLine: number
-}
-
-interface InstMeta {
-  inst: Inst,
-  sourceLine: number
+  position: Position
 }
 
 interface CondBody {
   cond: Expr,
-  body: InstMeta[]
+  body: Inst[]
 }
 
 interface ForIn {
   varName: string
   iter: Expr
-  body: InstMeta[]
+  body: Inst[]
 }
 
 interface Declare {
@@ -126,17 +126,6 @@ interface Assign {
   op: string
   to: LeftExpr
   expr: Expr
-}
-
-interface MatchBranch {
-  enumVariant: string
-  body: InstMeta[]
-  sourceLine: number
-}
-
-interface Match {
-  var: Expr
-  branches: MatchBranch[]
 }
 
 interface FnCall {
@@ -155,21 +144,20 @@ interface Include {
   types: Type[]
 }
 
-type Inst = { tag: 'if', val: CondBody }
-  | { tag: 'elif', val: CondBody }
-  | { tag: 'else', val: InstMeta[] }
-  | { tag: 'while', val: CondBody }
-  | { tag: 'for_in', val: ForIn }
-  | { tag: 'break' }
-  | { tag: 'continue' }
-  | { tag: 'return_void' }
-  | { tag: 'return', val: Expr }
-  | { tag: 'match', val: Match }
-  | { tag: 'expr', val: Expr }
-  | { tag: 'declare', val: Declare }
-  | { tag: 'assign', val: Assign }
-  | { tag: 'macro', val: Macro }
-  | { tag: 'include', val: Include }
+type Inst = { tag: 'if', val: CondBody, position: Position }
+  | { tag: 'elif', val: CondBody, position: Position }
+  | { tag: 'else', val: Inst[], position: Position }
+  | { tag: 'while', val: CondBody, position: Position }
+  | { tag: 'for_in', val: ForIn, position: Position }
+  | { tag: 'break', position: Position }
+  | { tag: 'continue', position: Position }
+  | { tag: 'return_void', position: Position }
+  | { tag: 'return', val: Expr, position: Position }
+  | { tag: 'expr', val: Expr, position: Position }
+  | { tag: 'declare', val: Declare, position: Position }
+  | { tag: 'assign', val: Assign, position: Position }
+  | { tag: 'macro', val: Macro, position: Position }
+  | { tag: 'include', val: Include, position: Position }
 
 interface DotOp {
   left: Expr,
@@ -197,20 +185,20 @@ interface BinExpr {
   op: string
 }
 
-type Expr = { tag: 'bin', val: BinExpr }
-  | { tag: 'not', val: Expr }
-  | { tag: 'try', val: Expr }
-  | { tag: 'assert', val: Expr }
-  | { tag: 'fn_call', val: FnCall }
-  | { tag: 'struct_init', val: StructInitField[] }
-  | { tag: 'arr_init', val: Expr[] }
-  | { tag: 'str_const', val: string }
-  | { tag: 'fmt_str', val: Expr[] }
-  | { tag: 'char_const', val: string }
-  | { tag: 'int_const', val: number }
-  | { tag: 'bool_const', val: boolean }
-  | { tag: 'num_const', val: number }
-  | { tag: 'left_expr', val: LeftExpr }
+type Expr = { tag: 'bin', val: BinExpr, position: Position }
+  | { tag: 'not', val: Expr, position: Position }
+  | { tag: 'try', val: Expr, position: Position }
+  | { tag: 'assert', val: Expr, position: Position }
+  | { tag: 'fn_call', val: FnCall, position: Position }
+  | { tag: 'struct_init', val: StructInitField[], position: Position }
+  | { tag: 'arr_init', val: Expr[], position: Position }
+  | { tag: 'str_const', val: string, position: Position }
+  | { tag: 'fmt_str', val: Expr[], position: Position }
+  | { tag: 'char_const', val: string, position: Position }
+  | { tag: 'int_const', val: number, position: Position }
+  | { tag: 'bool_const', val: boolean, position: Position }
+  | { tag: 'num_const', val: number, position: Position }
+  | { tag: 'left_expr', val: LeftExpr, position: Position }
 
 const MAPPING: [string, number][] = [
   [':', 0],
@@ -218,6 +206,10 @@ const MAPPING: [string, number][] = [
   ['/', 5], ['%', 5], ['==', 3], ['!=', 3], ['<', 3],
   ['>', 3], ['>=', 3], ['<=', 3], ['is', 3]
 ]; 
+
+function positionRange(tokens: Token[]): Position {
+  return { ...tokens[0].position, end: tokens[tokens.length - 1].position.end, start: tokens[0].position.start };
+}
 
 function parseFile(filePath: string, progName: string): ProgramUnit | null {
   let unitText;
@@ -232,29 +224,29 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
 }
 
 // returns the program, null if invalid syntax, and logs all errors to the console
-function parse(unitText: string, progName: string): ProgramUnit | null {
-  let lines = getLines(unitText);
-  let program: ProgramUnit = { fullName: progName, uses: [], fns: [], structs: [], enums: [] };
+function parse(unitText: string, documentName: string): ProgramUnit | null {
+  let lines = getLines(unitText, documentName);
+  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], enums: [] };
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
     if (line.indent == 0) {
       let body = getIndentedSegment(lines, i + 1, 1);
-      if (line.tokens[0] == 'struct') {
+      if (line.tokens[0].val == 'struct') {
         let struct = parseStruct(line, body);
         if (struct == null) {
           return null;
         }
         program.structs.push(struct);
-      } else if (line.tokens[0] == 'enum') {
+      } else if (line.tokens[0].val == 'enum') {
         let en = parseStruct(line, body);
         if (en == null) {
           return null;
         }
         program.enums.push(en);
-      } else if (line.tokens[0] == 'use') {
-        if (line.sourceLine != 0) {
-          logError(line.sourceLine, 'uses must be at top of file');
+      } else if (line.tokens[0].val == 'use') {
+        if (line.position.line != 1) {
+          logError(line.position, 'uses must be at top of file');
           return null;
         }
         let uses = parseUses(line);
@@ -310,20 +302,20 @@ function getIndentedSegment(
 // returns the index the first time the open character is
 // balanced (equal open as closed) starting from the end. -1 if it does not occur
 function getFirstBalanceIndexFromEnd(
-  tokens: string[],
+  tokens: Token[],
   openToken: string,
   closeToken: string
 ): number {
   let balance = 0;
   for (let i = tokens.length - 1; i >= 0; i--) {
-    if (tokens[i] == openToken) {
+    if (tokens[i].val == openToken) {
       balance -= 1;
     }
-    else if (tokens[i] == closeToken) {
+    else if (tokens[i].val == closeToken) {
       balance += 1;
     }
 
-    if (balance == 0 && tokens[i] == openToken) {
+    if (balance == 0 && tokens[i].val == openToken) {
       return i;
     }
   }
@@ -334,20 +326,20 @@ function getFirstBalanceIndexFromEnd(
 // returns the index the first time the close character is
 // balanced (equal open as closed). -1 if it does not occur
 function getFirstBalanceIndex(
-  tokens: string[],
+  tokens: Token[],
   openToken: string,
   closeToken: string
 ): number {
   let balance = 0;
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i] == openToken) {
+    if (tokens[i].val == openToken) {
       balance -= 1;
     }
-    else if (tokens[i] == closeToken) {
+    else if (tokens[i].val == closeToken) {
       balance += 1;
     }
 
-    if (balance == 0 && tokens[i] == closeToken) {
+    if (balance == 0 && tokens[i].val == closeToken) {
       return i;
     }
   }
@@ -358,27 +350,27 @@ function getFirstBalanceIndex(
 // returns two segments of tokens split by op, or the entire token stream
 // as the first element of the array if the operator does not exist at the 
 // current balance level
-function balancedSplitTwo(tokens: string[], op: string): string[][] {
+function balancedSplitTwo(tokens: Token[], op: string): Token[][] {
   let oParenCount = 0;
   let oSquareCount = 0;
   let oCurlyCount = 0;
 
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i] == '(') {
+    if (tokens[i].val == '(') {
       oParenCount += 1;
-    } else if (tokens[i] == ')') {
+    } else if (tokens[i].val == ')') {
       oParenCount -= 1;
-    } else if (tokens[i] == '[') {
+    } else if (tokens[i].val == '[') {
       oSquareCount += 1;
-    } else if (tokens[i] == ']') {
+    } else if (tokens[i].val == ']') {
       oSquareCount -= 1;
-    } else if (tokens[i] == '{') {
+    } else if (tokens[i].val == '{') {
       oCurlyCount += 1;
-    } else if (tokens[i] == '}') {
+    } else if (tokens[i].val == '}') {
       oCurlyCount -= 1;
     }
 
-    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+    if (tokens[i].val == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
       return [tokens.slice(0, i), tokens.slice(i + 1)];
     }
   }
@@ -386,27 +378,27 @@ function balancedSplitTwo(tokens: string[], op: string): string[][] {
   return [tokens];
 }
 
-function balancedSplitTwoBackwards(tokens: string[], op: string): string[][] {
+function balancedSplitTwoBackwards(tokens: Token[], op: string): Token[][] {
   let oParenCount = 0;
   let oSquareCount = 0;
   let oCurlyCount = 0;
 
   for (let i = tokens.length - 1; i >= 0; i--) {
-    if (tokens[i] == ')') {
+    if (tokens[i].val == ')') {
       oParenCount += 1;
-    } else if (tokens[i] == '(') {
+    } else if (tokens[i].val == '(') {
       oParenCount -= 1;
-    } else if (tokens[i] == ']') {
+    } else if (tokens[i].val == ']') {
       oSquareCount += 1;
-    } else if (tokens[i] == '[') {
+    } else if (tokens[i].val == '[') {
       oSquareCount -= 1;
-    } else if (tokens[i] == '}') {
+    } else if (tokens[i].val == '}') {
       oCurlyCount += 1;
-    } else if (tokens[i] == '{') {
+    } else if (tokens[i].val == '{') {
       oCurlyCount -= 1;
     }
 
-    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+    if (tokens[i].val == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
       return [tokens.slice(0, i), tokens.slice(i + 1)];
     }
   }
@@ -415,7 +407,7 @@ function balancedSplitTwoBackwards(tokens: string[], op: string): string[][] {
 }
 
 // returns an array of token arrays which are a balanced split of the operator
-function balancedSplit(tokens: string[], op: string): string[][] {
+function balancedSplit(tokens: Token[], op: string): Token[][] {
   let oParenCount = 0;
   let oSquareCount = 0;
   let oCurlyCount = 0;
@@ -423,26 +415,26 @@ function balancedSplit(tokens: string[], op: string): string[][] {
   let splits = [];
   let tokenStart = 0;
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i] == '(') {
+    if (tokens[i].val == '(') {
       oParenCount += 1;
     }
-    else if (tokens[i] == ')') {
+    else if (tokens[i].val == ')') {
       oParenCount -= 1;
     }
-    else if (tokens[i] == '[') {
+    else if (tokens[i].val == '[') {
       oSquareCount += 1;
     }
-    else if (tokens[i] == ']') {
+    else if (tokens[i].val == ']') {
       oSquareCount -= 1;
     }
-    else if (tokens[i] == '{') {
+    else if (tokens[i].val == '{') {
       oCurlyCount += 1;
     }
-    else if (tokens[i] == '}') {
+    else if (tokens[i].val == '}') {
       oCurlyCount -= 1;
     }
 
-    if (tokens[i] == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+    if (tokens[i].val == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
       if (tokenStart != i) {
         splits.push(tokens.slice(tokenStart, i));
       }
@@ -455,7 +447,7 @@ function balancedSplit(tokens: string[], op: string): string[][] {
 }
 
 function parseUses(header: SourceLine): string[] | null {
-  if (header.tokens[0] != 'use') {
+  if (header.tokens[0].val != 'use') {
     return null;
   }
 
@@ -466,7 +458,7 @@ function parseUses(header: SourceLine): string[] | null {
       return null;
     }
 
-    uses.push(modName.join());
+    uses.push(modName.map(x => x.val).join());
   }
 
   return uses;
@@ -475,41 +467,42 @@ function parseUses(header: SourceLine): string[] | null {
 // returns the struct if it could valid parse from the header and the body, logs errors
 function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
   if (header.tokens.length < 2) {
-    logError(header.sourceLine, 'expected struct name');
+    logError(header.position, 'expected struct name');
     return null;
   }
 
   let generics = [];
-  if (header.tokens.length > 3 && header.tokens[2] == '[' && header.tokens[header.tokens.length - 1] == ']') {
+  if (header.tokens.length > 3 && header.tokens[2].val == '[' && header.tokens[header.tokens.length - 1].val == ']') {
     let genericTokens = balancedSplit(header.tokens.slice(3, -1), ',');
     for (let i = 0; i < genericTokens.length; i++) {
-      if (genericTokens[i][0].length != 1 || genericTokens[i][0].length != 1) {
-        logError(header.sourceLine, 'generics must be 1 letter long');
+      if (genericTokens[i][0].val.length != 1 || genericTokens[i][0].val.length != 1) {
+        logError(genericTokens[i][0].position, 'generics must be 1 letter long');
         return null;
       }
 
-      let letter = genericTokens[i][0];
+      let letter = genericTokens[i][0].val;
       if (letter > 'Z' || letter < 'A') {
-        logError(header.sourceLine, 'generics must be captial letter');
+        logError(genericTokens[i][0].position, 'generics must be captial letter');
         return null;
       }
       generics.push(letter);
     }
   }
 
-  let structName: StructHeader = { name: header.tokens[1], generics };
-  let structFields = [];
+  let structName: StructHeader = { name: header.tokens[1].val, generics };
+  let structFields: Var[] = [];
   for (let line of body) {
-    let name = line.tokens[line.tokens.length - 1];
-    let t = tryParseType(line.tokens.slice(0, -1));
+    let name = line.tokens[line.tokens.length - 1].val;
+    let typeTokens = line.tokens.slice(0, -1);
+    let t = tryParseType(typeTokens);
     if (t == null) {
-      logError(line.sourceLine, 'field type not valid')
+      logError(positionRange(typeTokens), 'field type not valid')
       return null;
     }
-    structFields.push({ t, name, sourceLine: line.sourceLine });
+    structFields.push({ t, name, position: line.position });
   }
 
-  return { header: structName, fields: structFields, sourceLine: header.sourceLine };
+  return { header: structName, fields: structFields, position: header.position };
 }
 
 // returns the fn if it could valid parse from the header and the body, logs errors
@@ -530,17 +523,17 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     paramNames,
     t,
     body: fnBody,
-    sourceLine: header.sourceLine ,
+    position: header.position,
     defaultExprs 
   };
 }
 
-function tryParseType(tokens: string[]): Type | null {
+function tryParseType(tokens: Token[]): Type | null {
   if (tokens.length == 0) {
     return null;
   }
 
-  let lastToken = tokens[tokens.length - 1]; 
+  let lastToken = tokens[tokens.length - 1].val; 
   if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
@@ -584,7 +577,7 @@ function tryParseType(tokens: string[]): Type | null {
       }
     }
     return { tag: 'fn', val: { returnType, paramTypes } };
-  } else if (tokens[tokens.length - 1] == ']') { // parse generic or array
+  } else if (tokens[tokens.length - 1].val == ']') { // parse generic or array
     let openIndex = getFirstBalanceIndexFromEnd(tokens, '[', ']');
     if (openIndex == -1) {
       return null;
@@ -593,23 +586,24 @@ function tryParseType(tokens: string[]): Type | null {
     let inner = tokens.slice(openIndex + 1, -1);
 
     // parse it as an array
-    if (inner.length == 0 || inner.length == 1 && inner[0] == '&') {
-      if (inner[0] == '[') {
+    if (inner.length == 0 || inner.length == 1 && inner[0].val == '&') {
+      let innerFirst: string | undefined = inner.length == 0 ? undefined : inner[0].val;
+      if (innerFirst == '[') {
         inner = [];
       }
 
       let end = tokens.length - 2;
-      if (inner[0] == '&') {
+      if (innerFirst == '&') {
         end = tokens.length - 3;
       }
 
-      let restOfType: string[] = tokens.slice(0, end);
+      let restOfType: Token[] = tokens.slice(0, end);
       let t: Type | null = tryParseType(restOfType);
       if (t == null) {
         return null;
       }
 
-      if (inner[0] == '&') {
+      if (innerFirst == '&') {
         return { tag: 'arr', val: t };
       } 
       else {
@@ -629,13 +623,13 @@ function tryParseType(tokens: string[]): Type | null {
       generics.push(parseType);
     }
 
-    return { tag: 'generic', val: { name: tokens[0], generics }};
+    return { tag: 'generic', val: { name: tokens[0].val, generics } };
   }
 
   if (tokens.length != 1) {
     return null;
   }
-  return { tag: 'basic', val: tokens[0] };
+  return { tag: 'basic', val: tokens[0].val };
 }
 
 function parseFnHeader(
@@ -649,12 +643,12 @@ function parseFnHeader(
 {
   let tokens = header.tokens;
 
-  let paramStart = tokens.indexOf('(');
+  let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
     return null;
   }
 
-  let name = tokens[paramStart - 1];
+  let name: string = tokens[paramStart - 1].val;
 
   let paramEnd = getFirstBalanceIndex(tokens.slice(paramStart), '(', ')');
   if (paramEnd == -1) {
@@ -665,29 +659,30 @@ function parseFnHeader(
   let innerTokens = tokens.slice(paramStart + 1, paramEnd);
   let paramSplits = balancedSplit(innerTokens, ',');
   let paramTypes: Type[] = [];
-  let paramNames = [];
+  let paramNames: string[] = [];
   let defaultExprs: (Expr | null)[] = [];
 
   if (paramSplits[0].length > 0) { // for () functions
     for (let param of paramSplits) {
-      let exprNameSplit: string[][] = balancedSplitTwo(param, '=');
+      let exprNameSplit: Token[][] = balancedSplitTwo(param, '=');
       let initExpr: Expr | null = null;
       if (exprNameSplit.length > 1) {
-        initExpr = tryParseExpr(exprNameSplit[1]);
+        initExpr = tryParseExpr(exprNameSplit[1], positionRange(exprNameSplit[1]));
         if (initExpr == null) {
-          logError(header.sourceLine, 'expected expr');
+          logError(header.position, 'expected expr');
           return null;
         }
       }
       param = exprNameSplit[0];
-      let t = tryParseType(param.slice(0, -1));
+
+      let typeTokens = param.slice(0, -1);
+      let t = tryParseType(typeTokens);
       if (t == null) {
-        logError(header.sourceLine, 'could not parse parameters');
+        logError(positionRange(typeTokens), 'could not parse parameter\'s type');
         return null;
       }
 
-      let paramName = param[param.length - 1];
-
+      let paramName = param[param.length - 1].val;
       paramNames.push(paramName);
       paramTypes.push(t);
       defaultExprs.push(initExpr);
@@ -701,7 +696,7 @@ function parseFnHeader(
     // attempt to parse as named return
     if (returnTokens.length > 1) {
       let lastToken = returnTokens[returnTokens.length - 1];
-      if (isAlphaNumeric(lastToken)) {
+      if (isAlphaNumeric(lastToken.val)) {
         let t = tryParseType(returnTokens.slice(0, -1));
         if (t != null) {
           possibleReturn = t;
@@ -716,7 +711,7 @@ function parseFnHeader(
     returnType = possibleReturn;
   }
   if (returnType == null) {
-    logError(header.sourceLine, 'could not parse return type');
+    logError(header.position, 'could not parse return type');
     return null;
   }
 
@@ -728,7 +723,7 @@ function parseFnHeader(
   };
 }
 
-function parseInstBody(lines: SourceLine[]): InstMeta[] | null {
+function parseInstBody(lines: SourceLine[]): Inst[] | null {
   if (lines.length == 0) {
     return [];
   }
@@ -745,9 +740,10 @@ function parseInstBody(lines: SourceLine[]): InstMeta[] | null {
     let inst = parseInst(line, body);
     if (inst == null) {
       invalidInstruction = true;
+      continue;
     }
 
-    insts.push({ inst: inst!, sourceLine: line.sourceLine });
+    insts.push(inst);
   }
 
   if (invalidInstruction) {
@@ -757,49 +753,14 @@ function parseInstBody(lines: SourceLine[]): InstMeta[] | null {
   }
 }
 
-function parseMatch(line: SourceLine, body: SourceLine[]): Inst | null {
-  if (line.tokens.length < 2) {
-    logError(line.sourceLine, 'expected expression');
-    return null;
-  }
-
-  let expr = tryParseExpr(line.tokens.slice(1));
-  if (expr == null) {
-    logError(line.sourceLine, 'expected expression');
-    return null;
-  }
-
-  let branches: MatchBranch[] = [];
-  for (let i = 0; i < body.length; i++) {
-    let bodyLine = body[i];
-    if (bodyLine.indent != line.indent + 1) {
-      continue;
-    }
-
-    if (bodyLine.tokens.length != 1) {
-      logError(bodyLine.sourceLine, 'expected enum variant');
-      return null;
-    }
-
-    let variantBodyLines = getIndentedSegment(body, i + 1, bodyLine.indent + 1);
-    let insts = parseInstBody(variantBodyLines);
-    if (insts == null) {
-      return null;
-    }
-
-    branches.push({ body: insts, enumVariant: bodyLine.tokens[0], sourceLine: bodyLine.sourceLine });
-  }
-
-  return { tag: 'match', val: { var: expr, branches } };
-}
-
-function tryParseFnCall(tokens: string[]): FnCall | null {
-  if (tokens.length < 3 || tokens[tokens.length - 1] != ')') {
+function tryParseFnCall(tokens: Token[]): FnCall | null {
+  if (tokens.length < 3 || tokens[tokens.length - 1].val != ')') {
     return null;
   }
 
   let paramStart = getFirstBalanceIndexFromEnd(tokens, '(', ')');
-  let leftExpr = tryParseLeftExpr(tokens.slice(0, paramStart));
+  let leftExprTokens = tokens.slice(0, paramStart);
+  let leftExpr = tryParseLeftExpr(leftExprTokens, positionRange(leftExprTokens));
   if (leftExpr == null) {
     return null;
   }
@@ -810,9 +771,9 @@ function tryParseFnCall(tokens: string[]): FnCall | null {
   if (tokens.length - paramStart != 2) {
     for (let param of paramExprs) {
       // for implicit params
-      let splitParam: string[][] = balancedSplitTwo(param, '=');
+      let splitParam: Token[][] = balancedSplitTwo(param, '=');
       if (splitParam.length == 1) {
-        let expr = tryParseExpr(splitParam[0]);
+        let expr = tryParseExpr(splitParam[0], positionRange(splitParam[0]));
         if (expr == null) {
           return null;
         }
@@ -820,7 +781,7 @@ function tryParseFnCall(tokens: string[]): FnCall | null {
         exprs.push(expr);
       }
       else {
-        let expr = tryParseExpr(splitParam[1]);
+        let expr = tryParseExpr(splitParam[1], positionRange(splitParam[0]));
         if (expr == null) {
           return null;
         }
@@ -828,7 +789,7 @@ function tryParseFnCall(tokens: string[]): FnCall | null {
           return null;
         }
 
-        names.push(splitParam[0][0]);
+        names.push(splitParam[0][0].val);
         exprs.push(expr);
       }
     }
@@ -838,26 +799,27 @@ function tryParseFnCall(tokens: string[]): FnCall | null {
 }
 
 function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
-  let keyword = line.tokens[0];
+  let keyword: string = line.tokens[0].val;
   let tokens = line.tokens;
   if (keyword == 'if') {
-    let cond = tryParseExpr(tokens.slice(1));
+    let exprTokens = tokens.slice(1);
+    let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (cond == null) {
-      logError(line.sourceLine, 'expected expression');
+      logError(line.position, 'expected expression');
       return null;
     }
     let b = parseInstBody(body);
     if (b == null) {
       return null;
     }
-    return { tag: 'if', val: { cond, body: b }};
+    return { tag: 'if', val: { cond, body: b }, position: line.position };
   } 
-  else if (line.tokens[0] == '@') {
+  else if (line.tokens[0].val == '@') {
     if (tokens.length != 2) {
-      logError(line.sourceLine, 'invalid macro');
+      logError(line.position, 'invalid macro');
       return null;
     }
-    let name = tokens.slice(1)[0];
+    let name = tokens.slice(1)[0].val;
 
     let output = '';
     for (let i = 0; i < body.length; i++) {
@@ -867,35 +829,36 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       output += '\n';
     }
 
-    return { tag: 'macro', val: { name, body: output } };
+    return { tag: 'macro', val: { name, body: output }, position: line.position };
   }
   else if(keyword == 'include') {
     let lines: string[] = [];
     let types: Type[] = [];
     for (let line of body) {
-      let result: string | null = parseIncludeLine(line.tokens[0], line.sourceLine, types);
+      let result: string | null = parseIncludeLine(line.tokens[0].val, line.position, types);
       if (result == null) {
-        logError(line.sourceLine, 'could not parse line');
+        logError(line.position, 'could not parse line');
         return null;
       }
       lines.push(result);
     }
-    return { tag: 'include', val: { lines, types } };
+    return { tag: 'include', val: { lines, types }, position: line.position };
   }
   else if (keyword == 'elif') {
-    let cond = tryParseExpr(tokens.slice(1));
+    let exprTokens = tokens.slice(1);
+    let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (cond == null) {
-      logError(line.sourceLine, 'expected expression');
+      logError(line.position, 'expected expression');
       return null;
     }
     let b = parseInstBody(body);
     if (b == null) {
       return null;
     }
-    return { tag: 'elif', val: { cond, body: b }};
+    return { tag: 'elif', val: { cond, body: b }, position: line.position };
   } else if (keyword == 'else') {
     if (tokens.length != 1) {
-      logError(line.sourceLine, 'unexpected token after \'else\'');
+      logError(line.position, 'unexpected token after \'else\'');
       return null;
     }
 
@@ -903,12 +866,13 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     if (b == null) {
       return null;
     }
-    return { tag: 'else', val: b }
+    return { tag: 'else', val: b, position: line.position }
   } 
   else if (keyword == 'while') {
-    let cond = tryParseExpr(tokens.slice(1));
+    let exprTokens = tokens.slice(1);
+    let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (cond == null) {
-      logError(line.sourceLine, 'expected expression');
+      logError(line.position, 'expected expression');
       return null;
     }
 
@@ -916,16 +880,17 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     if (b == null) {
       return b;
     }
-    return { tag: 'while', val: { cond, body: b }};
+    return { tag: 'while', val: { cond, body: b }, position: line.position };
   } 
   else if (keyword == 'for') {
     if (tokens.length < 3) {
-      logError(line.sourceLine, 'expected for <var> <iter>');
+      logError(line.position, 'expected for <var> <iter>');
       return null;
     }
 
-    let varName = tokens[1];
-    let expr = tryParseExpr(tokens.slice(2));
+    let varName = tokens[1].val;
+    let exprTokens = tokens.slice(2);
+    let expr = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (expr == null) {
       return null;
     }
@@ -934,103 +899,102 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     if (b == null) {
       return b;
     }
-    return { tag: 'for_in', val: { varName, iter: expr, body: b }};
+    return { tag: 'for_in', val: { varName, iter: expr, body: b }, position: line.position };
   } 
   else if (keyword == 'break') {
-    return { tag: 'break' };
+    return { tag: 'break', position: line.position };
   }
   else if (keyword == 'continue') {
-    return { tag: 'continue' }
+    return { tag: 'continue', position: line.position }
   }
   else if (keyword == 'return') {
     if (tokens.length == 1) {
-      return { tag: 'return_void' };
+      return { tag: 'return_void', position: line.position };
     }
-    let val = tryParseExpr(tokens.slice(1));
-    if (val == null) {
-      logError(line.sourceLine, 'expected expression');
+
+    let exprTokens = tokens.slice(1);
+    let expr = tryParseExpr(exprTokens, positionRange(exprTokens));
+    if (expr == null) {
+      logError(line.position, 'expected expression');
       return null;
     }
-    return { tag: 'return', val };
+    return { tag: 'return', val: expr, position: line.position  };
   } 
-  else if (keyword == 'match') {
-    return parseMatch(line, body)
-  }
 
-  let expression = tryParseExpr(tokens);
+  let expression = tryParseExpr(tokens, line.position);
   if (expression != null) {
-    return { tag: 'expr', val: expression };
+    return { tag: 'expr', val: expression, position: line.position };
   }
 
-  if (!tokens.includes('=') && !tokens.includes('+=') && !tokens.includes('-=')) {
+  if (!tokens.find(x => x.val == '=') && !tokens.find(x => x.val == '+=') && !tokens.find(x => x.val == '-=')) {
     let type = tryParseType(tokens.slice(0, -1));
-    let name = tokens[tokens.length - 1];
+    let name = tokens[tokens.length - 1].val;
     if (tokens.length > 1 && type != null) {
-      return { tag: 'declare', val: { t: type, name, expr: null } };
+      return { tag: 'declare', val: { t: type, name, expr: null }, position: line.position };
     }
     return null;
   }
 
   let assignOp: string = '='; 
-  if (tokens.includes('+=')) {
+  if (tokens.find(x => x.val == '+=')) {
     assignOp = '+=';
-  } else if (tokens.includes('-=')) {
+  } else if (tokens.find(x => x.val == '-=')) {
     assignOp = '-=';
   }
 
   let splits = balancedSplitTwo(tokens, assignOp);
   if (splits.length != 2) {
-    logError(line.sourceLine, 'unexpected statement');
+    logError(line.position, 'unexpected statement');
     return null;
   }
 
-  let expr = tryParseExpr(splits[1]);
+  let expr = tryParseExpr(splits[1], positionRange(splits[1]));
   if (expr == null) {
-    logError(line.sourceLine, 'expected expression')
+    logError(line.position, 'expected expression')
     return null;
   }
 
   let left = splits[0];
   // try parse assign
-  let leftExpr = tryParseLeftExpr(left);
+  let leftExpr = tryParseLeftExpr(left, line.position);
   if (leftExpr != null) {
-    return { tag: 'assign', val: { to: leftExpr, expr, op: assignOp } };
+    return { tag: 'assign', val: { to: leftExpr, expr, op: assignOp }, position: line.position };
   }
 
   // parse declare
   let type = tryParseType(left.slice(0, -1));
-  let name = left[left.length - 1];
+  let name: string = left[left.length - 1].val;
   if (left.length >= 2 && type != null) {
-    return { tag: 'declare', val: { t: type, name, expr } }
+    return { tag: 'declare', val: { t: type, name, expr }, position: line.position }
   }
 
   return null;
 }
 
-function tryParseArrInit(tokens:  string[]): Expr | null {
-  if (tokens.length < 2 || tokens[0] != '[' || tokens[tokens.length - 1] != ']') {
+function tryParseArrInit(tokens: Token[], position: Position): Expr | null {
+  if (tokens.length < 2 || tokens[0].val != '[' || tokens[tokens.length - 1].val != ']') {
     return null;
   } 
 
   let splits = balancedSplit(tokens.slice(1, -1), ',');
   let exprs: Expr[] = [];
   for (let split of splits) {
-    let expr = tryParseExpr(split);
+    let expr = tryParseExpr(split, positionRange(split));
     if (expr == null) {
       return null;
     }
     exprs.push(expr);
   }
 
-  return { tag: 'arr_init', val: exprs };
+  return { tag: 'arr_init', val: exprs, position };
 }
 
-function tryParseStructInit(tokens: string[]): Expr | null {
-  if (tokens.length < 2 || tokens[0] != '{' || tokens[tokens.length - 1] != '}') {
+function tryParseStructInit(tokens: Token[], position: Position): Expr | null {
+  if (tokens.length < 2 || tokens[0].val != '{' || tokens[tokens.length - 1].val != '}') {
     return null;
   }
 
-  let props = [];
+  let props: StructInitField[] = [];
   let splits = balancedSplit(tokens.slice(1, -1), ',');
   if (splits[0].length != 0) {
     for (let split of splits) {
@@ -1047,25 +1011,25 @@ function tryParseStructInit(tokens: string[]): Expr | null {
         return null;
       }
 
-      let initExpr = tryParseExpr(newSplits[1])
+      let initExpr = tryParseExpr(newSplits[1], { ...position, });
       if (initExpr == null) {
         return null;
       }
 
-      props.push({ name: newSplits[0][0], expr: initExpr });
+      props.push({ name: newSplits[0][0].val, expr: initExpr });
     }
   }
 
-  return { tag: 'struct_init', val: props };
+  return { tag: 'struct_init', val: props, position };
 }
 
-function tryParseDotOp(tokens: string[]): LeftExpr | null {
+function tryParseDotOp(tokens: Token[]): LeftExpr | null {
   let splits = balancedSplitTwoBackwards(tokens, '.');
   if (splits.length != 2) {
     return null;
   }
 
-  let left = tryParseExpr(splits[0]);
+  let left = tryParseExpr(splits[0], positionRange(splits[0]));
   if (left == null) {
     return null;
   }
@@ -1074,11 +1038,11 @@ function tryParseDotOp(tokens: string[]): LeftExpr | null {
     return null;
   }
 
-  return { tag: 'dot', val: { left, varName: splits[1][0] } };
+  return { tag: 'dot', val: { left, varName: splits[1][0].val } };
 }
 
-function tryParseArrExpr(tokens: string[]): LeftExpr | null {
-  if (tokens[tokens.length - 1] != ']') {
+function tryParseArrExpr(tokens: Token[], position: Position): LeftExpr | null {
+  if (tokens[tokens.length - 1].val != ']') {
     return null;
   }
 
@@ -1087,12 +1051,14 @@ function tryParseArrExpr(tokens: string[]): LeftExpr | null {
     return null;
   }
 
-  let innerExpr = tryParseExpr(tokens.slice(balanceIndex + 1, -1));
+  let innerTokens = tokens.slice(balanceIndex + 1, -1);
+  let innerExpr = tryParseExpr(innerTokens, positionRange(innerTokens));
   if (innerExpr == null) {
     return null;
   }
 
-  let leftExpr = tryParseLeftExpr(tokens.slice(0, balanceIndex));
+  let namePosition: Position = { ...position, start: 0, end: balanceIndex };
+  let leftExpr = tryParseLeftExpr(tokens.slice(0, balanceIndex), namePosition);
   if (innerExpr == null || leftExpr == null) {
     return null;
   }
@@ -1100,9 +1066,9 @@ function tryParseArrExpr(tokens: string[]): LeftExpr | null {
   return { tag: 'arr_offset', val: { var: leftExpr, index: innerExpr }};
 }
 
-function tryParseLeftExpr(tokens: string[]): LeftExpr | null {
+function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null {
   if (tokens.length == 1) {
-    return { tag: 'var', val: tokens[0] };
+    return { tag: 'var', val: tokens[0].val };
   }
 
   let dot = tryParseDotOp(tokens);
@@ -1110,31 +1076,31 @@ function tryParseLeftExpr(tokens: string[]): LeftExpr | null {
     return dot;
   }
 
-  if (tokens[tokens.length - 1] == '\'') {
-    let parsed = tryParseExpr(tokens.slice(0, -1));
+  if (tokens[tokens.length - 1].val == '\'') {
+    let parsed = tryParseExpr(tokens.slice(0, -1), { ...position, end: position.end - 1 });
     if (parsed == null) {
       return null;
     }
     return { tag: 'prime', val: parsed };
   }
 
-  return tryParseArrExpr(tokens);
+  return tryParseArrExpr(tokens, position);
 }
 
-function tryParseExpr(tokens: string[]): Expr | null {
+function tryParseExpr(tokens: Token[], position: Position): Expr | null {
   if (tokens.length == 0) {
     return null;
   }
 
-  if (tokens[0] == 'try' || tokens[0] == 'assert') {
-    let parsed = tryParseExpr(tokens.slice(1));
+  if (tokens[0].val == 'try' || tokens[0].val == 'assert') {
+    let parsed = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (parsed == null) {
       return null;
     }
-    if (tokens[0] == 'try') {
-      return { tag: 'try', val: parsed };
+    if (tokens[0].val == 'try') {
+      return { tag: 'try', val: parsed, position };
     } else {
-      return { tag: 'assert', val: parsed };
+      return { tag: 'assert', val: parsed, position };
     }
   }
 
@@ -1145,44 +1111,44 @@ function tryParseExpr(tokens: string[]): Expr | null {
         continue;
       }
 
-      let binOp = tryParseBinOp(tokens, props[0]);
+      let binOp = tryParseBinOp(tokens, props[0], position);
       if (binOp != null) {
         return binOp;
       }
     }
   }
 
-  if (tokens.length >= 2 && tokens[0] == '(' && tokens[tokens.length - 1] == ')') {
-    return tryParseExpr(tokens.slice(1, -1));
+  if (tokens.length >= 2 && tokens[0].val == '(' && tokens[tokens.length - 1].val == ')') {
+    return tryParseExpr(tokens.slice(1, -1), { ...position, start: position.start + 1, end: position.end + 1 });
   }
 
   // parse not
-  if (tokens.length >= 2 && tokens[0] == '!') {
-    let expr = tryParseExpr(tokens.slice(1));
+  if (tokens.length >= 2 && tokens[0].val == '!') {
+    let expr = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (expr == null) {
       return null;
     }
-    return { tag: 'not', val: expr };
+    return { tag: 'not', val: expr, position };
   }
 
   let fnCall = tryParseFnCall(tokens);
   if (fnCall != null) {
-    return { tag: 'fn_call', val: fnCall };
+    return { tag: 'fn_call', val: fnCall, position };
   }
 
-  let arrInit = tryParseArrInit(tokens);
+  let arrInit = tryParseArrInit(tokens, position);
   if (arrInit != null) {
     return arrInit;
   } 
 
-  let structInit = tryParseStructInit(tokens);
+  let structInit = tryParseStructInit(tokens, position);
   if (structInit != null) {
     return structInit;
   }
 
-  if (tokens.length == 3 && tokens.includes('.')) {
-    if (tokens[0][0] >= '0' && tokens[0][0] <= '9' && tokens[1] == '.'
-      && tokens[2][0] >= '0' && tokens[2][0] <= '9') {
+  if (tokens.length == 3 && tokens.find(x => x.val == '.')) {
+    if (tokens[0].val[0] >= '0' && tokens[0].val[0] <= '9' && tokens[1].val == '.'
+      && tokens[2].val[0] >= '0' && tokens[2].val[0] <= '9') {
 
       let num;
       try {
@@ -1190,21 +1156,21 @@ function tryParseExpr(tokens: string[]): Expr | null {
       } catch(e) {
         return null;
       }
-      return { tag: 'num_const', val: num };
+      return { tag: 'num_const', val: num, position };
     }
   }
 
   if (tokens.length == 1) {
-    let ident = tokens[0];
+    let ident = tokens[0].val;
     if (ident == 'true') {
-      return { tag: 'bool_const', val: true };
+      return { tag: 'bool_const', val: true, position };
     } else if (ident == 'false') {
-      return { tag: 'bool_const', val: false };
+      return { tag: 'bool_const', val: false, position };
     }
 
     if (ident.length >= 2 && ident[0] == '"' && ident[ident.length - 1] == '"') {
       let str = ident.slice(1, -1);
-      let parsed: Expr[] | null = tryParseFmtString(str);
+      let parsed: Expr[] | null = tryParseFmtString(str, position);
       if (parsed == null) {
         return null;
       }
@@ -1212,12 +1178,12 @@ function tryParseExpr(tokens: string[]): Expr | null {
       if (parsed.length == 1) {
         return parsed[0];
       } else {
-        return { tag: 'fmt_str', val: parsed };
+        return { tag: 'fmt_str', val: parsed, position };
       }
     }
 
     if (ident.length >= 2 && ident[0] == '\'' && ident[ident.length - 1] == '\'') {
-      return { tag: 'char_const', val: ident.slice(1, -1) };
+      return { tag: 'char_const', val: ident.slice(1, -1), position };
     }
 
     if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9'
@@ -1229,25 +1195,25 @@ function tryParseExpr(tokens: string[]): Expr | null {
       } catch (e) {
         return null;
       }
-      return { tag: 'int_const', val: int };
+      return { tag: 'int_const', val: int, position };
     }
   }
 
-  let leftExpr = tryParseLeftExpr(tokens);
+  let leftExpr = tryParseLeftExpr(tokens, position);
   if (leftExpr != null) {
-    return { tag: 'left_expr', val: leftExpr };
+    return { tag: 'left_expr', val: leftExpr, position };
   }
 
   return null;
 }
 
-function tryParseFmtString(lineExpr: string): Expr[] | null {
+function tryParseFmtString(lineExpr: string, position: Position): Expr[] | null {
   let exprs: Expr[] = [];
   let constStrStart = 0;
   for (let i = 0; i < lineExpr.length; i++) {
     if (lineExpr[i] == '{') {
       let constStr = lineExpr.slice(constStrStart, i);
-      exprs.push({ tag: 'str_const', val: constStr });
+      exprs.push({ tag: 'str_const', val: constStr, position });
 
       let exprStart = i + 1;
       let openCount = 0;
@@ -1261,8 +1227,8 @@ function tryParseFmtString(lineExpr: string): Expr[] | null {
       }
 
       let exprStr = lineExpr.slice(exprStart, i);
-      let tokens = splitTokens(exprStr);
-      let expr = tryParseExpr(tokens);
+      let tokens = splitTokens(exprStr, position.document, position.line);
+      let expr = tryParseExpr(tokens, { ...position, start: exprStart, end: i });
       if (expr == null) {
         return null;
       }
@@ -1272,27 +1238,31 @@ function tryParseFmtString(lineExpr: string): Expr[] | null {
   }
 
   let constStr = lineExpr.slice(constStrStart);
-  exprs.push({ tag: 'str_const', val: constStr });
+  exprs.push({ tag: 'str_const', val: constStr, position });
   return exprs;
 }
 
-function tryParseBinOp(tokens: string[], op: string): Expr | null {
+function tryParseBinOp(tokens: Token[], op: string, position: Position): Expr | null {
   let splits = balancedSplitTwoBackwards(tokens, op);
   if (splits.length == 1) {
     return null;
   }
 
-  let left = tryParseExpr(splits[0]);
-  let right = tryParseExpr(splits[1]);
+  let left = tryParseExpr(splits[0], positionRange(splits[0]));
+  let right = tryParseExpr(splits[1], positionRange(splits[1]));
 
   if (left == null || right == null) {
     return null;
   }
 
-  return { tag: 'bin', val: { op, left, right }};
+  return { tag: 'bin', val: { op, left, right }, position};
 }
 
-function parseIncludeLine(line: string, sourceLine: number, types: Type[]): string | null {
+function parseIncludeLine(
+  line: string,
+  position: Position,
+  types: Type[]
+): string | null {
   let outLine: string = '';
   while (true) {
     let nextIndex = line.indexOf('$(');
@@ -1315,10 +1285,10 @@ function parseIncludeLine(line: string, sourceLine: number, types: Type[]): stri
     }
 
     let typeStr = line.slice(nextIndex + 2, nextSegment - 1);
-    let typeTokens = splitTokens(typeStr);
+    let typeTokens = splitTokens(typeStr, position.document, position.line);
     let type = tryParseType(typeTokens);
     if (type == null) {
-      logError(sourceLine, 'could not parse type');
+      logError(position, 'could not parse type');
       return null;
     }
     types.push(type);
@@ -1332,9 +1302,9 @@ function parseIncludeLine(line: string, sourceLine: number, types: Type[]): stri
   return outLine;
 }
 
-function splitTokens(line: string): string[] {
+function splitTokens(line: string, documentName: string, lineNumber: number): Token[] {
   // split tokens based on special characters
-  let tokens: string[] = [];
+  let tokens: Token[] = [];
   let tokenStart = 0;
   const splitTokens = [' ', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^'];
   for (let i = 0; i < line.length; i++) {
@@ -1342,7 +1312,7 @@ function splitTokens(line: string): string[] {
     if (line[i] == '"') {
       let possibleSlice = line.slice(tokenStart, i);
       if (possibleSlice.length != 0) {
-        tokens.push(possibleSlice);
+        tokens.push({ val: possibleSlice, position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       }
       tokenStart = i + 1;
       i += 1;
@@ -1357,7 +1327,8 @@ function splitTokens(line: string): string[] {
         }
         i += 1;
       }
-      tokens.push('"' + line.slice(tokenStart, i) + '"');
+
+      tokens.push({ val: '"' + line.slice(tokenStart, i) + '"', position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       tokenStart = i + 1;
     }
 
@@ -1365,21 +1336,22 @@ function splitTokens(line: string): string[] {
     if (line[i] == '\'' && (line[i - 1] == ' ' || line[i - 1] == '(' || line[i - 1] == '[')) {
       let possibleSlice = line.slice(tokenStart, i);
       if (possibleSlice.length != 0) {
-        tokens.push(possibleSlice);
+        tokens.push({ val: possibleSlice, position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       }
       tokenStart = i + 1;
       i += 1;
       while (i < line.length && line[i] != '\'') {
         i += 1;
       }
-      tokens.push('\'' + line.slice(tokenStart, i) + '\'');
+      tokens.push({ val: '\'' + line.slice(tokenStart, i) + '\'', position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       tokenStart = i + 1;
     } else if (line[i] == '\''){
       let possibleSlice = line.slice(tokenStart, i);
       if (possibleSlice.length != 0) {
-        tokens.push(possibleSlice);
+        tokens.push({ val: possibleSlice, position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       }
-      tokens.push('\'');
+
+      tokens.push({ val: '\'', position: { document: documentName, line: lineNumber, start: i, end: i + 1 } });
       tokenStart = i + 1;
     }
 
@@ -1387,47 +1359,51 @@ function splitTokens(line: string): string[] {
       let possibleSlice = line.slice(tokenStart, i);
       // protects against double space and spaces trailing other splits
       if (possibleSlice.length != 0) {
-        tokens.push(possibleSlice);
+        tokens.push({ val: possibleSlice, position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       }
       tokenStart = i + 1;
 
       if (line[i] != ' ') {
-        tokens.push(line[i]);
+        tokens.push({ val: line[i], position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });
       }
     }
   }
 
   // push the last token if it does not follow a split token
   if (!splitTokens.includes(line[line.length - 1]) && line[line.length - 1] != '"' && line[line.length - 1] != '\'') {
-    tokens.push(line.slice(tokenStart, line.length));
+    let token = line.slice(tokenStart, line.length);
+    tokens.push({ val: token, position: { document: documentName, line: lineNumber, start: tokenStart, end: line.length } });
   }
 
   // combine the tokens that should not have been split
   for (let i = tokens.length - 1; i >= 1; i--) {
-    if (tokens[i - 1] == '!' && tokens[i] == '=') {
+    if (tokens[i - 1].val == '!' && tokens[i].val == '=') {
       tokens.splice(i, 1);
-      tokens[i - 1] = '!=';
+      tokens[i - 1].val = '!=';
     }
-    else if (tokens[i] == '=' && (tokens[i - 1] == '>' || tokens[i - 1] == '<'
-      || tokens[i - 1] == '+' || tokens[i - 1] == '-' || tokens[i - 1] == '=')) {
-      tokens[i - 1] = tokens[i - 1] + '' + tokens[i];
+    else if (tokens[i].val == '=' && (tokens[i - 1].val == '>' || tokens[i - 1].val == '<'
+      || tokens[i - 1].val == '+' || tokens[i - 1].val == '-' || tokens[i - 1].val == '=')) {
+      tokens[i - 1].val = tokens[i - 1].val + tokens[i].val;
       tokens.splice(i, 1);
     }
-    else if (tokens[i - 1] == '&' && tokens[i] == '&') {
+    else if (tokens[i - 1].val == '&' && tokens[i].val == '&') {
       tokens.splice(i, 1);
-      tokens[i - 1] = '&&';
+      tokens[i - 1].val = '&&';
+      tokens[i - 1].position.end += 1;
     }
   }
 
   return tokens;
 }
 
-function getLines(data: string): SourceLine[] {
+function getLines(data: string, documentName: string): SourceLine[] {
   let lines = data.split('\n');
   let sourceLines: SourceLine[] = [];
   // split lines based on spaces
   for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
     let line = lines[lineNumber];
+    let lineLength = line.length;
+
     if (line.startsWith('##')) {
       lineNumber++;
       while (!lines[lineNumber].startsWith('##') && lineNumber < lines.length) {
@@ -1445,8 +1421,9 @@ function getLines(data: string): SourceLine[] {
     }
 
     line = line.trim();
+    let linePosition: Position = { document: documentName, line: lineNumber + 1, start: indent * 2, end: lineLength };
     if (indent != Math.floor(indent)) {
-      logError(lineNumber, 'invalid tab amount ' + indent);
+      logError(linePosition, 'invalid tab amount ' + indent);
       continue;
     }
 
@@ -1457,7 +1434,7 @@ function getLines(data: string): SourceLine[] {
     // parse the include block without processing tokens
     if (line == 'include') {
       let startingIndent = indent;
-      sourceLines.push({ tokens: [line], indent, sourceLine: lineNumber });
+      sourceLines.push({ tokens: [{ val: line, position: linePosition }], indent, position: linePosition });
       for (let blockLineNumber = lineNumber + 1; blockLineNumber < lines.length; blockLineNumber++) {
         let line = lines[blockLineNumber];
         if (line.trim() == '') {
@@ -1473,7 +1450,7 @@ function getLines(data: string): SourceLine[] {
         }
 
         if (indent != Math.floor(indent)) {
-          logError(blockLineNumber, 'invalid tab amount ' + indent);
+          logError(linePosition, 'invalid tab amount ' + indent);
           continue;
         }
 
@@ -1484,14 +1461,14 @@ function getLines(data: string): SourceLine[] {
           break;
         }
 
-        sourceLines.push({ tokens: [line], indent: startingIndent + 1, sourceLine: blockLineNumber });
+        sourceLines.push({ tokens: [{ val: line, position: linePosition }], indent: startingIndent + 1, position: linePosition });
       }
 
       continue;
     }
 
-    let tokens: string[] = splitTokens(line);
-    sourceLines.push({ sourceLine: lineNumber, indent, tokens });
+    let tokens: Token[] = splitTokens(line, documentName, lineNumber);
+    sourceLines.push({ indent, tokens, position: linePosition });
   }
 
   return sourceLines;

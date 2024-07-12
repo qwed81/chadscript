@@ -1,4 +1,4 @@
-import { logError } from '../index'
+import { logError, compilerError, Position } from '../index'
 import * as Parse from '../parse';
 
 export {
@@ -192,7 +192,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
     return true;
   }
 
-  logError(-1, 'typeEq compiler bug');
+  compilerError('typeEq type not handled');
   return false;
 }
 
@@ -370,7 +370,7 @@ function getUnitReferences(
 function resolveType(
   def: Parse.Type,
   refTable: RefTable,
-  sourceLine: number
+  position: Position
 ): Type | null {
   if (def.tag == 'basic') {
     if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte') {
@@ -379,20 +379,20 @@ function resolveType(
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
       return { tag: 'generic', val: def.val };
     }
-    return resolveStruct(def.val, [],  refTable, sourceLine);
+    return resolveStruct(def.val, [],  refTable, position);
   } 
   else if (def.tag == 'link') {
-    return resolveType(def.val, refTable, sourceLine);
+    return resolveType(def.val, refTable, position);
   }
   else if (def.tag == 'arr') {
-    let slice = resolveType(def.val, refTable, sourceLine);
+    let slice = resolveType(def.val, refTable, position);
     if (slice == null) {
       return null;
     }
     return { tag: 'arr', constant: false, val: slice };
   }
   else if (def.tag == 'const_arr') {
-    let slice = resolveType(def.val, refTable, sourceLine);
+    let slice = resolveType(def.val, refTable, position);
     if (slice == null) {
       return null;
     }
@@ -402,30 +402,30 @@ function resolveType(
     let resolvedGenerics: Type[] = [];
     for (let generic of def.val.generics) {
       if (generic.tag == 'link') {
-        logError(sourceLine, 'ref not supported in generics');
+        logError(position, 'ref not supported in generics');
         return null;
       }
 
-      let resolvedGeneric = resolveType(generic, refTable, sourceLine);
+      let resolvedGeneric = resolveType(generic, refTable, position);
       if (resolvedGeneric == null) {
         return null;
       }
       resolvedGenerics.push(resolvedGeneric);
     }
-    return resolveStruct(def.val.name, resolvedGenerics, refTable, sourceLine);
+    return resolveStruct(def.val.name, resolvedGenerics, refTable, position);
   } 
   else if (def.tag == 'fn') {
     let paramTypes: Type[] = [];
     let linked: boolean[] = [];
     for (let parseParam of def.val.paramTypes) {
-      let resolvedParam = resolveType(parseParam, refTable, sourceLine);
+      let resolvedParam = resolveType(parseParam, refTable, position);
       if (resolvedParam == null) {
         return null;
       }
       linked.push(parseParam.tag == 'link');
       paramTypes.push(resolvedParam);
     }
-    let returnType = resolveType(def.val.returnType, refTable, sourceLine);
+    let returnType = resolveType(def.val.returnType, refTable, position);
     if (returnType != null) {
       return { tag: 'fn', val: { paramTypes, returnType, linkedParams: linked } };
     }
@@ -438,7 +438,7 @@ function resolveStruct(
   name: string,
   generics: Type[],
   refTable: RefTable,
-  sourceLine: number
+  position: Position
 ): Type | null {
   let possibleStructs: Type[] = [];
   for (let unit of refTable.units) {
@@ -455,7 +455,7 @@ function resolveStruct(
       if (structDef.header.generics.length != generics.length) {
         continue;
       }
-
+      
       let genericMap = new Map<string, Type>();
       for (let i = 0; i < generics.length; i++) {
         let genericName = structDef.header.generics[i]
@@ -464,9 +464,9 @@ function resolveStruct(
 
       let fields: Field[] = [];
       for (let field of structDef.fields) {
-        let fieldType = resolveType(field.t, unitRefTable, sourceLine);
+        let fieldType = resolveType(field.t, unitRefTable, position);
         if (fieldType == null) {
-          logError(sourceLine, 'compiler error, should have been checked prior');
+          compilerError('should have been checked prior');
           return null;
         }
 
@@ -481,12 +481,12 @@ function resolveStruct(
   }
 
   if (possibleStructs.length > 1) {
-    logError(sourceLine, 'ambiguous struct');
+    logError(position, 'ambiguous struct');
     return null;
   }
 
   if (possibleStructs.length == 0) {
-    logError(sourceLine, `struct '${name}' could not be found`);
+    logError(position, `struct '${name}' could not be found`);
     return null;
   }
 
@@ -507,10 +507,10 @@ function getFnNamedParams(
   fnName: string,
   fnType: Type,
   refTable: RefTable,
-  sourceLine: number
+  position: Position
 ): NamedParam[] {
   if (fnType.tag != 'fn') {
-    logError(sourceLine, 'compiler error should be fn type');
+    compilerError('should be fn type');
     return [];
   }
 
@@ -524,9 +524,9 @@ function getFnNamedParams(
       }
 
       let genericMap: Map<string, Type> = new Map();
-      let returnType = resolveType(fn.t.returnType, refTable, sourceLine);
+      let returnType = resolveType(fn.t.returnType, refTable, position);
       if (returnType == null) {
-        logError(0, 'compiler error return type should have been checked earlier');
+        compilerError('return type should have been checked earlier');
         return [];
       }
 
@@ -541,7 +541,7 @@ function getFnNamedParams(
       let namedParams: NamedParam[] = [];
       let fnMatches = true;
       for (let j = 0; j < fn.paramNames.length; j++) {
-        let paramType = resolveType(fn.t.paramTypes[j], refTable, sourceLine);
+        let paramType = resolveType(fn.t.paramTypes[j], refTable, position);
         if (paramType == null) {
           fnMatches = false;
           break;
@@ -583,7 +583,7 @@ function resolveFn(
   returnType: Type | null,
   paramTypes: (Type | null)[] | null,
   refTable: RefTable,
-  calleeLine: number
+  calleePosition: Position
 ): FnResult | null {
 
   let possibleFns: FnResult[] = [];
@@ -620,9 +620,9 @@ function resolveFn(
 
         paramNames.push(fnDef.paramNames[i]);
 
-        let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleeLine);
+        let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleePosition);
         if (defParamType == null) {
-          logError(calleeLine, 'compiler error param type invalid (checked before)');
+          compilerError('param type invalid (checked before)');
           return null;
         }
 
@@ -641,9 +641,9 @@ function resolveFn(
       if (!allParamsOk) {
         continue;
       }
-      let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleeLine);
+      let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleePosition);
       if (defReturnType == null) {
-        logError(calleeLine, 'compiler error return type invalid (checked before)');
+        compilerError('return type invalid (checked before)');
         return null;
       }
       if (returnType != null) {
@@ -689,16 +689,16 @@ function resolveFn(
 
   // give a useful error about why it can't resolve the function
   if (possibleFns.length > 1) {
-    logError(calleeLine, 'function call is ambiguous');
+    logError(calleePosition, 'function call is ambiguous');
     return null;
   }
 
   if (wrongTypeFns.length > 0) {
-    logError(calleeLine, 'function does not match type signature');
+    logError(calleePosition, 'function does not match type signature');
     return null;
   }
 
-  logError(calleeLine, `could not find ${name}`);
+  logError(calleePosition, `could not find ${name}`);
   return null;
 }
 

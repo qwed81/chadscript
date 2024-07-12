@@ -1,5 +1,5 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
-import { logError } from '../index';
+import { logError, compilerError, NULL_POS } from '../index';
 import {
   Type, typeApplicableStateful, applyGenericMap, RANGE,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn,
@@ -53,11 +53,11 @@ interface ResolveContext {
 function replaceGenerics(prog: Program): CProgram {
   let entries: Fn[] = prog.fns.filter(x => x.name == 'main');
   if (entries.length > 1) {
-    logError(-1, 'more than one \'main\' function provided');
+    logError(NULL_POS, 'more than one \'main\' function provided');
     return undefined!;
   }
   else if (entries.length == 0) {
-    logError(-1, 'no \'main\' function provided');
+    logError(NULL_POS, 'no \'main\' function provided');
     return undefined!;
   }
  
@@ -101,7 +101,7 @@ function replaceGenerics(prog: Program): CProgram {
     // this is the default fn
     if (selectedIndex == -1) {
       if (refTable == null || dep.fnType.tag != 'fn') {
-        logError(-1, 'compiler error ref table null')
+        compilerError('ref table null')
         continue;
       }
       
@@ -179,26 +179,26 @@ function resolveInst(
   if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
     let cond = resolveExpr(inst.val.cond, genericMap, ctx);
     let body = resolveInstBody(inst.val.body, genericMap, ctx);
-    return { tag: inst.tag, val: { cond, body }, sourceLine: inst.sourceLine };
+    return { tag: inst.tag, val: { cond, body }, position: inst.position };
   }
   else if (inst.tag == 'else') {
     let body = resolveInstBody(inst.val, genericMap, ctx);
-    return { tag: 'else', val: body, sourceLine: inst.sourceLine };
+    return { tag: 'else', val: body, position: inst.position };
   }
   else if (inst.tag == 'for_in') {
     let body = resolveInstBody(inst.val.body, genericMap, ctx);
     let iter = resolveExpr(inst.val.iter, genericMap, ctx);
-    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter }, sourceLine: inst.sourceLine };
+    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter }, position: inst.position };
   }
   else if (inst.tag == 'return') {
     if (inst.val != null) {
-      return { tag: 'return', val: resolveExpr(inst.val, genericMap, ctx), sourceLine: inst.sourceLine };
+      return { tag: 'return', val: resolveExpr(inst.val, genericMap, ctx), position: inst.position };
     }
     return inst;
   }
   else if (inst.tag == 'expr') {
     let val = resolveExpr(inst.val, genericMap, ctx);
-    return { tag: 'expr', val, sourceLine: inst.sourceLine };
+    return { tag: 'expr', val, position: inst.position };
   }
   else if (inst.tag == 'break' || inst.tag == 'continue') {
     return inst;
@@ -208,24 +208,24 @@ function resolveInst(
     queueType(ctx, type);
     if (inst.val.expr != null) {
       let expr = resolveExpr(inst.val.expr, genericMap, ctx);
-      return { tag: 'declare', val: { type, name: inst.val.name, expr }, sourceLine: inst.sourceLine }
+      return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
     } 
-      return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, sourceLine: inst.sourceLine }
+      return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, position: inst.position }
   }
   else if (inst.tag == 'assign') {
     let expr = resolveExpr(inst.val.expr, genericMap, ctx);
     let to = resolveLeftExpr(inst.val.to, genericMap, ctx);
-    return { tag: 'assign', val: { op: inst.val.op, to, expr }, sourceLine: inst.sourceLine };
+    return { tag: 'assign', val: { op: inst.val.op, to, expr }, position: inst.position };
   }
   else if (inst.tag == 'include') {
     let newTypes: Type[] = [];
     for (let type of inst.val.types) {
       newTypes.push(applyGenericMap(type, genericMap));
     }
-    return { tag: 'include', val: { lines: inst.val.lines, types: newTypes }, sourceLine: inst.sourceLine };
+    return { tag: 'include', val: { lines: inst.val.lines, types: newTypes }, position: inst.position };
   }
 
-  logError(-1, 'compiler erorr resolveInst unreachable');
+  compilerError('resolveInst unreachable');
   return undefined!;
 }
 
@@ -316,7 +316,7 @@ function resolveExpr(
     return expr;
   }
 
-  logError(-1, 'compiler error resolveExpr unreachable');
+  compilerError('resolveExpr unreachable');
   return undefined!;
 }
 
@@ -368,7 +368,7 @@ function resolveLeftExpr(
     return newLeftExpr;
   }
 
-  logError(-1, 'compiler erorr resolveLeftExpr unreachable');
+  compilerError('resolveLeftExpr unreachable');
   return undefined!;
 }
 
@@ -405,12 +405,12 @@ function createDefaultFn(
 
   let returnType: Type = fnDep.fnType.val.returnType;
   let paramTypes: Type[] = fnDep.fnType.val.paramTypes;
-  let template = typeResolveFn(fnDep.fnName, returnType, paramTypes, refTable, 0);
+  let template = typeResolveFn(fnDep.fnName, returnType, paramTypes, refTable, NULL_POS);
   if (template == null) {
     return null;
   }
 
-  let namedParams = getFnNamedParams(fnDep.unitName, fnDep.fnName, fnDep.fnType, refTable, -1);
+  let namedParams = getFnNamedParams(fnDep.unitName, fnDep.fnName, fnDep.fnType, refTable, NULL_POS);
   if (namedParams.length == 0) {
     return null;
   }
@@ -434,7 +434,7 @@ function createDefaultFn(
       if (namedParams[j].name == template.paramNames[i]) {
         let parseExpr = namedParams[j].expr;
         if (namedParams[j].type.tag != 'fn' || parseExpr.tag != 'left_expr' || parseExpr.val.tag != 'var') {
-          defaultExpr = ensureExprValid(parseExpr, namedParams[j].type, refTable, scope, -1);
+          defaultExpr = ensureExprValid(parseExpr, namedParams[j].type, refTable, scope, NULL_POS);
           paramType = template.fnType.val.paramTypes[i];
         }
         else {
@@ -467,13 +467,13 @@ function createDefaultFn(
     else {
       if (typeof defaultExpr === 'string') {
         if (paramType.tag != 'fn') {
-          logError(-1, 'resolve only valid on fn types');
+          compilerError('resolve only valid on fn types');
           return null;
         }
 
         let returnType = paramType.val.returnType;
         let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = typeResolveFn(defaultExpr, returnType, thisParamTypes, refTable, -1);
+        let fnResult = typeResolveFn(defaultExpr, returnType, thisParamTypes, refTable, NULL_POS);
         if (fnResult == null) {
           return null;
         }
@@ -521,7 +521,7 @@ function createDefaultFn(
   let callInst: Inst = {
     tag: 'return',
     val: callExpr,
-    sourceLine: -1
+    position: NULL_POS
   };
   let defaultFn: Fn = {
     name: fnDep.fnName,
@@ -570,7 +570,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
 
   let typeKey = JSON.stringify(type, null, 2);
   if (inStack.has(typeKey)) {
-    logError(-1, 'recusive struct' + typeKey);
+    compilerError('recusive struct' + typeKey);
     return;
   }
   if (alreadyGenned.has(typeKey)) {

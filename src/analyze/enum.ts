@@ -1,5 +1,5 @@
 import { LeftExpr,  Expr } from './analyze';
-import { logError } from '../index';
+import { compilerError } from '../index';
 import { getVariantIndex } from './types';
 
 export {
@@ -236,7 +236,7 @@ function getInverseExprSet(expr: Expr): PossibleVariants {
       return newSet;
     }
     else {
-      logError(-1, 'compiler error non enum type in is');
+      compilerError('non enum type in is');
       return [];
     }
   }
@@ -270,7 +270,7 @@ function getExprSet(expr: Expr): PossibleVariants {
       return newSet;
     }
     else {
-      logError(-1, 'compiler error non enum type in is');
+      compilerError('non enum type in is');
       return [];
     }
   }
