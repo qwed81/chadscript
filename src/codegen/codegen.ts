@@ -416,12 +416,12 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   }
   else if (expr.tag == 'assert') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
-    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("unknown", 0, ${exprName}._err._ptr);`);
+    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._err._ptr);`);
     // because this is a leftExpr, it shouldn't save the value to the stack
     return `${exprName}._ok`;
   }
   else if (expr.tag == 'assert_bool') {
-    exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx, position)})) chad_panic("unknown", 0, "assertion failed");`;
+    exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx, position)})) chad_panic("${position.document}", ${position.line}, "assertion failed");`;
   }
   else if (expr.tag == 'fn_call') {
     exprText = codeGenFnCall(expr.val, addInst, ctx, position);
