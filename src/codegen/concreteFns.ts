@@ -424,19 +424,21 @@ function createDefaultFn(
   }
 
   for (let i = 0; i < template.paramNames.length; i++) {
-    let defaultExpr: Expr | null | 'resolve' = null;
+    // the default expr can be a valid expr, null, or in the case of a resolve
+    // fn it can be the string function name that should be resolved
+    let defaultExpr: Expr | null | string = null;
     let paramType: Type | null = null;
 
     let paramIsNamed = false;
     for (let j = 0; j < namedParams.length; j++) {
       if (namedParams[j].name == template.paramNames[i]) {
         let parseExpr = namedParams[j].expr;
-        if (parseExpr.tag != 'left_expr' || parseExpr.val.tag != 'var' || parseExpr.val.val != 'resolve') {
+        if (namedParams[j].type.tag != 'fn' || parseExpr.tag != 'left_expr' || parseExpr.val.tag != 'var') {
           defaultExpr = ensureExprValid(parseExpr, namedParams[j].type, refTable, scope, -1);
           paramType = template.fnType.val.paramTypes[i];
         }
         else {
-          defaultExpr = 'resolve';
+          defaultExpr = parseExpr.val.val; // the resolve string
           paramType = template.fnType.val.paramTypes[i];
         }
         paramIsNamed = true;
@@ -463,7 +465,7 @@ function createDefaultFn(
       defaultFnCallExprs.push(expr);
     }
     else {
-      if (defaultExpr === 'resolve') {
+      if (typeof defaultExpr === 'string') {
         if (paramType.tag != 'fn') {
           logError(-1, 'resolve only valid on fn types');
           return null;
@@ -471,7 +473,7 @@ function createDefaultFn(
 
         let returnType = paramType.val.returnType;
         let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = typeResolveFn(template.paramNames[i], returnType, thisParamTypes, refTable, -1);
+        let fnResult = typeResolveFn(defaultExpr, returnType, thisParamTypes, refTable, -1);
         if (fnResult == null) {
           return null;
         }

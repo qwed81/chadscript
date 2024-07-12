@@ -526,11 +526,16 @@ function getFnNamedParams(
       let genericMap: Map<string, Type> = new Map();
       let returnType = resolveType(fn.t.returnType, refTable, sourceLine);
       if (returnType == null) {
+        logError(0, 'compiler error return type should have been checked earlier');
         return [];
       }
 
+      // to standardize the named param function
+      if (returnType.tag == 'arr') {
+        returnType.constant = false;
+      }
       if (typeApplicableStateful(returnType, fnType.val.returnType, genericMap) == false) {
-        return [];
+        continue;
       }
 
       let namedParams: NamedParam[] = [];

@@ -1052,7 +1052,7 @@ function tryParseStructInit(tokens: string[]): Expr | null {
 }
 
 function tryParseDotOp(tokens: string[]): LeftExpr | null {
-  let splits = balancedSplitTwo(tokens, '.');
+  let splits = balancedSplitTwoBackwards(tokens, '.');
   if (splits.length != 2) {
     return null;
   }

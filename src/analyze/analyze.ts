@@ -806,8 +806,21 @@ function ensureLeftExprValid(
     }
 
     if (validLeftExpr.type.tag != 'struct') {
-      logError(sourceLine, `dot op not applicable to ${Type.toStr(validLeftExpr.type)}`);
-      return null;
+      if (validLeftExpr.type.tag == 'arr' && leftExpr.val.varName == 'len') {
+        let dotOp: LeftExpr = {
+          tag: 'dot',
+          val: {
+            left: validLeftExpr,
+            varName: 'len'
+          },
+          type: Type.INT
+        };
+        return dotOp;
+      }
+      else {
+        logError(sourceLine, `dot op not applicable to ${Type.toStr(validLeftExpr.type)}`);
+        return null;
+      }
     }
 
     for (let field of validLeftExpr.type.val.fields) {
@@ -994,16 +1007,18 @@ function ensureFnCallValid(
       let expr: Expr;
       let paramType = namedParams[i].type;
       // for fn='resolve'
-      if (!overruled && namedParamExpr.tag == 'left_expr'
-        && namedParamExpr.val.val && namedParamExpr.val.val == 'resolve') {
-        if (paramType.tag != 'fn') {
-          logError(sourceLine, 'resolve only valid on fn types');
+      if (!overruled && namedParamExpr.tag == 'left_expr' && paramType.tag == 'fn') {
+        if (namedParamExpr.val.tag != 'var') {
+          logError(sourceLine, 'function named parameter must have a name');
           return null;
         }
 
+        // the name of the function that will be resolved
+        let resolveName: string = namedParamExpr.val.val;
+
         let returnType = paramType.val.returnType;
         let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = Type.resolveFn(namedParams[i].name, returnType, thisParamTypes, table, sourceLine);
+        let fnResult = Type.resolveFn(resolveName, returnType, thisParamTypes, table, sourceLine);
         if (fnResult == null) {
           return null;
         }
