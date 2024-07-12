@@ -32,6 +32,9 @@ function codegen(prog: Program): string {
   // reserve the strTable
   programStr += `\nchar *strTable[${prog.strTable.length}];`
 
+  programStr += '\nvoid chad_panic(const char* file, int line, const char* message) {'
+  programStr += '\n\tfprintf(stderr, "panic at %s line %d: %s\\n", file, line, message); exit(-1); }'
+
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
     if (struct.tag == 'struct' || struct.tag == 'enum') {
@@ -93,7 +96,7 @@ int main() {
   `
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
-    fprintf(stderr, "%s", result._err._ptr);
+    fprintf(stderr, "%s\\n", result._err._ptr);
   }
   free(totalStr);
   return result.tag;
@@ -412,12 +415,12 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext): string {
   }
   else if (expr.tag == 'assert') {
     let exprName = codeGenExpr(expr.val, addInst, ctx);
-    addInst.before.push(`if (${exprName}.tag == 1) { printf("panic: %s", ${exprName}._err._ptr); exit(-1); }`);
+    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("unknown", 0, ${exprName}._err._ptr);`);
     // because this is a leftExpr, it shouldn't save the value to the stack
     return `${exprName}._ok`;
   }
   else if (expr.tag == 'assert_bool') {
-    exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx)})) { printf("assertion failed"); exit(-1); }`;
+    exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx)})) chad_panic("unknown", 0, "assertion failed");`;
   }
   else if (expr.tag == 'fn_call') {
     exprText = codeGenFnCall(expr.val, addInst, ctx);

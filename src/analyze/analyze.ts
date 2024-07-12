@@ -655,7 +655,7 @@ function analyzeInst(
       }
 
       Enum.applyCond(scope.variantScope, exprTuple, []);
-      let expr: Expr = { tag: 'assert_bool', val: exprTuple, type: Type.BOOL };
+      let expr: Expr = { tag: 'assert_bool', val: exprTuple, type: Type.VOID };
       return { tag: 'expr', val: expr, sourceLine: instMeta.sourceLine }
     }
     else if (inst.val.tag == 'assert' || inst.val.tag == 'try' || inst.val.tag == 'fn_call') {
