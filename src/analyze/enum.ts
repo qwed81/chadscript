@@ -241,7 +241,7 @@ function getInverseExprSet(expr: Expr): PossibleVariants {
     }
   }
   else if (expr.tag == 'not') {
-    return getExprSet(expr);
+    return getExprSet(expr.val);
   }
 
   return [];
@@ -275,7 +275,7 @@ function getExprSet(expr: Expr): PossibleVariants {
     }
   }
   else if (expr.tag == 'not') {
-    return getInverseExprSet(expr);
+    return getInverseExprSet(expr.val);
   }
 
   return [];

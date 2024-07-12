@@ -585,8 +585,15 @@ function tryParseType(tokens: string[]): Type | null {
     }
     return { tag: 'fn', val: { returnType, paramTypes } };
   } else if (tokens[tokens.length - 1] == ']') { // parse generic or array
-    let inner = tokens.slice(-2, -1);
-    if (inner[0] == '[' || inner.length == 1 && inner[0] == '&') {
+    let openIndex = getFirstBalanceIndexFromEnd(tokens, '[', ']');
+    if (openIndex == -1) {
+      return null;
+    }
+
+    let inner = tokens.slice(openIndex + 1, -1);
+
+    // parse it as an array
+    if (inner.length == 0 || inner.length == 1 && inner[0] == '&') {
       if (inner[0] == '[') {
         inner = [];
       }
@@ -610,6 +617,7 @@ function tryParseType(tokens: string[]): Type | null {
       }
     }
 
+    // parse it as a generic
     let splits = balancedSplit(inner, ',');
 
     let generics: Type[] = [];
