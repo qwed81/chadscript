@@ -583,6 +583,12 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = codeGenExpr(leftExpr.val.range, addInst, ctx, position);
     let fromVar = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
+    let memGuard = `if (${range}._start < ${range}._end || ${range}._start < 0 || ${fromVar}._len < ${range}._end) { `;
+    memGuard += 'char __buf[128] = { 0 }; ';
+    memGuard += `snprintf(__buf, 128, "invalid access of array with range %d:%d", ${range}._start, ${range}._end); `
+    memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
+    addInst.before.push(memGuard);
+
     return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr, ._start = ${fromVar}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = ${fromVar}._refCount }`;
   }
   else if (leftExpr.tag == 'prime') {
