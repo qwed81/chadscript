@@ -110,12 +110,12 @@ interface DotOp {
 }
 
 interface ArrOffsetInt {
-  var: LeftExpr
+  var: Expr
   index: Expr
 }
 
 interface ArrOffsetSlice {
-  var: LeftExpr
+  var: Expr
   range: Expr
 }
 
@@ -685,7 +685,7 @@ function analyzeInst(
     }
 
     if (inst.val.op == '+=' || inst.val.op == '-=') {
-      if (Type.canMath(to.type, expr.type) == null) {
+      if (Type.canMath(to.type, expr.type, table) == null) {
         logError(inst.position, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);
         return null;
       }
@@ -728,13 +728,19 @@ function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
     if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
       return false;
     }
-    return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
+    if (leftExpr.val.var.tag == 'left_expr') {
+      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, scope);
+    }
+    
+    return true;
   }
   else if (leftExpr.tag == 'arr_offset_slice')  {
     if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
       return false;
     }
-    return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var, scope);
+    if (leftExpr.val.var.tag == 'left_expr') {
+      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, scope);
+    }
   }
   return false;
 }
@@ -796,14 +802,8 @@ function ensureLeftExprValid(
     return null;
   } 
   else if (leftExpr.tag == 'arr_offset') {
-    let arr = ensureLeftExprValid(leftExpr.val.var, null, table, scope, position);
+    let arr = ensureExprValid(leftExpr.val.var, null, table, scope, position);
     if (arr == null) {
-      return null;
-    }
-
-    let innerType = Type.canIndex(arr.type); 
-    if (innerType == null) {
-      logError(position, 'index not defined on type');
       return null;
     }
 
@@ -812,26 +812,60 @@ function ensureLeftExprValid(
       return null;
     }
 
-    if (Type.typeApplicable(index.type, Type.INT)) {
-      let newExpr: LeftExpr = { 
+    let operation = Type.canIndex(arr.type, index.type, table); 
+    if (operation == null) {
+      logError(position, 'index not defined on type');
+      return null;
+    }
+    else if (operation.tag == 'default') {
+      if (Type.typeApplicable(index.type, Type.INT)) {
+        let newExpr: LeftExpr = { 
+          tag: 'arr_offset_int',
+          val: {
+            var: arr,
+            index: index
+          },
+          type: operation.returnType
+        };
+        return newExpr;
+      } else if (Type.typeApplicable(index.type, Type.RANGE)) {
+        let newExpr: LeftExpr = { 
+          tag: 'arr_offset_slice',
+          val: {
+            var: arr,
+            range: index
+          },
+          type: arr.type  
+        };
+        return newExpr;
+      }
+    }
+    else if (operation.tag == 'fn') {
+      let memLoc: Expr = {
+        tag: 'fn_call',
+        val: {
+          fn: {
+            tag: 'fn',
+            fnName: operation.fnName,
+            unitName: operation.unitName,
+            type: operation.fnType,
+          },
+          exprs: [arr, index]
+        },
+        type: operation.returnType
+      }
+      if (operation.returnType.tag != 'arr') {
+        return null;
+      }
+
+      return {
         tag: 'arr_offset_int',
         val: {
-          var: arr,
-          index: index
+          var: memLoc,
+          index: { tag: 'int_const', val: 0, type: Type.INT }
         },
-        type: innerType
-      };
-      return newExpr;
-    } else if (Type.typeApplicable(index.type, Type.RANGE)) {
-      let newExpr: LeftExpr = { 
-        tag: 'arr_offset_slice',
-        val: {
-          var: arr,
-          range: index
-        },
-        type: arr.type  
-      };
-      return newExpr;
+        type: operation.returnType.val
+      }
     }
 
     logError(position, 'arr must be indexed with range or int');
@@ -1144,7 +1178,7 @@ function ensureBinOpValid(
     }
 
     let op = expr.op;
-    let testFn: (a: Type.Type, b: Type.Type) => Type.Type | null = () => null;
+    let testFn: (a: Type.Type, b: Type.Type, table: Type.RefTable) => Type.OperatorResult = () => null;
     if (op == '+' || op == '-' || op == '*' || op == '/' || op == '%') {
       testFn = Type.canMath;
     }
@@ -1155,28 +1189,91 @@ function ensureBinOpValid(
       testFn = Type.canEq;
     }
     else if (op == '||') {
-      testFn = (a, b) => {
+      testFn = (a, b, _) => {
         if (Type.typeApplicable(a, Type.BOOL) && Type.typeApplicable(b, Type.BOOL)) {
-          return Type.BOOL;
+          return { tag: 'default', returnType: Type.BOOL };
         }
         return null;
       }
     }
 
-    let exprType = testFn(exprLeft.type, exprRight.type);
-    if (exprType == null) {
+    let operation = testFn(exprLeft.type, exprRight.type, table);
+    if (operation == null) {
       logError(position, `operator ${expr.op} not defined for type ${Type.toStr(exprLeft.type)}, ${Type.toStr(exprRight.type)}`);
       return null;
     }
+    else if (operation.tag == 'default') {
+      computedExpr = {
+        tag: 'bin',
+        val: {
+          op,
+          left: exprLeft,
+          right: exprRight
+        },
+        type: operation.returnType
+      }
+    }
+    else if (operation.tag == 'fn') {
+      let exprs: Expr[] = [exprLeft, exprRight];
 
-    computedExpr = {
-      tag: 'bin',
-      val: {
-        op,
-        left: exprLeft,
-        right: exprRight
-      },
-      type: exprType 
+      // for overloading math
+      let variantIndex: number = -1;
+      if (op == '+') {
+        variantIndex = 0;
+      }
+      else if (op == '-') {
+        variantIndex = 1;
+      }
+      else if (op == '*') {
+        variantIndex = 2;
+      }
+      else if (op == '/') {
+        variantIndex = 3;
+      }
+
+      if (variantIndex != -1) {
+        exprs.push({
+          tag: 'enum_init',
+          variantIndex,
+          fieldName: Type.MATH_OP.val.fields[variantIndex].name,
+          fieldExpr: null,
+          type: Type.MATH_OP as Type.Type 
+        });
+      }
+
+      computedExpr = {
+        tag: 'fn_call',
+        val: {
+          fn: {
+            tag: 'fn',
+            fnName: operation.fnName,
+            unitName: operation.unitName,
+            type: operation.fnType,
+          },
+          exprs
+        },
+        type: operation.returnType
+      }
+
+      if (op == '!=') {
+        computedExpr = {
+          tag: 'not',
+          val: computedExpr,
+          type: Type.BOOL
+        }
+      }
+
+      if (op == '>' || op == '<' || op == '>=' || op == '<=') {
+        computedExpr = {
+          tag: 'bin',
+          val: {
+            op,
+            left: computedExpr,
+            right: { tag: 'int_const', val: 0, type: Type.INT }
+          },
+          type: Type.BOOL
+        }
+      }
     }
   }
 

@@ -97,7 +97,7 @@ int main() {
   `
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
-    fprintf(stderr, "%s\\n", result._err._ptr);
+    fprintf(stderr, "%s\\n", result._err._start);
   }
   free(totalStr);
   return result.tag;
@@ -132,7 +132,7 @@ function codeGenFn(fn: CFn, strTable: string[]) {
 
   // must call codeGenInst before using ctx.vars
   for (let i = 0; i < fn.body.length; i++) {
-    bodyStr += codeGenInst(fn.body[i], 1, ctx);
+    bodyStr += codeGenInst(fn.body, i, 1, ctx);
   }
 
   for (let i = 0; i < ctx.vars.length; i++) {
@@ -232,7 +232,7 @@ function codeGenBody(body: Inst[], indent: number, includeBreak: boolean, includ
   } 
 
   for (let i = 0; i < body.length; i++) {
-    bodyStr += codeGenInst(body[i], indent, ctx);
+    bodyStr += codeGenInst(body, i, indent, ctx);
   }
 
   let tabs = '';
@@ -255,7 +255,7 @@ interface AddInst {
   after: string[]
 }
 
-function codeGenInst(inst: Inst, indent: number, ctx: FnContext): string {
+function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnContext): string {
   let tabs = '';
   for (let i = 0; i < indent; i++) {
     tabs += '  ';
@@ -267,6 +267,7 @@ function codeGenInst(inst: Inst, indent: number, ctx: FnContext): string {
   };
 
   let instText;
+  let inst = insts[instIndex];
   if (inst.tag == 'declare') {
     let type = inst.val.type;
     ctx.vars.push([type, '_' + inst.val.name]);
@@ -294,14 +295,19 @@ function codeGenInst(inst: Inst, indent: number, ctx: FnContext): string {
     instText = `${leftExpr} ${inst.val.op} ${rightExpr};`;
     changeRefCount(addInst.after, rightExpr, type, 1);
   } 
-  else if (inst.tag == 'if') {
+  else if (inst.tag == 'if' || inst.tag == 'elif') {
     instText = `if (${ codeGenExpr(inst.val.cond, addInst, ctx, inst.position) }) ${ codeGenBody(inst.val.body, indent + 1, false, true, ctx) }`;
+    if (instIndex + 1 < insts.length) {
+      let nextInst = insts[instIndex + 1];
+      if (nextInst.tag == 'elif' || nextInst.tag == 'else') {
+        instText += 'else {'
+        instText += codeGenInst(insts, instIndex + 1, indent + 1, ctx);
+        instText += '}';
+      }
+    }
   } 
-  else if (inst.tag == 'elif') {
-    instText = `else if (${ codeGenExpr(inst.val.cond, addInst, ctx, inst.position) }) ${ codeGenBody(inst.val.body, indent + 1, false, true, ctx) }`;
-  }
   else if (inst.tag == 'else') {
-    instText = `else ${ codeGenBody(inst.val, indent + 1, false, true, ctx) }`;
+    instText = codeGenBody(inst.val, indent + 1, false, true, ctx);
   }
   else if (inst.tag == 'while') {
     addInst.before.push(`while (true) {`);
@@ -416,7 +422,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   }
   else if (expr.tag == 'assert') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
-    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._err._ptr);`);
+    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._err._start);`);
     // because this is a leftExpr, it shouldn't save the value to the stack
     return `${exprName}._ok`;
   }
@@ -444,10 +450,10 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     for (let i = 0; i < expr.val.length; i++) {
       addInst.before.push(`${typedPtr}[${i}] = ${ codeGenExpr(expr.val[i], addInst, ctx, position) };`);
     }
-    exprText = `(${ codeGenType(expr.type) }){ ._ptr = ${typedPtr}, ._len = ${expr.val.length}, ._refCount = ${refCount} }`;
+    exprText = `(${ codeGenType(expr.type) }){ ._ptr = ${typedPtr}, ._start = ${typedPtr}, ._len = ${expr.val.length}, ._refCount = ${refCount} }`;
   }
   else if (expr.tag == 'str_const') {
-    exprText = `(${ codeGenType(STR) }){ ._ptr = strTable[${expr.val}], ._len = ${ ctx.strTable[expr.val].length }, ._refCount = NULL }`;
+    exprText = `(${ codeGenType(STR) }){ ._ptr = strTable[${expr.val}], ._start = strTable[${expr.val}], ._len = ${ ctx.strTable[expr.val].length }, ._refCount = NULL }`;
   }
   else if (expr.tag == 'fmt_str') {
     let exprs = expr.val;
@@ -472,12 +478,12 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     addInst.before.push(`*${refCount} = 1;`)
     addInst.before.push(`size_t ${idx} = 0;`)
     for (let i = 0; i < exprs.length; i++) {
-      addInst.before.push(`memcpy(${output} + ${idx}, ${total}[${i}]._ptr, ${total}[${i}]._len);`)
+      addInst.before.push(`memcpy(${output} + ${idx}, ${total}[${i}]._start, ${total}[${i}]._len);`)
       addInst.before.push(`${idx} += ${total}[${i}]._len;`)
     }
 
     addInst.before.push(`free(${total});`);
-    exprText = `(${strType}){ ._ptr = ${output}, ._len = ${totalLen}, ._refCount = ${refCount} }`;
+    exprText = `(${strType}){ ._ptr = ${output}, ._start = ${output} ._len = ${totalLen}, ._refCount = ${refCount} }`;
   } else if (expr.tag == 'char_const') {
     exprText = `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
@@ -561,23 +567,19 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     return `${codeGenExpr(leftExpr.val.left, addInst, ctx, position)}._${leftExpr.val.varName}`;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
-    let indexType = leftExpr.val.var.type.tag;
-    if (indexType == 'arr') {
-      let leftName = codeGenLeftExpr(leftExpr.val.var, addInst, ctx, position);
-      let innerName = codeGenExpr(leftExpr.val.index, addInst, ctx, position);
-      let memGuard = `if (${innerName} < 0 || ${leftName}._len <= ${innerName}) { `;
-      memGuard += 'char __buf[128] = { 0 }; ';
-      memGuard += `snprintf(__buf, 128, "invalid access of array with index %d", ${innerName}); `
-      memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
-      addInst.before.push(memGuard);
-      return `${leftName}._ptr[${innerName}]`;
-    } 
-    return `${codeGenLeftExpr(leftExpr.val.var, addInst, ctx, position)}._arr._ptr[${codeGenExpr(leftExpr.val.index, addInst, ctx, position)}]`;
+    let leftName = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
+    let innerName = codeGenExpr(leftExpr.val.index, addInst, ctx, position);
+    let memGuard = `if (${innerName} < 0 || ${leftName}._len <= ${innerName}) { `;
+    memGuard += 'char __buf[128] = { 0 }; ';
+    memGuard += `snprintf(__buf, 128, "invalid access of array with index %d", ${innerName}); `
+    memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
+    addInst.before.push(memGuard);
+    return `${leftName}._start[${innerName}]`;
   } 
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = codeGenExpr(leftExpr.val.range, addInst, ctx, position);
-    let fromVar = codeGenLeftExpr(leftExpr.val.var, addInst, ctx, position);
-    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = ${fromVar}._refCount }`;
+    let fromVar = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
+    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr, ._start = ${fromVar}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = ${fromVar}._refCount }`;
   }
   else if (leftExpr.tag == 'prime') {
     return `${ codeGenExpr(leftExpr.val, addInst, ctx, position) }._${leftExpr.variant}`;
@@ -595,7 +597,6 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
   }
 }
 
-// java implementation taken from https://stackoverflow.com/questions/6122571/simple-non-secure-hash-function-for-javascript
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {
   return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_arr');
 }
@@ -646,6 +647,7 @@ function codeGenStructs(structs: CStruct[]): string {
 
       structStr += '\n' + codeGenType(struct.val) + ' {';
       structStr += '\n  ' + codeGenType(struct.val.val) + ' *_ptr;';
+      structStr += '\n  ' + codeGenType(struct.val.val) + ' *_start;';
       structStr += '\n  int *_refCount;';
       structStr += '\n  int _len;'
       structStr += '\n};'

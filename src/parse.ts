@@ -165,7 +165,7 @@ interface DotOp {
 }
 
 interface ArrOffset {
-  var: LeftExpr,
+  var: Expr,
   index: Expr
 }
 
@@ -1041,7 +1041,7 @@ function tryParseDotOp(tokens: Token[]): LeftExpr | null {
   return { tag: 'dot', val: { left, varName: splits[1][0].val } };
 }
 
-function tryParseArrExpr(tokens: Token[], position: Position): LeftExpr | null {
+function tryParseArrExpr(tokens: Token[]): LeftExpr | null {
   if (tokens[tokens.length - 1].val != ']') {
     return null;
   }
@@ -1057,13 +1057,13 @@ function tryParseArrExpr(tokens: Token[], position: Position): LeftExpr | null {
     return null;
   }
 
-  let namePosition: Position = { ...position, start: 0, end: balanceIndex };
-  let leftExpr = tryParseLeftExpr(tokens.slice(0, balanceIndex), namePosition);
-  if (innerExpr == null || leftExpr == null) {
+  let exprTokens = tokens.slice(0, balanceIndex);
+  let expr = tryParseExpr(exprTokens, positionRange(exprTokens));
+  if (innerExpr == null || expr == null) {
     return null;
   }
 
-  return { tag: 'arr_offset', val: { var: leftExpr, index: innerExpr }};
+  return { tag: 'arr_offset', val: { var: expr, index: innerExpr }};
 }
 
 function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null {
@@ -1084,7 +1084,7 @@ function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null 
     return { tag: 'prime', val: parsed };
   }
 
-  return tryParseArrExpr(tokens, position);
+  return tryParseArrExpr(tokens);
 }
 
 function tryParseExpr(tokens: Token[], position: Position): Expr | null {

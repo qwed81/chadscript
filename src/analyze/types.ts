@@ -1,12 +1,13 @@
-import { logError, compilerError, Position } from '../index'
+import { logError, compilerError, Position, NULL_POS } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR, MATH_OP,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
-  applyGenericMap, canMath, canOrder, canEq, canIndex, canDot, RefTable,
-  getUnitReferences, resolveType, resolveFn, createList,
-  isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams
+  applyGenericMap, canMath, canCompare as canOrder, canEq, canIndex, RefTable,
+  getUnitReferences, resolveType, resolveFn, createList, FnResult,
+  isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
+  OperatorResult
 }
 
 const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
@@ -19,6 +20,19 @@ const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
 const BYTE: Type = { tag: 'primative', val: 'byte' };
+const MATH_OP = {
+  tag: 'enum' ,
+  val: {
+    fields: [
+      { name: 'add', type: { tag: 'primative', val: 'void' } },
+      { name: 'sub', type: { tag: 'primative', val: 'void' } },
+      { name: 'mul', type: { tag: 'primative', val: 'void' } },
+      { name: 'div', type: { tag: 'primative', val: 'void' } }
+    ],
+    generics: [],
+    id: 'std.MathOperator'
+  }
+}
 
 interface Field {
   name: string
@@ -274,79 +288,118 @@ function isGeneric(a: Type): boolean {
   return false;
 }
 
-function canMath(a: Type, b: Type): Type | null {
+type OperatorResult = { tag: 'default', returnType: Type }
+  | { tag: 'fn', returnType: Type, fnType: Type, unitName: string, fnName: string }
+  | null
+
+function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (typeApplicable(a, INT)) {
     if (typeApplicable(b, INT)) {
-      return INT;
+      return { tag: 'default', returnType: INT };
     } else if (typeApplicable(b, NUM)) {
-      return NUM;
+      return { tag: 'default', returnType: NUM };
     } else if (typeApplicable(b, BYTE)) {
-      return INT;
+      return { tag: 'default', returnType: INT };
     } else if (typeApplicable(b, CHAR)) {
-      return INT;
+      return { tag: 'default', returnType: INT };
     }
   }
   else if (typeApplicable(a, BYTE)) {
     if (typeApplicable(b, INT)) {
-      return INT;
+      return { tag: 'default', returnType: INT };
     } else if (typeApplicable(b, BYTE)) {
-      return BYTE;
+      return { tag: 'default', returnType: BYTE };
     }
   }
   else if (typeApplicable(a, CHAR)) {
     if (typeApplicable(b, INT)) {
-      return INT;
+      return { tag: 'default', returnType: INT };
     } else if (typeApplicable(b, CHAR)) {
-      return CHAR;
+      return { tag: 'default', returnType: CHAR };
     }
   }
   else if (typeApplicable(a, NUM)) {
     if (typeApplicable(b, INT) || typeApplicable(b, NUM)) {
-      return NUM;
+      return { tag: 'default', returnType: NUM };
     }
   }
 
-  return null;
+  let fnResult = resolveFn('math', null, [a, b, MATH_OP as Type], refTable, NULL_POS);
+  if (fnResult == null || fnResult.fnType.tag != 'fn') {
+    return null;
+  }
+  return {
+    tag: 'fn',
+    returnType: fnResult.fnType.val.returnType,
+    fnName: fnResult.fnName,
+    fnType: fnResult.fnType,
+    unitName: fnResult.unitName
+  };
 }
 
-function canOrder(a: Type, b: Type): Type | null {
+function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
-    return BOOL;
+    return { tag: 'default', returnType: INT };
   }
   if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
-    return BOOL;
+    return { tag: 'default', returnType: INT };
   }
-  return null;
+
+  let fnResult = resolveFn('compare', null, [a, b], refTable, NULL_POS);
+  if (fnResult == null || fnResult.fnType.tag != 'fn') {
+    return null;
+  }
+
+  return {
+    tag: 'fn',
+    returnType: fnResult.fnType.val.returnType,
+    fnName: fnResult.fnName,
+    fnType: fnResult.fnType,
+    unitName: fnResult.unitName
+  };
 }
 
-function canEq(a: Type, b: Type): Type | null {
+function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
-    return BOOL;
+    return { tag: 'default', returnType: BOOL };
   }
   if (typeApplicable(a, CHAR) && typeApplicable(b, CHAR)) {
-    return BOOL;
+    return { tag: 'default', returnType: BOOL };
   }
   if (typeApplicable(a, BOOL) && typeApplicable(b, BOOL)) {
-    return BOOL;
+    return { tag: 'default', returnType: BOOL };
   }
-  return null;
+
+  let fnResult = resolveFn('eq', BOOL, [a, b], refTable, NULL_POS);
+  if (fnResult == null) {
+    return null;
+  }
+  return {
+    tag: 'fn',
+    returnType: BOOL,
+    fnName: fnResult.fnName,
+    fnType: fnResult.fnType,
+    unitName: fnResult.unitName
+  };
 }
 
-function canIndex(a: Type): Type | null {
-  if (a.tag == 'arr') {
-    return a.val;
+function canIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
+  if (struct.tag == 'arr') {
+    return { tag: 'default', returnType: struct.val };
   }
 
-  if (a.tag == 'struct' && a.val.id == 'std.List') {
-    return a.val.generics[0];
+  let fnResult = resolveFn('getIndex', null, [struct, index], refTable, NULL_POS);
+  if (fnResult == null || fnResult.fnType.tag != 'fn' || fnResult.fnType.val.returnType.tag != 'arr') {
+    return null;
   }
 
-  return null;
-}
-
-function canDot(a: Type, field: string): Type | null {
-  // TODO
-  return null;
+  return {
+    tag: 'fn',
+    returnType: fnResult.fnType.val.returnType,
+    fnName: fnResult.fnName,
+    fnType: fnResult.fnType,
+    unitName: fnResult.unitName
+  };
 }
 
 interface RefTable {

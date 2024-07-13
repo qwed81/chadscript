@@ -342,13 +342,13 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'arr_offset_int') {
     let index = resolveExpr(leftExpr.val.index, genericMap, ctx);
-    let v = resolveLeftExpr(leftExpr.val.var, genericMap, ctx);
+    let v = resolveExpr(leftExpr.val.var, genericMap, ctx);
     let type = applyGenericMap(leftExpr.type, genericMap);
     return { tag: 'arr_offset_int', val: { var: v, index }, type };
   }
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = resolveExpr(leftExpr.val.range, genericMap, ctx);
-    let v = resolveLeftExpr(leftExpr.val.var, genericMap, ctx);
+    let v = resolveExpr(leftExpr.val.var, genericMap, ctx);
     let type = applyGenericMap(leftExpr.type, genericMap);
     return { tag: 'arr_offset_slice', val: { var: v, range }, type };
   }
