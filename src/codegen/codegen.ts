@@ -342,21 +342,25 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     }
     return instText;
   }
-  else if (inst.tag == 'match') {
-    instText = `switch (${codeGenExpr(inst.val.var, addInst, ctx, inst.position)}._tag) {\n`;
-    for (let branch of inst.val.branches) {
-      instText += `${tabs}case \'${branch.enumVariant}\':${ codeGenBody(branch.body, indent + 1, true, true, ctx) }\n`;
-    }
-    instText += tabs + '}\n';
-  }
   else if (inst.tag == 'continue' || inst.tag == 'break') {
     instText = inst.tag + ';';
   } 
   else if (inst.tag == 'for_in') {
-    let varName = inst.val.varName;
+    if (inst.val.nextFn.type.tag != 'fn' || inst.val.nextFn.tag != 'fn') {
+      return 'undefined';
+    }
+
+    let varName = `_${inst.val.varName}__opt`;
     let iterName = codeGenExpr(inst.val.iter, addInst, ctx, inst.position);
-    instText = `for (int _${varName} = ${iterName}._start; _${varName} < ${iterName}._end; _${varName}++)`;
-    instText += codeGenBody(inst.val.body, indent + 1, false, true, ctx);
+    let itemType = inst.val.nextFn.type.val.returnType;
+    let nextFnName = getFnUniqueId(inst.val.nextFn.unitName, inst.val.nextFn.fnName, inst.val.nextFn.type);
+
+    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag != 1; ${varName} = ${nextFnName}(&${iterName})) {`;
+    instText += codeGenBody(inst.val.body, indent + 1, false, false, ctx);
+    let addToList: string[] = [];
+    changeRefCount(addToList, varName, itemType, -1);
+    instText += addToList[0];
+    instText += tabs + '}';
   }
 
   let outputText = '';
@@ -588,8 +592,14 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     return getFnUniqueId(leftExpr.unitName, leftExpr.fnName, leftExpr.type);
   }
   else {
-    if (leftExpr.isParam) {
+    if (leftExpr.mode == 'param') {
       return `(*_${leftExpr.val})`;
+    }
+    else if (leftExpr.mode == 'iter') {
+      return `(*_${leftExpr.val}__opt._some._start)`;
+    }
+    else if (leftExpr.mode == 'iter_copy') {
+      return `(_${leftExpr.val}__opt._some)`
     }
     else {
       return `_${leftExpr.val}`;

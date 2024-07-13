@@ -48,6 +48,7 @@ interface Match {
 interface ForIn {
   varName: string,
   iter: Expr
+  nextFn: LeftExpr
   body: Inst[]
 }
 
@@ -119,14 +120,16 @@ interface ArrOffsetSlice {
   range: Expr
 }
 
+type Mode = 'none' | 'param' | 'iter' | 'iter_copy';
+
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'prime', val: Expr, variant: string, variantIndex: number, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
-  | { tag: 'var', val: string, isParam: boolean, type: Type.Type }
+  | { tag: 'var', val: string, mode: Mode, type: Type.Type }
   | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
 
-export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn }
+export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn, Mode }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let strTable: string[] = [];
@@ -339,7 +342,7 @@ function analyzeFn(
       return null;
     }
 
-    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut, true);
+    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut, 'param');
     paramTypes.push(resolvedParamType);
   }
 
@@ -553,14 +556,33 @@ function analyzeInst(
   }
 
   if (inst.tag == 'for_in') {
-    let iterExpr = ensureExprValid(inst.val.iter, Type.RANGE, table, scope, inst.position);
+    let iterExpr = ensureExprValid(inst.val.iter, null, table, scope, inst.position);
     if (iterExpr == null) {
       return null;
     }
 
+    let fnResult =  Type.resolveFn('next', null, [iterExpr.type], table, inst.position);
+    if (fnResult == null || fnResult.fnType.tag != 'fn') {
+      logError(inst.position, 'value can not be used as an iterator');
+      return null;
+    }
+
+    let returnType = fnResult.fnType.val.returnType;
+    if (returnType.tag != 'enum' || returnType.val.id != 'std.Opt') {
+      logError(inst.position, 'next function does not return an option');
+      return null;
+    }
+
+    let iterType = returnType.val.fields[0].type;
+    let isArr = false;
+    if (iterType.tag == 'arr') {
+      isArr = true;
+      iterType = iterType.val;
+    }
+
     scope.inLoop = true;
     enterScope(scope);
-    setValToScope(scope, inst.val.varName, Type.INT, false, false);
+    setValToScope(scope, inst.val.varName, iterType, false, isArr ? 'iter' : 'iter_copy');
     let body = analyzeInstBody(inst.val.body, table, scope);
     exitScope(scope);
     if (body == null) {
@@ -572,6 +594,12 @@ function analyzeInst(
       val: {
         varName: inst.val.varName,
         iter: iterExpr,
+        nextFn: {
+          tag: 'fn',
+          fnName: fnResult.fnName,
+          unitName: fnResult.unitName,
+          type: fnResult.fnType
+        },
         body: body 
       },
       position: inst.position
@@ -636,7 +664,7 @@ function analyzeInst(
       return null;
     }
 
-    setValToScope(scope, inst.val.name, declareType, true, false);
+    setValToScope(scope, inst.val.name, declareType, true, 'none');
 
     let expr = null;
     if (inst.val.expr) {
@@ -646,7 +674,7 @@ function analyzeInst(
       }
     }
 
-    let leftExpr: LeftExpr = { tag: 'var', isParam: false, val: inst.val.name, type: declareType };
+    let leftExpr: LeftExpr = { tag: 'var', mode: 'none', val: inst.val.name, type: declareType };
     Enum.remove(scope.variantScope, leftExpr);
     if (expr != null) {
       Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
@@ -874,7 +902,7 @@ function ensureLeftExprValid(
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
     if (v != null) { // possible bug? seems fine
-      return { tag: 'var', val: leftExpr.val, isParam: v.isParam, type: v.type };
+      return { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
     }
 
     if (fnTypeHint != null) {
@@ -1592,7 +1620,7 @@ function ensureExprValid(
 
 interface Var {
   type: Type.Type
-  isParam: boolean
+  mode: Mode
   mut: boolean
 }
 
@@ -1624,8 +1652,8 @@ function exitScope(scope: FnContext) {
   scope.typeScope.pop();
 }
 
-function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boolean, isParam: boolean) {
-  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, isParam });
+function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boolean, mode: Mode) {
+  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, mode });
 }
 
 function getVar(scope: FnContext, name: string): Var | null {

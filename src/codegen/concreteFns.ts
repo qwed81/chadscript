@@ -73,8 +73,6 @@ function replaceGenerics(prog: Program): CProgram {
   let resolved: CFn[] = [];
   resolved.push(entry);
 
-  queueType(ctx, RANGE);
-
   while (ctx.fnResolveQueue.length > 0) {
     let dep = ctx.fnResolveQueue.pop()!;
     let genericMap: Map<string, Type>;
@@ -188,7 +186,8 @@ function resolveInst(
   else if (inst.tag == 'for_in') {
     let body = resolveInstBody(inst.val.body, genericMap, ctx);
     let iter = resolveExpr(inst.val.iter, genericMap, ctx);
-    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter }, position: inst.position };
+    let nextFn = resolveLeftExpr(inst.val.nextFn, genericMap, ctx);
+    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter, nextFn }, position: inst.position };
   }
   else if (inst.tag == 'return') {
     if (inst.val != null) {
@@ -354,7 +353,7 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'var', val: leftExpr.val, isParam: leftExpr.isParam, type };
+    return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type };
   }
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
@@ -457,7 +456,7 @@ function createDefaultFn(
         val: {
           tag: 'var',
           val: template.paramNames[i],
-          isParam: true,
+          mode: 'param',
           type: fnDep.fnType.val.paramTypes[i]
         },
         type: fnDep.fnType.val.paramTypes[i]
