@@ -7,13 +7,13 @@ export {
   applyGenericMap, canMath, canCompare as canOrder, canEq, canIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult
+  OperatorResult, getUnitNameOfStruct
 }
 
 const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
 const STR: Type = { tag: 'arr', constant: true, val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
-const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT }, { name: 'end', type: INT }];
+const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
 const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
@@ -24,10 +24,10 @@ const MATH_OP = {
   tag: 'enum' ,
   val: {
     fields: [
-      { name: 'add', type: { tag: 'primative', val: 'void' } },
-      { name: 'sub', type: { tag: 'primative', val: 'void' } },
-      { name: 'mul', type: { tag: 'primative', val: 'void' } },
-      { name: 'div', type: { tag: 'primative', val: 'void' } }
+      { name: 'add', type: { tag: 'primative', val: 'void' }, visibility: null },
+      { name: 'sub', type: { tag: 'primative', val: 'void' }, visibility: null },
+      { name: 'mul', type: { tag: 'primative', val: 'void' }, visibility: null },
+      { name: 'div', type: { tag: 'primative', val: 'void' }, visibility: null }
     ],
     generics: [],
     id: 'std.MathOperator'
@@ -35,6 +35,7 @@ const MATH_OP = {
 }
 
 interface Field {
+  visibility: Parse.FieldVisibility
   name: string
   type: Type
 }
@@ -52,14 +53,19 @@ type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
 
+function getUnitNameOfStruct(struct: Struct): string {
+  let lastDot = struct.id.lastIndexOf('.');
+  return struct.id.slice(0, lastDot)
+}
+
 function createRes(genericType: Type): Type {
   return {
     tag: 'enum',
     val: {
       id: 'std.Res',
       fields: [
-        { name: 'ok', type: genericType },
-        { name: 'err', type: STR }
+        { name: 'ok', type: genericType, visibility: null },
+        { name: 'err', type: STR, visibility: null }
       ],
       generics: [genericType]
     }
@@ -72,8 +78,8 @@ function createList(genericType: Type): Type {
     val: {
       id: 'std.List',
       fields: [
-        { name: 'arr', type: { tag: 'arr', constant: false, val: genericType } },
-        { name: 'len', type: INT }
+        { name: 'arr', type: { tag: 'arr', constant: false, val: genericType }, visibility: null },
+        { name: 'len', type: INT, visibility: 'get' }
       ],
       generics: [genericType]
     }
@@ -229,7 +235,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     let newFields: Field[] = [];
     for (let field of input.val.fields) {
       let fieldType = applyGenericMap(field.type, map);
-      newFields.push({ name: field.name, type: fieldType });
+      newFields.push({ name: field.name, type: fieldType, visibility: field.visibility });
     }
     for (let generic of input.val.generics) {
       newGenerics.push(applyGenericMap(generic, map));
@@ -404,6 +410,7 @@ function canIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult
 
 interface RefTable {
   units: Parse.ProgramUnit[]
+  thisUnit: Parse.ProgramUnit
   allUnits: Parse.ProgramUnit[]
 }
 
@@ -417,7 +424,7 @@ function getUnitReferences(
       newUnits.push(allUnits[i]);
     }
   }
-  return { units: newUnits, allUnits };
+  return { units: newUnits, allUnits, thisUnit };
 }
 
 function resolveType(
@@ -505,6 +512,10 @@ function resolveStruct(
         continue;
       }
 
+      if (structDef.header.pub == false && unit.fullName != refTable.thisUnit.fullName) {
+        continue;
+      }
+
       if (structDef.header.generics.length != generics.length) {
         continue;
       }
@@ -524,7 +535,7 @@ function resolveStruct(
         }
 
         let concreteFieldType = applyGenericMap(fieldType, genericMap);
-        fields.push({ name: field.name, type: concreteFieldType });
+        fields.push({ name: field.name, type: concreteFieldType, visibility: field.visibility });
       }
 
       let thisStructId = unit.fullName + '.' + structDef.header.name;
@@ -645,6 +656,10 @@ function resolveFn(
     let unitRefTable = getUnitReferences(unit, refTable.allUnits);
     for (let fnDef of unit.fns) {
       if (fnDef.name != name) {
+        continue;
+      }
+
+      if (fnDef.pub == false && unit.fullName != refTable.thisUnit.fullName) {
         continue;
       }
       

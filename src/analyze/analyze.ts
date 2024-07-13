@@ -199,6 +199,13 @@ function analyzeUnitDataTypes(units: Parse.ProgramUnit[], unitIndex: number): bo
   }
 
   for (let en of unit.enums) {
+    for (let i = 0; i < en.fields.length; i++) {
+      if (en.fields[i].visibility != null) {
+        logError(en.fields[i].position, 'enum fields can not have visibility modifier');
+        invalidDataType = true;
+      }
+    }
+
     if (verifyStruct(en, lookupTable) == false) {
       invalidDataType = true;
     }
@@ -702,7 +709,7 @@ function analyzeInst(
       return null;
     }
 
-    if (canMutate(to, scope) == false) {
+    if (canMutate(to, table, scope) == false) {
       logError(inst.position, 'value can not be mutated');
       return null;
     }
@@ -731,19 +738,33 @@ function analyzeInst(
   return null;
 }
 
-function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
+function canMutate(leftExpr: LeftExpr, table: Type.RefTable, scope: FnContext): boolean {
 
   if (leftExpr.tag == 'dot') {
-    if (leftExpr.val.left.tag != 'left_expr') {
+    let left: Expr = leftExpr.val.left;
+    if (left.tag != 'left_expr') {
       return false;
     }
-    return canMutate(leftExpr.val.left.val, scope);
+
+    if (left.type.tag == 'arr' && leftExpr.val.varName == 'len') {
+      return false;
+    }
+
+    if (left.type.tag == 'struct' && Type.getUnitNameOfStruct(left.type.val) != table.thisUnit.fullName) {
+      for (let field of left.type.val.fields) {
+        if (field.name == leftExpr.val.varName && field.visibility == 'get') {
+          return false;
+        }
+      }
+    }
+
+    return canMutate(left.val, table, scope);
   } 
   if (leftExpr.tag == 'prime') {
     if (leftExpr.val.tag != 'left_expr') {
       return false;
     }
-    return canMutate(leftExpr.val.val, scope);
+    return canMutate(leftExpr.val.val, table, scope);
   }
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
@@ -757,7 +778,7 @@ function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
       return false;
     }
     if (leftExpr.val.var.tag == 'left_expr') {
-      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, scope);
+      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, table, scope);
     }
     
     return true;
@@ -767,7 +788,7 @@ function canMutate(leftExpr: LeftExpr, scope: FnContext): boolean {
       return false;
     }
     if (leftExpr.val.var.tag == 'left_expr') {
-      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, scope);
+      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, table, scope);
     }
   }
   return false;
@@ -812,8 +833,15 @@ function ensureLeftExprValid(
       }
     }
 
+    let unitName = Type.getUnitNameOfStruct(validLeftExpr.type.val);
+    let inSameUnit: boolean = unitName == table.thisUnit.fullName;
     for (let field of validLeftExpr.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
+        if (field.visibility == null && !inSameUnit) {
+          logError(position, `access of private field '${field.name}'`);
+          return null;
+        }
+
         let dotOp: LeftExpr = {
           tag: 'dot',
           val: {

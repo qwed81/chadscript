@@ -40,7 +40,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
-  BinExpr, Expr, parseDir
+  BinExpr, Expr, parseDir, FieldVisibility
 }
 
 interface SourceLine {
@@ -83,20 +83,24 @@ interface Fn {
   t: FnType
   paramNames: string[]
   defaultExprs: (Expr | null)[]
+  pub: boolean
   name: string
   body: Inst[]
   position: Position
 }
 
+type FieldVisibility = 'pub' | 'get' | null 
 interface Var {
   t: Type,
   name: string
   position: Position
+  visibility: FieldVisibility
 }
 
 interface StructHeader {
   name: string,
   generics: string[]
+  pub: boolean
 }
 
 interface Struct {
@@ -232,14 +236,25 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
     let line = lines[i];
     if (line.indent == 0) {
       let body = getIndentedSegment(lines, i + 1, 1);
-      if (line.tokens[0].val == 'struct') {
-        let struct = parseStruct(line, body);
+
+      // determine how to parse based on 'pub'
+      let pub = false;
+      let start = 0;
+      let newLine = line;
+      if (line.tokens[0].val == 'pub') {
+        pub = true;
+        newLine = { ...line, tokens: line.tokens.slice(1) };
+        start = 1;
+      }
+
+      if (line.tokens[start].val == 'struct') {
+        let struct = parseStruct(newLine, body, pub);
         if (struct == null) {
           return null;
         }
         program.structs.push(struct);
-      } else if (line.tokens[0].val == 'enum') {
-        let en = parseStruct(line, body);
+      } else if (line.tokens[start].val == 'enum') {
+        let en = parseStruct(newLine, body, pub);
         if (en == null) {
           return null;
         }
@@ -465,7 +480,7 @@ function parseUses(header: SourceLine): string[] | null {
 } 
 
 // returns the struct if it could valid parse from the header and the body, logs errors
-function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
+function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Struct | null {
   if (header.tokens.length < 2) {
     logError(header.position, 'expected struct name');
     return null;
@@ -489,17 +504,23 @@ function parseStruct(header: SourceLine, body: SourceLine[]): Struct | null {
     }
   }
 
-  let structName: StructHeader = { name: header.tokens[1].val, generics };
+  let structName: StructHeader = { name: header.tokens[1].val, generics, pub };
   let structFields: Var[] = [];
   for (let line of body) {
     let name = line.tokens[line.tokens.length - 1].val;
+    let visibility: FieldVisibility = null;
     let typeTokens = line.tokens.slice(0, -1);
+    if (line.tokens[0].val == 'get' || line.tokens[0].val == 'pub') {
+      visibility = line.tokens[0].val;
+      typeTokens = line.tokens.slice(1, -1);
+    }
+
     let t = tryParseType(typeTokens);
     if (t == null) {
       logError(positionRange(typeTokens), 'field type not valid')
       return null;
     }
-    structFields.push({ t, name, position: line.position });
+    structFields.push({ t, name, position: line.position, visibility });
   }
 
   return { header: structName, fields: structFields, position: header.position };
@@ -512,7 +533,7 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     return null;
   }
 
-  let { paramNames, name, t, defaultExprs } = fnHeader;
+  let { paramNames, name, t, pub, defaultExprs } = fnHeader;
   let fnBody = parseInstBody(body);
   if (fnBody == null) {
     return null;
@@ -522,6 +543,7 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     name,
     paramNames,
     t,
+    pub,
     body: fnBody,
     position: header.position,
     defaultExprs 
@@ -639,9 +661,18 @@ function parseFnHeader(
   paramNames: string[],
   defaultExprs: (Expr | null)[]
   t: FnType 
+  pub: boolean
 } | null 
 {
   let tokens = header.tokens;
+  if (tokens.length == 0) {
+    return null;
+  }
+
+  let pub: boolean = false;
+  if (tokens[0].val == 'pub') {
+    pub = true;
+  }
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
@@ -718,6 +749,7 @@ function parseFnHeader(
   return {
     name,
     paramNames,
+    pub,
     t: { returnType, paramTypes },
     defaultExprs
   };
