@@ -1043,7 +1043,7 @@ function tryParseStructInit(tokens: Token[], position: Position): Expr | null {
         return null;
       }
 
-      let initExpr = tryParseExpr(newSplits[1], { ...position, });
+      let initExpr = tryParseExpr(newSplits[1], positionRange(newSplits[1]));
       if (initExpr == null) {
         return null;
       }
@@ -1499,7 +1499,7 @@ function getLines(data: string, documentName: string): SourceLine[] {
       continue;
     }
 
-    let tokens: Token[] = splitTokens(line, documentName, lineNumber);
+    let tokens: Token[] = splitTokens(line, documentName, lineNumber + 1);
     sourceLines.push({ indent, tokens, position: linePosition });
   }
 

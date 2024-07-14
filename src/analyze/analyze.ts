@@ -129,7 +129,7 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'var', val: string, mode: Mode, type: Type.Type }
   | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
 
-export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, allPathsReturn, Mode }
+export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, Mode }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let strTable: string[] = [];
@@ -362,7 +362,7 @@ function analyzeFn(
     return null;
   }
 
-  if (!Type.typeApplicable(scope.returnType, Type.VOID) && allPathsReturn(body) == false) {
+  if (!Type.typeApplicable(scope.returnType, Type.VOID) && allPaths(body, 'return') == false) {
     logError(fn.position, 'function does not always return');
     return null;
   }
@@ -413,13 +413,12 @@ function allElifFollowIf(body: Parse.Inst[]): boolean {
   return true;
 }
 
-// recursively checks to make sure all paths return
-function allPathsReturn(body: Inst[]): boolean {
+function allPaths(body: Inst[], instTag: 'return' | 'continue' | 'break'): boolean {
   let ifGroupings: Inst[][][] = [];
   let currentGroup: Inst[][] = [];
   for (let i = 0; i < body.length; i++) {
     let inst = body[i];
-    if (inst.tag == 'return') {
+    if (inst.tag == instTag) {
       return true;
     }
 
@@ -442,7 +441,7 @@ function allPathsReturn(body: Inst[]): boolean {
   for (let i = 0; i < ifGroupings.length; i++) {
     let thisGroupReturns = true;
     for (let j = 0; j < ifGroupings[i].length; j++) {
-      if (allPathsReturn(ifGroupings[i][j]) == false) {
+      if (allPaths(ifGroupings[i][j], instTag) == false) {
         thisGroupReturns = false;
         break;
       } 
@@ -531,7 +530,7 @@ function analyzeCond(
     return null;
   }
 
-  if (allPathsReturn(body)) {
+  if (allPaths(body, 'return') || allPaths(body, 'continue') || allPaths(body, 'break')) {
     Enum.applyInverseCond(scope.variantScope, cond, ifChain);
   }
 
@@ -1222,6 +1221,31 @@ function ensureBinOpValid(
       type: Type.BOOL
     }
   }
+  else if (expr.op == '||') {
+    let exprLeft = ensureExprValid(expr.left, Type.BOOL, table, scope, position);
+    if (exprLeft == null) {
+      return null;
+    }
+
+    // the left side of the && can be used on the right
+    Enum.enterScope(scope.variantScope);
+    Enum.applyInverseCond(scope.variantScope, exprLeft, []);
+    let exprRight = ensureExprValid(expr.right, Type.BOOL, table, scope, position);
+    Enum.exitScope(scope.variantScope);
+    if (exprRight == null) {
+      return null;
+    }
+
+    computedExpr = {
+      tag: 'bin',
+      val: {
+        op: '||',
+        left: exprLeft,
+        right: exprRight
+      },
+      type: Type.BOOL
+    }
+  }
   else {
     let exprLeft = ensureExprValid(expr.left, null, table, scope, position);
     if (exprLeft == null) {
@@ -1243,14 +1267,6 @@ function ensureBinOpValid(
     }
     else if (op == '==' || op == '!=') {
       testFn = Type.canEq;
-    }
-    else if (op == '||') {
-      testFn = (a, b, _) => {
-        if (Type.typeApplicable(a, Type.BOOL) && Type.typeApplicable(b, Type.BOOL)) {
-          return { tag: 'default', returnType: Type.BOOL };
-        }
-        return null;
-      }
     }
 
     let operation = testFn(exprLeft.type, exprRight.type, table);
@@ -1488,7 +1504,13 @@ function ensureExprValid(
     let exprFieldTypes = new Map<string, Type.Type>();
     let exprFieldExprs: Map<string, Expr> = new Map();
     for (let initField of expr.val) {
-      let fieldType = expectedReturn.val.fields.filter(x => x.name == initField.name)[0].type;
+      let matchingFields = expectedReturn.val.fields.filter(x => x.name == initField.name);
+      if (matchingFields.length == 0) {
+        logError(initField.expr.position, `field ${initField.name} does not exist on type`);
+        return null;
+      }
+
+      let fieldType = matchingFields[0].type;
       let expr = ensureExprValid(initField.expr, fieldType, table, scope, position);
       if (expr == null) {
         return null;

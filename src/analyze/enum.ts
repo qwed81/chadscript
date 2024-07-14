@@ -196,6 +196,14 @@ function leftExprToKey(leftExpr: LeftExpr): string[] | null {
         return null;
       }
     }
+    else if (currExpr.tag == 'arr_offset_int') {
+      if (currExpr.val.var.tag == 'left_expr') {
+        output.push(currExpr.val.index + '');
+        currExpr = currExpr.val.var.val;
+      } else {
+        return null;
+      }
+    }
     else if (currExpr.tag == 'prime') {
       if (currExpr.val.tag == 'left_expr') {
         output.push('\'');
