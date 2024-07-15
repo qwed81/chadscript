@@ -820,17 +820,47 @@ function ensureLeftExprValid(
 ): LeftExpr | null {
 
   if (leftExpr.tag == 'dot') {
-    let validLeftExpr = ensureExprValid(leftExpr.val.left, null, table, scope, position);
-    if (validLeftExpr == null) {
+    let validExpr = ensureExprValid(leftExpr.val.left, null, table, scope, position);
+    if (validExpr == null) {
       return null;
     }
 
-    if (validLeftExpr.type.tag != 'struct') {
-      if (validLeftExpr.type.tag == 'arr' && leftExpr.val.varName == 'len') {
+    if (validExpr.type.tag == 'enum') {
+      if (validExpr.tag == 'left_expr') {
+        let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, validExpr.val);
+        if (possibleVariants.length == 0) {
+          logError(position, 'no variant possible');
+          return null;
+        }
+        else if (possibleVariants.length > 1) {
+          logError(position, `enum can be ${ JSON.stringify(possibleVariants) }`);
+          return null;
+        }
+        else if (possibleVariants[0] != leftExpr.val.varName) {
+          logError(position, `invalid access of variant '${leftExpr.val.varName}' - note: value is '${possibleVariants[0]}'`)
+          return null;
+        }
+
+
+        let innerType = validExpr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
+        return {
+          tag: 'prime',
+          val: validExpr,
+          variantIndex: Type.getVariantIndex(validExpr.type, possibleVariants[0]),
+          variant: possibleVariants[0],
+          type: innerType 
+        };
+      }
+
+      logError(position, 'prime operator not supported on this expr');
+      return null;
+    }
+    else if (validExpr.type.tag != 'struct') {
+      if (validExpr.type.tag == 'arr' && leftExpr.val.varName == 'len') {
         let dotOp: LeftExpr = {
           tag: 'dot',
           val: {
-            left: validLeftExpr,
+            left: validExpr,
             varName: 'len'
           },
           type: Type.INT
@@ -838,14 +868,14 @@ function ensureLeftExprValid(
         return dotOp;
       }
       else {
-        logError(position, `dot op not applicable to ${Type.toStr(validLeftExpr.type)}`);
+        logError(position, `dot op not applicable to ${Type.toStr(validExpr.type)}`);
         return null;
       }
     }
 
-    let unitName = Type.getUnitNameOfStruct(validLeftExpr.type.val);
+    let unitName = Type.getUnitNameOfStruct(validExpr.type.val);
     let inSameUnit: boolean = unitName == table.thisUnit.fullName;
-    for (let field of validLeftExpr.type.val.fields) {
+    for (let field of validExpr.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
         if (field.visibility == null && !inSameUnit) {
           logError(position, `access of private field '${field.name}'`);
@@ -855,7 +885,7 @@ function ensureLeftExprValid(
         let dotOp: LeftExpr = {
           tag: 'dot',
           val: {
-            left: validLeftExpr,
+            left: validExpr,
             varName: field.name 
           },
           type: field.type
@@ -864,7 +894,7 @@ function ensureLeftExprValid(
       }
     }
 
-    logError(position, `field ${leftExpr.val.varName} not in ${Type.toStr(validLeftExpr.type)}`);
+    logError(position, `field ${leftExpr.val.varName} not in ${Type.toStr(validExpr.type)}`);
     return null;
   } 
   else if (leftExpr.tag == 'arr_offset') {
@@ -1005,38 +1035,7 @@ function ensureLeftExprValid(
     return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType };
   }
   else if (leftExpr.tag == 'prime') {
-    let expr = ensureExprValid(leftExpr.val, null, table, scope, position);
-    if (expr == null) {
-      return null;
-    }
-
-    if (expr.type.tag != 'enum') {
-      logError(position, 'prime operator only used on enums');
-      return null;
-    }
-
-    if (expr.tag == 'left_expr') {
-      let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, expr.val);
-      if (possibleVariants.length == 0) {
-        logError(position, 'no variant possible');
-        return null;
-      }
-      else if (possibleVariants.length > 1) {
-        logError(position, `enum can be ${ JSON.stringify(possibleVariants) }`);
-        return null;
-      }
-
-      let innerType = expr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
-      return {
-        tag: 'prime',
-        val: expr,
-        variantIndex: Type.getVariantIndex(expr.type, possibleVariants[0]),
-        variant: possibleVariants[0],
-        type: innerType 
-      };
-    }
-
-    logError(position, 'prime operator not supported on this expr');
+    compilerError('prime not supported anymore')
     return null;
   }
 
