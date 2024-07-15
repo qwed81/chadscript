@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError, Position } from './index';
+import { logError, NULL_POS, Position } from './index';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
@@ -212,6 +212,9 @@ const MAPPING: [string, number][] = [
 ]; 
 
 function positionRange(tokens: Token[]): Position {
+  if (tokens.length == 0) {
+    return NULL_POS;
+  }
   return { ...tokens[0].position, end: tokens[tokens.length - 1].position.end, start: tokens[0].position.start };
 }
 
@@ -1009,6 +1012,10 @@ function tryParseArrInit(tokens: Token[], position: Position): Expr | null {
   } 
 
   let splits = balancedSplit(tokens.slice(1, -1), ',');
+  if (splits.length == 1 && splits[0].length == 0) {
+    return { tag: 'arr_init', val: [], position };
+  }
+
   let exprs: Expr[] = [];
   for (let split of splits) {
     let expr = tryParseExpr(split, positionRange(split));

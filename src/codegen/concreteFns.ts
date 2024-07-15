@@ -1,7 +1,7 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../index';
 import {
-  Type, typeApplicableStateful, applyGenericMap, RANGE,
+  Type, typeApplicableStateful, applyGenericMap, RANGE, standardizeType,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn,
 } from '../analyze/types';
 import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
@@ -371,25 +371,6 @@ function resolveLeftExpr(
   return undefined!;
 }
 
-// replaces all mutablility of the type so that it can be created into a key
-function standardizeType(type: Type) {
-  if (type.tag == 'arr') {
-    type.constant = false;
-    standardizeType(type.val);
-  }
-  else if (type.tag == 'struct' || type.tag == 'enum') {
-    for (let i = 0; i < type.val.fields.length; i++) {
-      standardizeType(type.val.fields[i].type);
-    }
-  }
-  else if (type.tag == 'fn') {
-    standardizeType(type.val.returnType);
-    for (let i = 0; i < type.val.paramTypes.length; i++) {
-      standardizeType(type.val.paramTypes[i]);
-    }
-  }
-}
-
 // the default function is just a function with no named params
 // that calls the template function with the default named params.
 // used for resolve fns
@@ -416,6 +397,7 @@ function createDefaultFn(
 
   let defaultParamNames: string[] = [];
   let defaultLinkedParams: boolean[] = [];
+  let defaultParamTypes: Type[] = [];
 
   let defaultFnCallExprs: Expr[] = [];
   if (template.fnType.tag != 'fn') {
@@ -446,7 +428,7 @@ function createDefaultFn(
 
     if (paramIsNamed == false) {
       defaultLinkedParams.push(fnDep.fnType.val.linkedParams[i]);
-      paramTypes.push(fnDep.fnType.val.paramTypes[i]);
+      defaultParamTypes.push(fnDep.fnType.val.paramTypes[i]);
       defaultParamNames.push(template.paramNames[i]);
     }
 

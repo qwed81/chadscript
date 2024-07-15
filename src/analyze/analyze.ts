@@ -579,7 +579,7 @@ function analyzeInst(
       return null;
     }
 
-    let iterType = returnType.val.fields[0].type;
+    let iterType = returnType.val.fields[1].type;
     let isArr = false;
     if (iterType.tag == 'arr') {
       isArr = true;
@@ -698,7 +698,9 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'assign') {
-    let to = ensureLeftExprValid(inst.val.to, null, table, scope, inst.position);
+    // note that direct assign is not checked yet this just validates the leftExpr
+    // works isolated
+    let to = ensureLeftExprValid(inst.val.to, null, null, table, scope, inst.position);
     if (to == null) {
       return null;
     }
@@ -715,6 +717,12 @@ function analyzeInst(
 
     let expr = ensureExprValid(inst.val.expr, to.type, table, scope, inst.position);
     if (expr == null) {
+      return null;
+    }
+
+    // give it the value to use in the direct assign
+    to = ensureLeftExprValid(inst.val.to, null, expr, table, scope, inst.position);
+    if (to == null) {
       return null;
     }
 
@@ -803,6 +811,9 @@ function ensureLeftExprValid(
   // gives the leftExpr permission to do a search in the global scope
   // to find the correct function
   fnTypeHint: FnTypeHint | null,
+  // if the leftExpr is used directly on the left side of an assign
+  // instruction it may be used differently (ex: getIndex vs setIndex)
+  directAssign: Expr | null,
   table: Type.RefTable,
   scope: FnContext,
   position: Position
@@ -867,9 +878,20 @@ function ensureLeftExprValid(
       return null;
     }
 
-    let operation = Type.canIndex(arr.type, index.type, table); 
-    if (operation == null) {
-      logError(position, 'index not defined on type');
+    let operation: Type.OperatorResult;
+    if (directAssign == null) {
+      operation = Type.canGetIndex(arr.type, index.type, table); 
+    }
+    else {
+      operation = Type.canSetIndex(arr.type, index.type, directAssign.type, table); 
+    }
+
+    if (operation == null && directAssign == null) {
+      logError(position, `getIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
+      return null;
+    }
+    else if (operation == null) {
+      logError(position, `prepareIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
       return null;
     }
     else if (operation.tag == 'default') {
@@ -895,7 +917,7 @@ function ensureLeftExprValid(
         return newExpr;
       }
     }
-    else if (operation.tag == 'fn') {
+    else if (operation.tag == 'fn' && directAssign == null) {
       let memLoc: Expr = {
         tag: 'fn_call',
         val: {
@@ -906,6 +928,33 @@ function ensureLeftExprValid(
             type: operation.fnType,
           },
           exprs: [arr, index]
+        },
+        type: operation.returnType
+      }
+      if (operation.returnType.tag != 'arr') {
+        return null;
+      }
+
+      return {
+        tag: 'arr_offset_int',
+        val: {
+          var: memLoc,
+          index: { tag: 'int_const', val: 0, type: Type.INT }
+        },
+        type: operation.returnType.val
+      }
+    }
+    else if (operation.tag == 'fn' && directAssign != null) {
+      let memLoc: Expr = {
+        tag: 'fn_call',
+        val: {
+          fn: {
+            tag: 'fn',
+            fnName: operation.fnName,
+            unitName: operation.unitName,
+            type: operation.fnType,
+          },
+          exprs: [arr, index, directAssign]
         },
         type: operation.returnType
       }
@@ -1021,7 +1070,7 @@ function ensureFnCallValid(
   }
 
   let fnTypeHint: FnTypeHint = { returnType: expectedReturn , paramTypes };
-  let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, table, scope, position);
+  let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, null, table, scope, position);
   if (fnResult == null) {
     return null;
   } 
@@ -1123,10 +1172,19 @@ function ensureFnCallValid(
     }
   }
 
+  let newLeftExpr: LeftExpr = JSON.parse(JSON.stringify(fnResult));
+  if (newLeftExpr.type.tag != 'fn') {
+    compilerError('should always be fn type');
+    return null;
+  }
+
+  // overwrite in case of generic default params
+  newLeftExpr.type.val.paramTypes = paramTypes;
+
   let newExpr: Expr = { 
     tag: 'fn_call',
     val: {
-      fn: fnResult,
+      fn: newLeftExpr,
       exprs: paramExprs  
     },
     type: fnType.val.returnType
@@ -1645,7 +1703,7 @@ function ensureExprValid(
         };
       }
 
-      let exprTuple = ensureLeftExprValid(expr.val, fnTypeHint, table, scope, position);
+      let exprTuple = ensureLeftExprValid(expr.val, fnTypeHint, null, table, scope, position);
       if (exprTuple == null) {
         return null;
       }

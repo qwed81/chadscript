@@ -4,10 +4,10 @@ import * as Parse from '../parse';
 export {
   INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR, MATH_OP,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
-  applyGenericMap, canMath, canCompare as canOrder, canEq, canIndex, RefTable,
+  applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult, getUnitNameOfStruct
+  OperatorResult, getUnitNameOfStruct, standardizeType
 }
 
 const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
@@ -86,6 +86,25 @@ function createList(genericType: Type): Type {
   }
 }
 
+// replaces all mutablility of the type so that it can be created into a key
+function standardizeType(type: Type) {
+  if (type.tag == 'arr') {
+    type.constant = false;
+    standardizeType(type.val);
+  }
+  else if (type.tag == 'struct' || type.tag == 'enum') {
+    for (let i = 0; i < type.val.fields.length; i++) {
+      standardizeType(type.val.fields[i].type);
+    }
+  }
+  else if (type.tag == 'fn') {
+    standardizeType(type.val.returnType);
+    for (let i = 0; i < type.val.paramTypes.length; i++) {
+      standardizeType(type.val.paramTypes[i]);
+    }
+  }
+}
+
 function getVariantIndex(type: Type, fieldName: string): number {
   if (type.tag != 'enum') {
     return -1;
@@ -156,7 +175,10 @@ function isRes(type: Type): boolean {
 
 function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, Type>): boolean {
   if (supa.tag == 'generic') {
-    if (sub.tag != 'generic' && genericMap.has(supa.val)) {
+    if (sub.tag == 'generic') {
+      return true;
+    }
+    else if (genericMap.has(supa.val)) {
       return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap);
     }
     genericMap.set(supa.val, sub);
@@ -226,6 +248,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     if (map.has(input.val)) {
       return map.get(input.val)!;
     }
+    return input;
   }
   else if (input.tag == 'primative') {
     return input;
@@ -249,7 +272,8 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     let newReturnType: Type = applyGenericMap(input.val.returnType, map);
     let newParamTypes: Type[] = []
     for (let paramType of input.val.paramTypes) {
-      newParamTypes.push(applyGenericMap(paramType, map));
+      let newParamType = applyGenericMap(paramType, map);
+      newParamTypes.push(newParamType);
     }
     return {
       tag: 'fn',
@@ -330,7 +354,7 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
     }
   }
 
-  let fnResult = resolveFn('math', null, [a, b, MATH_OP as Type], refTable, NULL_POS);
+  let fnResult = resolveFn('math', null, [a, b, MATH_OP as Type], refTable, null);
   if (fnResult == null || fnResult.fnType.tag != 'fn') {
     return null;
   }
@@ -345,13 +369,13 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
 
 function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
-    return { tag: 'default', returnType: INT };
+    return { tag: 'default', returnType: BOOL };
   }
   if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
-    return { tag: 'default', returnType: INT };
+    return { tag: 'default', returnType: BOOL };
   }
 
-  let fnResult = resolveFn('compare', null, [a, b], refTable, NULL_POS);
+  let fnResult = resolveFn('compare', null, [a, b], refTable, null);
   if (fnResult == null || fnResult.fnType.tag != 'fn') {
     return null;
   }
@@ -376,7 +400,7 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
     return { tag: 'default', returnType: BOOL };
   }
 
-  let fnResult = resolveFn('eq', BOOL, [a, b], refTable, NULL_POS);
+  let fnResult = resolveFn('eq', BOOL, [a, b], refTable, null);
   if (fnResult == null) {
     return null;
   }
@@ -389,12 +413,31 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
   };
 }
 
-function canIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
+function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
   if (struct.tag == 'arr') {
     return { tag: 'default', returnType: struct.val };
   }
 
-  let fnResult = resolveFn('getIndex', null, [struct, index], refTable, NULL_POS);
+  let fnResult = resolveFn('getIndex', null, [struct, index], refTable, null);
+  if (fnResult == null || fnResult.fnType.tag != 'fn' || fnResult.fnType.val.returnType.tag != 'arr') {
+    return null;
+  }
+
+  return {
+    tag: 'fn',
+    returnType: fnResult.fnType.val.returnType,
+    fnName: fnResult.fnName,
+    fnType: fnResult.fnType,
+    unitName: fnResult.unitName
+  };
+}
+
+function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTable): OperatorResult | null {
+  if (struct.tag == 'arr') {
+    return { tag: 'default', returnType: struct.val };
+  }
+
+  let fnResult = resolveFn('prepareIndex', null, [struct, index, exprType], refTable, null);
   if (fnResult == null || fnResult.fnType.tag != 'fn' || fnResult.fnType.val.returnType.tag != 'arr') {
     return null;
   }
@@ -430,7 +473,8 @@ function getUnitReferences(
 function resolveType(
   def: Parse.Type,
   refTable: RefTable,
-  position: Position
+  // if position is null do not display errors
+  position: Position | null
 ): Type | null {
   if (def.tag == 'basic') {
     if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte') {
@@ -462,7 +506,9 @@ function resolveType(
     let resolvedGenerics: Type[] = [];
     for (let generic of def.val.generics) {
       if (generic.tag == 'link') {
-        logError(position, 'ref not supported in generics');
+        if (position != null) {
+          logError(position, 'ref not supported in generics');
+        }
         return null;
       }
 
@@ -498,7 +544,8 @@ function resolveStruct(
   name: string,
   generics: Type[],
   refTable: RefTable,
-  position: Position
+  // if position is null do not display errors
+  position: Position | null
 ): Type | null {
   let possibleStructs: Type[] = [];
   for (let unit of refTable.units) {
@@ -545,12 +592,16 @@ function resolveStruct(
   }
 
   if (possibleStructs.length > 1) {
-    logError(position, 'ambiguous struct');
+    if (position != null) {
+      logError(position, 'ambiguous struct');
+    }
     return null;
   }
 
   if (possibleStructs.length == 0) {
-    logError(position, `struct '${name}' could not be found`);
+    if (position != null) {
+      logError(position, `struct '${name}' could not be found`);
+    }
     return null;
   }
 
@@ -595,10 +646,9 @@ function getFnNamedParams(
       }
 
       // to standardize the named param function
-      if (returnType.tag == 'arr') {
-        returnType.constant = false;
-      }
-      if (typeApplicableStateful(returnType, fnType.val.returnType, genericMap) == false) {
+      let fnTypeReturnType = JSON.parse(JSON.stringify(fnType.val.returnType));
+      standardizeType(fnTypeReturnType);
+      if (typeApplicableStateful(fnTypeReturnType, returnType, genericMap) == false) {
         continue;
       }
 
@@ -647,7 +697,8 @@ function resolveFn(
   returnType: Type | null,
   paramTypes: (Type | null)[] | null,
   refTable: RefTable,
-  calleePosition: Position
+  // if calleePosition is null then do not display errors
+  calleePosition: Position | null
 ): FnResult | null {
 
   let possibleFns: FnResult[] = [];
@@ -757,16 +808,22 @@ function resolveFn(
 
   // give a useful error about why it can't resolve the function
   if (possibleFns.length > 1) {
-    logError(calleePosition, 'function call is ambiguous');
+    if (calleePosition != null) {
+      logError(calleePosition, 'function call is ambiguous');
+    }
     return null;
   }
 
   if (wrongTypeFns.length > 0) {
-    logError(calleePosition, 'function does not match type signature');
+    if (calleePosition != null) {
+      logError(calleePosition, 'function does not match type signature');
+    }
     return null;
   }
 
-  logError(calleePosition, `could not find ${name}`);
+  if (calleePosition != null) {
+    logError(calleePosition, `could not find ${name}`);
+  }
   return null;
 }
 

@@ -299,15 +299,21 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     instText = `if (${ codeGenExpr(inst.val.cond, addInst, ctx, inst.position) }) ${ codeGenBody(inst.val.body, indent + 1, false, true, ctx) }`;
     if (instIndex + 1 < insts.length) {
       let nextInst = insts[instIndex + 1];
-      if (nextInst.tag == 'elif' || nextInst.tag == 'else') {
+      if (nextInst.tag == 'elif') {
         instText += 'else {'
         instText += codeGenInst(insts, instIndex + 1, indent + 1, ctx);
+        instText += '}';
+      }
+      else if (nextInst.tag == 'else') {
+        instText += 'else {'
+        instText += codeGenBody(nextInst.val, indent + 1, false, false, ctx);
         instText += '}';
       }
     }
   } 
   else if (inst.tag == 'else') {
-    instText = codeGenBody(inst.val, indent + 1, false, true, ctx);
+    // generated before
+    instText = '';
   }
   else if (inst.tag == 'while') {
     addInst.before.push(`while (true) {`);
@@ -355,7 +361,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let itemType = inst.val.nextFn.type.val.returnType;
     let nextFnName = getFnUniqueId(inst.val.nextFn.unitName, inst.val.nextFn.fnName, inst.val.nextFn.type);
 
-    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag != 1; ${varName} = ${nextFnName}(&${iterName})) {`;
+    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag != 0; ${varName} = ${nextFnName}(&${iterName})) {`;
     instText += codeGenBody(inst.val.body, indent + 1, false, false, ctx);
     let addToList: string[] = [];
     changeRefCount(addToList, varName, itemType, -1);
@@ -583,7 +589,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = codeGenExpr(leftExpr.val.range, addInst, ctx, position);
     let fromVar = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
-    let memGuard = `if (${range}._start < ${range}._end || ${range}._start < 0 || ${fromVar}._len < ${range}._end) { `;
+    let memGuard = `if (${range}._end < ${range}._start || ${range}._start < 0 || ${fromVar}._len < ${range}._end) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
     memGuard += `snprintf(__buf, 128, "invalid access of array with range %d:%d", ${range}._start, ${range}._end); `
     memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
@@ -686,7 +692,8 @@ function codeGenStructs(structs: CStruct[]): string {
   *s->_refCount += amt;
   if (*s->_refCount == 0) {
   `
-      if (type.val.tag != 'primative') {
+      let tag = type.val.tag;
+      if (tag != 'primative' && tag != 'fn') {
         structStr +=
         `
     for (size_t i = 0; i < s->_len; i++) {
@@ -700,7 +707,8 @@ function codeGenStructs(structs: CStruct[]): string {
         continue;
       }
       for (let i = 0; i < type.val.fields.length; i++) {
-        if (type.val.fields[i].type.tag == 'primative') {
+        let tag = type.val.fields[i].type.tag;
+        if (tag == 'primative' || tag == 'fn') {
           continue;
         }
 
@@ -714,7 +722,8 @@ function codeGenStructs(structs: CStruct[]): string {
         continue;
       }
       for (let i = 0; i < type.val.fields.length; i++) {
-        if (type.val.fields[i].type.tag == 'primative') {
+        let tag = type.val.fields[i].type.tag;
+        if (tag == 'primative' || tag == 'fn') {
           continue;
         }
 
