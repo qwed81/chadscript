@@ -354,8 +354,14 @@ function resolveLeftExpr(
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
     standardizeType(depType);
-    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType, refTable: leftExpr.refTable };
+
+
+    // set a blank refTable to create proper key
+    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType, refTable: undefined! };
     let key = JSON.stringify(newLeftExpr);
+    // set the refTable back so its valid
+    newLeftExpr.refTable = leftExpr.refTable;
+
     if (!ctx.queuedFns.has(key)) {
       ctx.fnResolveQueue.push({ fnName: leftExpr.fnName, unitName: leftExpr.unitName, fnType: depType, fnRefTable: leftExpr.refTable });
       ctx.queuedFns.add(key);
