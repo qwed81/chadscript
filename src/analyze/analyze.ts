@@ -1865,7 +1865,7 @@ function ensureExprValid(
       }
       // trun T -> ok(T)
       else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Res'
-        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type)) {
+        && Type.typeApplicable(expectedReturn.val.fields[0].type, computedExpr.type)) {
         return {
           tag: 'enum_init',
           fieldExpr: computedExpr,
