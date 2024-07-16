@@ -1610,12 +1610,15 @@ function ensureExprValid(
     }
 
     let retType: Type.Type = expectedReturn;
+    let castType: 'opt' | 'res' | 'none' = 'none';
     // determine the resulting struct type
     if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Opt') {
       retType = expectedReturn.val.fields[1].type;
+      castType = 'opt';
     }
     else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Res') {
       retType = expectedReturn.val.fields[0].type;
+      castType = 'res';
     }
 
     if (retType.tag != 'struct') {
@@ -1670,7 +1673,27 @@ function ensureExprValid(
       let fieldExpr = exprFieldExprs.get(fName)!;
       fieldInits.push({ name: fName, expr: fieldExpr });
     }
+
     let newExpr: Expr = { tag: 'struct_init', val: fieldInits, type: retType };
+    if (castType == 'opt') {
+      newExpr = {
+        tag: 'enum_init',
+        type: expectedReturn,
+        fieldExpr: newExpr,
+        fieldName: 'some',
+        variantIndex: 1
+      };
+    }
+    else if (castType == 'res') {
+      newExpr = {
+        tag: 'enum_init',
+        type: expectedReturn,
+        fieldExpr: newExpr,
+        fieldName: 'ok',
+        variantIndex: 0
+      };
+    }
+
     computedExpr = newExpr; 
   } 
 
