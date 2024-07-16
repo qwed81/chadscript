@@ -1,0 +1,450 @@
+pub enum Opt[T]
+  void none
+  T some
+
+pub enum Res[T]
+  T ok
+  char[] err
+
+pub struct Range
+  int start
+  int end
+
+pub next(Range& range) int?
+  int thisIndex = range.start
+  if range.start == range.end
+    return none
+  range.start += 1
+  return thisIndex
+
+pub rev(Range range) RangeReverse
+  return { start = range.end - 1, end = range.start - 1 }
+
+pub struct RangeReverse
+  int start
+  int end
+
+pub next(RangeReverse& range) int?
+  int thisIndex = range.start
+  if range.start == range.end
+    return none
+  range.start -= 1
+  return thisIndex
+
+pub enum MathOperator
+  void add
+  void sub
+  void mul
+  void div
+
+pub exit(int code)
+  include
+    exit(*_code);
+
+# fix later
+pub panic(char[] message)
+  print(message)
+  exit(-1)
+
+pub print(T toPrint, char[](T) tToStr=toStr)
+  char[] toPrintStr = tToStr(toPrint)
+
+  char[] zeroTerminated = arr(toPrintStr.len + 1)
+  for i 0:toPrintStr.len
+    zeroTerminated[i] = toPrintStr[i]
+  zeroTerminated[toPrintStr.len] = '\0'
+
+  include
+    printf("%s\n", _zeroTerminated._start);
+
+pub input() char[&]! nextLine
+  char[] errorMessage = "could not get line"
+  char[&] buf = arr(1024)
+  int len = 0
+  include
+    if (fgets(_buf._start, _buf._len, stdin) == NULL) {
+      return ($(char[&]!)) { .tag = 1, ._err = _errorMessage };
+    }
+    _len = strlen(_buf._start);
+
+  return buf[0:len]
+
+pub input() int! parsedInt
+  int output = 0
+  include
+    scanf("%d", &_output);
+    
+  return ok(output)
+
+pub input() bool! parsedBool
+  return err("not implemented")
+
+pub input() num! parsedFloat
+  return err("not implemented")
+
+
+pub arr(int len) T[&]
+  include
+    size_t size = (*_len) * sizeof($(T)) + sizeof(int);
+    void* alloc = malloc(size);
+    memset(alloc, 0, size);
+    $(T)* typedAlloc = ($(T)*)alloc;
+
+    int* refCount = (int*)(typedAlloc + *_len);
+    *refCount = 1;
+
+    $(T[&]) slice = { ._ptr = alloc, ._start = alloc, ._len = *_len, ._refCount = refCount };
+    ret = slice;
+    goto cleanup;
+
+  return arr(len)
+
+pub toArr(List[T] list) T[&]
+  return clone(list.arr)
+
+pub asArr(List[T]& list) T[&]
+  return list.arr[0:list.len]
+
+pub view(List[T] list) T[]
+  return list.arr[0:list.len]
+
+pub clone(T[] toClone) T[&]
+  T[&] newArr = arr(toClone.len)
+  for i 0:toClone.len
+    newArr[i] = toClone[i]
+  return newArr
+
+pub reverse(T[&] arr)
+  for i 0:arr.len / 2
+    T hold = arr[arr.len - 1 - i]
+    arr[arr.len - 1 - i] = arr[i]
+    arr[i] = hold
+
+pub toStr(T[] arr, char[](T) tToStr=toStr) char[]
+  # some serious voodoo to perform the correct operation
+  # on either strings or regular arrays
+  include
+    bool isChar = _Generic(&_arr->_start[0], char*: true, default: false);
+    if (isChar) {
+      if (_arr->_refCount != NULL) {
+        *_arr->_refCount += 1;
+      }
+      return *(($(char*)*)_arr);
+    }
+
+  StrBuf buf = strBuf()
+  append(buf, '[')
+  for i 0:arr.len
+    append(buf, arr[i], tToStr=tToStr)
+    if i != arr.len - 1
+      append(buf, ',')
+      append(buf, ' ')
+  append(buf, ']')
+  
+  return toStr(buf)
+
+
+pub struct StrBuf
+  List[char] backingList
+  get int len
+
+pub strBuf() StrBuf
+  return { backingList = list(), len = 0 }
+
+pub append(StrBuf& buf, T val, char[](T) tToStr=toStr)
+  char[] newStr = tToStr(val)
+  for i 0:newStr.len
+    add(buf.backingList, newStr[i])
+    buf.len += 1
+
+pub toStr(StrBuf buf) char[]
+  char[] newStr = view(buf.backingList)
+  return newStr[0:buf.len]
+
+
+pub struct List[T]
+  T[&] arr
+  get int len
+
+pub list() List[T]
+  return { arr = arr(4), len = 0 }
+
+pub list(int capacity) List[T]
+  return { arr = arr(capacity), len = 0 }
+
+pub prepareIndex(List[T]& list, int index, T val) T*
+  return list.arr[index:index + 1]
+
+pub getIndex(List[T]& list, int index) T*
+  return list.arr[index:index + 1]
+
+pub toList(T[] toClone) List[T]
+  T[&] newArr = clone(toClone)
+  return { arr = newArr, len = toClone.len }
+
+pub clone(List[T] toClone) List[T]
+  T[&] newArr = clone(toClone.arr)
+  return { arr = newArr, len = toClone.len }
+
+pub add(List[T]& list, T val)
+  if list.len == list.arr.len
+    T[&] newAlloc = arr(list.len * 2)
+    for i 0:list.arr.len
+      newAlloc[i] = list.arr[i]
+    list.arr = newAlloc
+
+  list[list.len] = val
+  list.len += 1
+
+pub remove(List[T]& list, int index) T removedElement
+  T output = list[index]
+  for i index:list.len - 1
+    list[i] = list[i + 1]
+  return output
+
+pub reverse(List[T]& list)
+  reverse(list.arr[0:list.len])
+
+pub toStr(List[T] list, char[](T) tToStr=toStr) char[]
+  return toStr(list.arr[0:list.len], tToStr=tToStr)
+
+struct Entry[K, V]
+  K key
+  V val
+
+pub struct Map[K, V]
+  int(int, K) hashKey
+  bool(K, K) keyEq
+  Entry[K, V]?[&] entries
+  get int len
+  
+pub map(int(int, K) hashKey=hash, bool(K, K) keyEq=eq) Map[K, V]
+  return { entries = arr(16), hashKey = hashKey, keyEq = keyEq, len = 0 }
+
+indexOf(Map[K, V]& map, K key) int
+  int hash = map.hashKey(0, key)
+  int index = hash % map.entries.len
+  int startIndex = index
+
+  # because the map will never be full this loop will always terminate
+  while true
+    if map.entries[index] is none || map.keyEq(map.entries[index].key, key)
+      return index
+
+    index += 1
+    if index == map.entries.len
+      index = 0
+
+  return -1
+
+resizeMap(Map[K, V]& map)
+  # create a new map which is double the array size to insert elements into
+  Entry[K, V]?[&] newEntries = arr(map.entries.len * 2)
+  Map[K, V] newMap = { entries = newEntries, hashKey = map.hashKey, keyEq = map.keyEq, len = 0 } 
+
+  # reinsert all of the keys from the old map into the new map
+  for i 0:map.entries.len
+    if map.entries[i] is some
+      newMap[map.entries[i].key] = map.entries[i].val
+
+  # set back the original maps keys and values
+  map.entries = newEntries
+
+outputEntry(Map[K, V]& map, int entryIndex) V*
+  # return the referece to the values array
+  include
+    $(V) *outputPtr = &_map->_entries._start[*_entryIndex]._some._val;
+    $(V*) _output = ($(V*)){ ._ptr = outputPtr, ._start = outputPtr, ._len = 1, ._refCount = NULL };
+    ret = _output;
+    goto cleanup;
+
+  return []
+
+# sets up the value for setting an index, but does not actually set it
+# only called when assigning to an indexed variable
+pub prepareIndex(Map[K, V]& map, K key, V val) V*
+  int index = indexOf(map, key)
+  if map.entries[index] is none
+    map.len += 1
+
+    # if the map is 80% full (calculated with base 2 multiply)
+    if map.len * 128 / map.entries.len >= 102
+      resizeMap(map)
+    map.entries[index] = { key = key, val = val }
+  return outputEntry(map, index)
+
+pub getIndex(Map[K, V]& map, K key) V*
+  int index = indexOf(map, key)
+  if map.entries[index] is none
+    panic("invalid access in map")
+
+  return outputEntry(map, index)
+
+pub contains(Map[K, V] map, K key) bool
+  int index = indexOf(map, key)
+  if map.entries[index] is none 
+    return false
+  return true
+
+pub toStr(Map[K, V] map, char[](K) kToStr=toStr, char[](V) vToStr=toStr) char[]
+  if map.len == 0
+    return "[]"
+
+  StrBuf output = strBuf()
+  append(output, "[")
+
+  bool first = true
+  for i 0:map.entries.len
+    Entry[K, V]? entry = map.entries[i]
+    if entry is none
+      continue
+
+    if !first
+      append(output, ", ")
+    first = false
+
+    append(output, kToStr(entry.key))
+    append(output, "=")
+    append(output, vToStr(entry.val))
+
+  append(output, "]")
+  return toStr(output)
+
+pub toStr(int val) char[]
+  int len
+  include
+    _len = snprintf(NULL, 0, "%d", *_val);
+
+  char[&] output = arr(len + 1)
+  include
+    snprintf(_output._start, _len + 1, "%d", *_val);
+  return output[0:output.len - 1]
+
+pub toStr(num val) char[]
+  int len
+  include
+    _len = snprintf(NULL, 0, "%f", *_val);
+
+  char[&] output = arr(len + 1)
+  include
+    snprintf(_output._start, _len + 1, "%f", *_val);
+  return output[0:output.len - 1]
+
+pub toStr(bool val) char[]
+  if val == true
+    return "true"
+  return "false"
+
+pub toStr(char val) char[]
+  return [val]
+
+##
+struct Map[K, V]
+map() Map[K, V]
+put(Map[K, V]& map, K key, V val)
+get(Map[K, V] map, K key) V
+contains(Map[K, V] map) bool
+
+struct Set[T]
+set()
+contains(Set[T] set) bool
+add(Set[T] set)
+
+struct File
+createFile(char* path) File!
+openFile(char* path) File!
+write(File file, byte* buf) void!
+read(File file, byte* buf) int!
+seek(File file, int offset) void!
+mmap(File file) byte*!
+struct FileInfo
+info(File file) FileInfo!
+
+struct TcpSocket
+struct TcpListener
+bindTcp(char* host, int port) TcpListener!
+listenTcp(TcpListener listener) TcpSocket
+close(TcpListener listener)
+connectTcp(char* host, int port) TcpSocket!
+read(TcpSocket socket, byte* buf) int!
+write(TcpSocket socket, byte* buf) void!
+close(TcpSocket socket)
+
+rand(int start, int end) int
+sleep(int ms)
+
+struct TimeStamp
+struct Duration
+
+now() TimeStamp
+diff(TimeStamp a, TimeStamp b) Duration 
+offset(TimeStamp a, Duration b) TimeStamp
+
+ms(TimeStamp t) int
+sec(TimeStamp t) int
+min(TimeStamp t) int
+hour(TimeStamp t) int
+month(TimeStamp t) int
+year(TimeStamp t) int
+
+ms(Duration dur) int
+sec(Duration dur) int
+min(Duration dur) int
+hour(Duration dur) int
+month(Duration dur) int
+year(Duration dur) int
+
+##
+
+pub toNum(int val) num
+  include
+    return (double)*_val;
+  return 0.0
+
+pub hash(int hash, int val) int hash
+  return hash + val
+  
+pub eq(int a, int b) bool
+  return a == b
+
+pub toInt(byte val) int
+  include
+    return (int)*_val
+  return 0
+
+pub toInt(char val) int
+  include
+    return (int)*_val;
+  return 0
+
+pub toInt(num val) int
+  include
+    return (int)*_val;
+  return 0
+
+pub toChar(byte val) char
+  include
+    return (char)*_val;
+  return '\0'
+
+pub toChar(int val) char
+  include
+    return (char)*_val;
+  return '\0'
+
+pub toByte(char val) byte
+  include
+    return (unsigned char)*_val;
+  return toByte(0)
+
+pub toByte(int val) byte
+  include
+    return (unsigned char)*_val;
+  return toByte(0)
+
+pub asBytes(char[] str) byte[]
+  include
+    *_str->_refCount += 1;
+    return *(($(byte[])*)_str);
+  return asBytes("")
+

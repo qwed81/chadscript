@@ -1,0 +1,123 @@
+use std
+
+pub enum FileMode
+  void read
+  void readWrite
+
+pub struct File
+  # note to implementation that handle is actually the C
+  # FILE* but needs to be stored in a chadscript struct
+  int* handle 
+  byte[&] buf
+  int bufIndex
+  int bufCapacity
+
+openInternal(char[] path, FileMode mode, bool createIfAbsent) int*!
+  char[] errorMessage = "could not open file"
+  include
+    char* path = _path->_start;
+    FILE* firstFile = NULL;
+    if (*_createIfAbsent == true) {
+      firstFile = fopen(path, "a+");
+      if (firstFile == NULL) {
+        ret = ($(int*!)){ .tag = 1, ._err = _errorMessage };
+        goto cleanup;
+      }
+      fclose(firstFile);
+    }
+
+    char* options = NULL;
+    if (_mode->tag == 0) {
+      options = "r";
+    }
+    else if (_mode->tag == 1) {
+      options = "r+";
+    }
+
+    FILE* secondFile = fopen(_path->_start, options);
+    if (secondFile == NULL) {
+      ret = ($(int*!)){ .tag = 1, ._err = _errorMessage };
+      goto cleanup;
+    }
+    
+    $(int)* handlePtr = ($(int)*)secondFile;
+    
+    ret = ($(int*!)) { .tag = 0, ._ok = ($(int*)){ ._len = 1, ._refCount = NULL, ._start = handlePtr, ._ptr = handlePtr } };
+    goto cleanup;
+
+  return err("unreachable")
+
+pub open(char[] path, FileMode mode, bool createIfAbsent=true) File!
+  int* handle = try openInternal(path, mode, createIfAbsent)
+  return { handle = handle, buf = arr(1024), bufIndex = 0, bufCapacity = 0 }
+
+pub close(File& file)
+  include
+    FILE* fp = (FILE*)_file->_handle._start;
+    fclose(fp);
+  
+pub write(File& file, byte[] bytes) void!
+  char[] errorMessage = "could not write all bytes"
+  include
+    FILE* fp = (FILE*)_file->_handle._start;
+    size_t result = fwrite(_bytes->_start, sizeof($(byte)), _bytes->_len, fp);
+    if (result < _bytes->_len) {
+      ret = ($(void!)){ .tag = 1, ._err = _errorMessage };
+      goto cleanup;
+    }
+
+  return ok
+
+pub read(File& file) byte!
+  char[] errorMessage = "could not read all bytes"
+  if file.bufIndex == file.bufCapacity
+    include
+      FILE* fp = (FILE*)_file->_handle._start;
+      size_t result = fread(_file->_buf._start, sizeof($(byte)), _file->_buf._len, fp);
+      if (result < _file->_buf._len) {
+        ret = ($(byte!)){ .tag = 1, ._err = _errorMessage };
+        goto cleanup;
+      }
+      _file->_bufCapacity = ($(int))result;
+
+    file.bufIndex = 0
+    if file.bufCapacity == 0
+      return err("already finished")
+
+  return file.buf[file.bufIndex]
+
+##
+
+pub read(File file) byte!
+
+pub readAll(File file) byte[]!
+
+pub readUntil(File file, byte terminator, byte[] buf) void! 
+
+
+pub seek(FileStream file, int position) void!
+
+pub struct FileInfo
+
+pub fileInfo(char[] path) FileInfo
+
+pub moveFile(char[] path,  char[] to) void!
+
+pub copyFile(char[] path, char[] to) void!
+
+pub removeFile(char[] path) void!
+
+struct DirIter
+
+if dirExists("/home/")
+  for filePath try listPathsInDir("/home")  
+    FileInfo info = try getFileInfo(filePath)
+    FileStream! file = open(filePath)
+    FileStream! file2 = create()
+    if !(file is err)
+      try write(file, asBytes("hello world!"))
+      close(file)
+    else
+      print(file.err.message)
+##
+

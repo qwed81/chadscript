@@ -2,15 +2,15 @@
 "    finish
 "endif
 
-syn keyword chadKeyword while pub if elif else match for in struct enum return break continue use trait include
-syn keyword chadType void int char bool num
+syn keyword chadKeyword while pub if elif else match for in struct enum return break continue use include assert try get
+syn keyword chadType void int char bool num byte
 
 syn keyword chadBool false true
 
 syn match chadInt	"\v\d"
 syn match chadStr "\v\".*\""
-syn match chadChar "\v\'.*\'"
-syn match chadIdent "\v[a-z][a-zA-Z\_0-9]*"
+syn match chadChar "\v\s\'.*\'"
+syn match chadIdent "\v[a-z][a-zA-Z\_0-9']*"
 syn match chadStruct "\v[A-Z][a-z0-9]*"
 syn match chadFn "\v\zs[a-zA-Z|\_|0-9]+\ze\([^\)]*\)(\.[^\)]*\))?"
 
@@ -38,6 +38,7 @@ syn match chadOp "\v\{"
 syn match chadOp "\v\}"
 
 syn match chadComment "\v#.*$"
+syn match chadComment "\v##(.|\n)*##"
 
 hi link chadKeyword Keyword
 hi link chadApply Keyword
