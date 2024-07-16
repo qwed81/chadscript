@@ -493,7 +493,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     }
 
     addInst.before.push(`free(${total});`);
-    exprText = `(${strType}){ ._ptr = ${output}, ._start = ${output} ._len = ${totalLen}, ._refCount = ${refCount} }`;
+    exprText = `(${strType}){ ._ptr = ${output}, ._start = ${output}, ._len = ${totalLen}, ._refCount = ${refCount} }`;
   } else if (expr.tag == 'char_const') {
     exprText = `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {

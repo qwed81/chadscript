@@ -1,7 +1,7 @@
 import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../index';
 import {
-  Type, typeApplicableStateful, applyGenericMap, RANGE, standardizeType,
+  Type, typeApplicableStateful, applyGenericMap, standardizeType,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn,
 } from '../analyze/types';
 import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
@@ -40,6 +40,7 @@ interface CFn {
 interface NeedResolveFn {
   fnName: string,
   unitName: string,
+  fnRefTable: RefTable,
   fnType: Type
 }
 
@@ -77,15 +78,10 @@ function replaceGenerics(prog: Program): CProgram {
     let dep = ctx.fnResolveQueue.pop()!;
     let genericMap: Map<string, Type>;
     let selectedIndex = -1;
-    let refTable: RefTable | null = null;
 
     // find which function its referencing
     for (let i = 0; i < prog.fns.length; i++) {
       let map: Map<string, Type> = new Map();
-      if (prog.fns[i].unitName == dep.unitName) {
-        refTable = prog.fns[i].refTable;
-      }
-
       if (prog.fns[i].name == dep.fnName && prog.fns[i].unitName == dep.unitName) {
         if (typeApplicableStateful(dep.fnType, prog.fns[i].type, map)) {
           genericMap = map;
@@ -98,13 +94,13 @@ function replaceGenerics(prog: Program): CProgram {
     let fnToResolve: Fn;
     // this is the default fn
     if (selectedIndex == -1) {
-      if (refTable == null || dep.fnType.tag != 'fn') {
-        compilerError('ref table null')
+      if (dep.fnType.tag != 'fn') {
+        compilerError('type should always be fn')
         continue;
       }
       
       let scope: FnContext = newScope(dep.fnType.val.returnType, new Set(), []);
-      let defaultFn = createDefaultFn(dep, refTable, scope);
+      let defaultFn = createDefaultFn(dep, dep.fnRefTable, scope);
       if (defaultFn == null) {
         continue;
       }
@@ -358,10 +354,10 @@ function resolveLeftExpr(
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
     standardizeType(depType);
-    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType };
+    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType, refTable: leftExpr.refTable };
     let key = JSON.stringify(newLeftExpr);
     if (!ctx.queuedFns.has(key)) {
-      ctx.fnResolveQueue.push({ fnName: leftExpr.fnName, unitName: leftExpr.unitName, fnType: depType });
+      ctx.fnResolveQueue.push({ fnName: leftExpr.fnName, unitName: leftExpr.unitName, fnType: depType, fnRefTable: leftExpr.refTable });
       ctx.queuedFns.add(key);
     }
     return newLeftExpr;
@@ -464,6 +460,7 @@ function createDefaultFn(
           val: {
             tag: 'fn',
             type: paramType,
+            refTable: fnDep.fnRefTable,
             fnName: fnResult.fnName,
             unitName: fnResult.unitName
           },
@@ -487,6 +484,7 @@ function createDefaultFn(
   let leftExpr: LeftExpr = {
     tag: 'fn',
     unitName: template.unitName,
+    refTable: fnDep.fnRefTable,
     fnName: template.fnName,
     type: template.fnType
   };

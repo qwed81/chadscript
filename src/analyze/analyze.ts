@@ -127,7 +127,7 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
   | { tag: 'var', val: string, mode: Mode, type: Type.Type }
-  | { tag: 'fn', unitName: string, fnName: string, type: Type.Type }
+  | { tag: 'fn', unitName: string, refTable: Type.RefTable, fnName: string, type: Type.Type }
 
 export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, Mode }
 
@@ -602,6 +602,7 @@ function analyzeInst(
         iter: iterExpr,
         nextFn: {
           tag: 'fn',
+          refTable: table,
           fnName: fnResult.fnName,
           unitName: fnResult.unitName,
           type: fnResult.fnType
@@ -836,26 +837,70 @@ function ensureLeftExprValid(
           logError(position, `enum can be ${ JSON.stringify(possibleVariants) }`);
           return null;
         }
-        else if (possibleVariants[0] != leftExpr.val.varName) {
-          logError(position, `invalid access of variant '${leftExpr.val.varName}' - note: value is '${possibleVariants[0]}'`)
+
+        let hasField = validExpr.type.val.fields.findIndex(x => x.name == leftExpr.val.varName) != -1;
+        if (hasField && possibleVariants[0] != leftExpr.val.varName) {
+          logError(position, `invalid access of variant '${leftExpr.val.varName}' - value is '${possibleVariants[0]}'`)
           return null;
         }
 
+        // set the validExpr so that it can implicitly use 'some' and calculate
+        // the dot operator on the occuring struct. note this does not happen recursively
+        // only 1 level deep
+        let fallThrough: boolean = false;
+        if (!hasField && validExpr.type.val.id == 'std.Opt'
+          && possibleVariants[0] == 'some') {
+          validExpr = {
+            tag: 'left_expr',
+            val: {
+              tag: 'dot',
+              val: {
+                varName: 'some',
+                left: validExpr
+              },
+              type: validExpr.type.val.fields[1].type
+            },
+            type: validExpr.type.val.fields[1].type
+          };
+          fallThrough = true;
+        }
+        else if (!hasField && validExpr.type.val.id == 'std.Res'
+          && possibleVariants[0] == 'err') {
+          validExpr = {
+            tag: 'left_expr',
+            val: {
+              tag: 'dot',
+              val: {
+                varName: 'err',
+                left: validExpr
+              },
+              type: validExpr.type.val.fields[0].type
+            },
+            type: validExpr.type.val.fields[0].type
+          };
+          fallThrough = true;
+        }
 
-        let innerType = validExpr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
-        return {
-          tag: 'prime',
-          val: validExpr,
-          variantIndex: Type.getVariantIndex(validExpr.type, possibleVariants[0]),
-          variant: possibleVariants[0],
-          type: innerType 
-        };
+        if (!fallThrough && validExpr.type.tag == 'enum') {
+          let innerType = validExpr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
+          return {
+            tag: 'prime',
+            val: validExpr,
+            variantIndex: Type.getVariantIndex(validExpr.type, possibleVariants[0]),
+            variant: possibleVariants[0],
+            type: innerType 
+          };
+
+        }
+
+        if (!fallThrough) {
+          logError(position, 'enum variant does not exist');
+          return null;
+        }
       }
-
-      logError(position, 'prime operator not supported on this expr');
-      return null;
     }
-    else if (validExpr.type.tag != 'struct') {
+
+    if (validExpr.type.tag != 'struct') {
       if (validExpr.type.tag == 'arr' && leftExpr.val.varName == 'len') {
         let dotOp: LeftExpr = {
           tag: 'dot',
@@ -954,6 +999,7 @@ function ensureLeftExprValid(
           fn: {
             tag: 'fn',
             fnName: operation.fnName,
+            refTable: table,
             unitName: operation.unitName,
             type: operation.fnType,
           },
@@ -980,6 +1026,7 @@ function ensureLeftExprValid(
         val: {
           fn: {
             tag: 'fn',
+            refTable: table,
             fnName: operation.fnName,
             unitName: operation.unitName,
             type: operation.fnType,
@@ -1024,7 +1071,7 @@ function ensureLeftExprValid(
         return null;
       }
 
-      return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType };
+      return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType, refTable: table };
     } 
 
     let fn = Type.resolveFn(leftExpr.val, null, null, table, position);
@@ -1032,7 +1079,7 @@ function ensureLeftExprValid(
       return null;
     }
 
-    return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType };
+    return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType, refTable: table };
   }
   else if (leftExpr.tag == 'prime') {
     compilerError('prime not supported anymore')
@@ -1085,6 +1132,7 @@ function ensureFnCallValid(
   if (fnResult.tag == 'fn') {
     // we now have the function so we can do analysis on named params
     let namedParams: Type.NamedParam[] = Type.getFnNamedParams(fnResult.unitName, fnResult.fnName, fnResult.type, table, position);
+
     for (let i = 0; i < namedParams.length; i++) {
       let namedParamExpr: Parse.Expr = namedParams[i].expr;
       let overruled = false;
@@ -1119,6 +1167,7 @@ function ensureFnCallValid(
           tag: 'left_expr',
           val: {
             tag: 'fn',
+            refTable: table,
             type: paramType,
             fnName: fnResult.fnName,
             unitName: fnResult.unitName
@@ -1376,6 +1425,7 @@ function ensureBinOpValid(
           fn: {
             tag: 'fn',
             fnName: operation.fnName,
+            refTable: table,
             unitName: operation.unitName,
             type: operation.fnType,
           },
@@ -1553,15 +1603,30 @@ function ensureExprValid(
       return null;
     }
 
-    if (expectedReturn.tag != 'struct') {
-      logError(position, 'unexpected struct init');
+    if (expectedReturn.tag != 'struct'
+      && !(expectedReturn.tag == 'enum' && (expectedReturn.val.id == 'std.Opt' || expectedReturn.val.id == 'std.Res'))) {
+      logError(position, `expected ${Type.toStr(expectedReturn)}`);
+      return null;
+    }
+
+    let retType: Type.Type = expectedReturn;
+    // determine the resulting struct type
+    if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Opt') {
+      retType = expectedReturn.val.fields[1].type;
+    }
+    else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Res') {
+      retType = expectedReturn.val.fields[0].type;
+    }
+
+    if (retType.tag != 'struct') {
+      logError(position, `expected ${Type.toStr(retType)}`);
       return null;
     }
 
     let exprFieldTypes = new Map<string, Type.Type>();
     let exprFieldExprs: Map<string, Expr> = new Map();
     for (let initField of expr.val) {
-      let matchingFields = expectedReturn.val.fields.filter(x => x.name == initField.name);
+      let matchingFields = retType.val.fields.filter(x => x.name == initField.name);
       if (matchingFields.length == 0) {
         logError(initField.expr.position, `field ${initField.name} does not exist on type`);
         return null;
@@ -1582,12 +1647,12 @@ function ensureExprValid(
       exprFieldExprs.set(initField.name, expr);
     }
 
-    if (exprFieldTypes.size != expectedReturn.val.fields.length) {
+    if (exprFieldTypes.size != retType.val.fields.length) {
       logError(position, 'missing fields');
       return null;
     }
 
-    for (let field of expectedReturn.val.fields) {
+    for (let field of retType.val.fields) {
       if (!exprFieldTypes.has(field.name)) {
         logError(position, `required field ${field.name}`);
         return null;
@@ -1595,7 +1660,7 @@ function ensureExprValid(
 
       let exprFieldType = exprFieldTypes.get(field.name)!;
       if (Type.typeApplicable(exprFieldType, field.type) == false) {
-        logError(position, `improper type for ${Type.toStr(expectedReturn)}.${field.name}`);
+        logError(position, `improper type for ${Type.toStr(retType)}.${field.name}`);
         return null;
       }
     }
@@ -1605,7 +1670,7 @@ function ensureExprValid(
       let fieldExpr = exprFieldExprs.get(fName)!;
       fieldInits.push({ name: fName, expr: fieldExpr });
     }
-    let newExpr: Expr = { tag: 'struct_init', val: fieldInits, type: expectedReturn };
+    let newExpr: Expr = { tag: 'struct_init', val: fieldInits, type: retType };
     computedExpr = newExpr; 
   } 
 
@@ -1646,6 +1711,7 @@ function ensureExprValid(
           unitName: fn.unitName,
           fnName: fn.fnName,
           type: fn.fnType,
+          refTable: table
         };
 
         let fnCall: Expr = {
@@ -1717,6 +1783,76 @@ function ensureExprValid(
     }
 
     if (Type.typeApplicable(computedExpr.type, expectedReturn) == false) {
+      // determine if can autocast in the case of opt or res
+      if (computedExpr.type.tag == 'enum' && computedExpr.tag == 'left_expr') {
+        // turn some(T) -> T
+        if (computedExpr.type.val.id == 'std.Opt'
+          && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn)) {
+
+          let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
+          if (possibleVariants.length != 1 || possibleVariants[0] != 'some') {
+            logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            return null;
+          }
+
+          return {
+            tag: 'left_expr',
+            val: {
+              tag: 'prime',
+              val: computedExpr,
+              variantIndex: 1,
+              variant: 'some',
+              type: expectedReturn 
+            },
+            type: expectedReturn
+          };
+        }
+        // turn ok(T) -> T
+        else if (computedExpr.type.val.id == 'std.Res'
+          && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn)) {
+          let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
+          if (possibleVariants.length != 1 || possibleVariants[0] != 'ok') {
+            logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            return null;
+          }
+
+          return {
+            tag: 'left_expr',
+            val: {
+              tag: 'prime',
+              val: computedExpr,
+              variantIndex: 0,
+              variant: 'ok',
+              type: expectedReturn 
+            },
+            type: expectedReturn
+          };
+        }
+      }
+      // turn T -> some(T)
+      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Opt'
+        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type)) {
+        return {
+          tag: 'enum_init',
+          fieldExpr: computedExpr,
+          variantIndex: 1,
+          fieldName: 'some',
+          type: expectedReturn 
+        };
+      }
+      // trun T -> ok(T)
+      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Res'
+        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type)) {
+        return {
+          tag: 'enum_init',
+          fieldExpr: computedExpr,
+          variantIndex: 0,
+          fieldName: 'ok',
+          type: expectedReturn 
+        };
+      }
+
+      // can not autocast so just error
       logError(position, `expected ${Type.toStr(expectedReturn)} found ${Type.toStr(computedExpr.type)}`);
       return null;
     }
