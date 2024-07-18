@@ -97,7 +97,7 @@ int main() {
   `
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
-    fprintf(stderr, "%s\\n", result._err._start);
+    fprintf(stderr, "%s\\n", result._Err._start);
   }
   free(totalStr);
   return result.tag;
@@ -328,7 +328,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   }
   else if (inst.tag == 'return') {
     if (inst.val == null) {
-      instText == 'goto cleanup;'
+      instText = 'goto cleanup;'
     } else {
       instText = `ret = ${ codeGenExpr(inst.val, addInst, ctx, inst.position) };`;
       changeRefCount(addInst.after, 'ret', inst.val.type, 1);
@@ -426,15 +426,15 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   } 
   else if (expr.tag == 'try') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
-    addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._err = ${exprName}._err }; goto cleanup; }`);
+    addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._Err = ${exprName}._Err }; goto cleanup; }`);
     // because this is a leftExpr, it shouldn't save the value to the stack
-    return `${exprName}._ok`;
+    return `${exprName}._Ok`;
   }
   else if (expr.tag == 'assert') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
-    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._err._start);`);
+    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._Err._start);`);
     // because this is a leftExpr, it shouldn't save the value to the stack
-    return `${exprName}._ok`;
+    return `${exprName}._Ok`;
   }
   else if (expr.tag == 'assert_bool') {
     exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx, position)})) chad_panic("${position.document}", ${position.line}, "assertion failed");`;
@@ -531,6 +531,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   changeRefCount(addInst.before, exprName, expr.type, -1);
   let exprAssign = `${ exprName } = ${ exprText }`; 
   addInst.before.push(`${exprAssign};`);
+
   return exprName;
 }
 
@@ -608,10 +609,10 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
       return `(*_${leftExpr.val})`;
     }
     else if (leftExpr.mode == 'iter') {
-      return `(*_${leftExpr.val}__opt._some._start)`;
+      return `(*_${leftExpr.val}__opt._Some._start)`;
     }
     else if (leftExpr.mode == 'iter_copy') {
-      return `(_${leftExpr.val}__opt._some)`
+      return `(_${leftExpr.val}__opt._Some)`
     }
     else {
       return `_${leftExpr.val}`;

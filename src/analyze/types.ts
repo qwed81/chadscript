@@ -64,8 +64,8 @@ function createRes(genericType: Type): Type {
     val: {
       id: 'std.Res',
       fields: [
-        { name: 'ok', type: genericType, visibility: null },
-        { name: 'err', type: STR, visibility: null }
+        { name: 'Ok', type: genericType, visibility: null },
+        { name: 'Err', type: STR, visibility: null }
       ],
       generics: [genericType]
     }

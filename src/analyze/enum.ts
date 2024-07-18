@@ -333,7 +333,7 @@ function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
   if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
     let possible = expr.type.val.fields.map(x => x.name);
     add(set, leftExpr, [expr.fieldName], possible);
-    // handle int?? a = some(some(20)) where a'' is int
+    // handle int?? a = Some(Some(20)) where a'' is int
     if (expr.fieldExpr != null) {
       let newLeftExpr: LeftExpr = {
         tag: 'prime',

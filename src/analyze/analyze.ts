@@ -851,18 +851,18 @@ function ensureLeftExprValid(
           return null;
         }
 
-        // set the validExpr so that it can implicitly use 'some' and calculate
+        // set the validExpr so that it can implicitly use 'Some' and calculate
         // the dot operator on the occuring struct. note this does not happen recursively
         // only 1 level deep
         let fallThrough: boolean = false;
         if (!hasField && validExpr.type.val.id == 'std.Opt'
-          && possibleVariants[0] == 'some') {
+          && possibleVariants[0] == 'Some') {
           validExpr = {
             tag: 'left_expr',
             val: {
               tag: 'dot',
               val: {
-                varName: 'some',
+                varName: 'Some',
                 left: validExpr
               },
               type: validExpr.type.val.fields[1].type
@@ -872,13 +872,13 @@ function ensureLeftExprValid(
           fallThrough = true;
         }
         else if (!hasField && validExpr.type.val.id == 'std.Res'
-          && possibleVariants[0] == 'err') {
+          && possibleVariants[0] == 'Err') {
           validExpr = {
             tag: 'left_expr',
             val: {
               tag: 'dot',
               val: {
-                varName: 'err',
+                varName: 'Err',
                 left: validExpr
               },
               type: validExpr.type.val.fields[0].type
@@ -1592,7 +1592,7 @@ function ensureExprValid(
       return null;
     }
 
-    let resInnerType = validExpr.type.val.fields.filter(f => f.name == 'ok')[0].type;
+    let resInnerType = validExpr.type.val.fields.filter(f => f.name == 'Ok')[0].type;
     if (expr.tag == 'try') {
       return { tag: 'try', val: validExpr, type: resInnerType };
     } else {
@@ -1780,7 +1780,7 @@ function ensureExprValid(
         tag: 'enum_init',
         type: expectedReturn,
         fieldExpr: newExpr,
-        fieldName: 'some',
+        fieldName: 'Some',
         variantIndex: 1
       };
     }
@@ -1789,7 +1789,7 @@ function ensureExprValid(
         tag: 'enum_init',
         type: expectedReturn,
         fieldExpr: newExpr,
-        fieldName: 'ok',
+        fieldName: 'Ok',
         variantIndex: 0
       };
     }
@@ -1910,12 +1910,12 @@ function ensureExprValid(
     if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {
       // determine if can autocast in the case of opt or res
       if (computedExpr.type.tag == 'enum' && computedExpr.tag == 'left_expr') {
-        // turn some(T) -> T
+        // turn Some(T) -> T
         if (computedExpr.type.val.id == 'std.Opt'
           && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn, false)) {
 
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
-          if (possibleVariants.length != 1 || possibleVariants[0] != 'some') {
+          if (possibleVariants.length != 1 || possibleVariants[0] != 'Some') {
             if (!ignoreErrors) {
               logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
             }
@@ -1928,7 +1928,7 @@ function ensureExprValid(
               tag: 'prime',
               val: computedExpr,
               variantIndex: 1,
-              variant: 'some',
+              variant: 'Some',
               type: expectedReturn 
             },
             type: expectedReturn
@@ -1938,7 +1938,7 @@ function ensureExprValid(
         else if (computedExpr.type.val.id == 'std.Res'
           && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn, false)) {
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
-          if (possibleVariants.length != 1 || possibleVariants[0] != 'ok') {
+          if (possibleVariants.length != 1 || possibleVariants[0] != 'Ok') {
             if (!ignoreErrors) {
               logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
             }
@@ -1951,21 +1951,21 @@ function ensureExprValid(
               tag: 'prime',
               val: computedExpr,
               variantIndex: 0,
-              variant: 'ok',
+              variant: 'Ok',
               type: expectedReturn 
             },
             type: expectedReturn
           };
         }
       }
-      // turn T -> some(T)
+      // turn T -> Some(T)
       else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Opt'
         && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type, false)) {
         return {
           tag: 'enum_init',
           fieldExpr: computedExpr,
           variantIndex: 1,
-          fieldName: 'some',
+          fieldName: 'Some',
           type: expectedReturn 
         };
       }
@@ -1976,7 +1976,7 @@ function ensureExprValid(
           tag: 'enum_init',
           fieldExpr: computedExpr,
           variantIndex: 0,
-          fieldName: 'ok',
+          fieldName: 'Ok',
           type: expectedReturn 
         };
       }
