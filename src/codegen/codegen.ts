@@ -1,4 +1,4 @@
-import { Position } from '../index';
+import { Position, compilerError } from '../index';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
 import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
@@ -428,6 +428,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
     addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._Err = ${exprName}._Err }; goto cleanup; }`);
     // because this is a leftExpr, it shouldn't save the value to the stack
+    if (expr.type.tag == 'primative' && expr.type.val == 'void') {
+      return '';
+    }
     return `${exprName}._Ok`;
   }
   else if (expr.tag == 'assert') {
