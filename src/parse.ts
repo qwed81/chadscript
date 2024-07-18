@@ -1190,9 +1190,9 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
       && tokens[2].val[0] >= '0' && tokens[2].val[0] <= '9') {
 
       let num;
-      try {
-        num = parseFloat(`${tokens[0]}.${tokens[2]}`) 
-      } catch(e) {
+      num = parseFloat(`${tokens[0].val}.${tokens[2].val}`) 
+      if (Number.isNaN(num)) {
+        logError(positionRange(tokens), 'could not parse number');
         return null;
       }
       return { tag: 'num_const', val: num, position };
