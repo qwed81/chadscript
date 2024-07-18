@@ -173,13 +173,23 @@ function isRes(type: Type): boolean {
   return type.tag == 'enum' && type.val.id == 'std.Res';
 }
 
-function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, Type>): boolean {
+// fnHeader field is used to calculate whether a generic should accept any type
+function typeApplicableStateful(
+  sub: Type,
+  supa: Type,
+  genericMap: Map<string, Type>,
+  fnHeader: boolean
+): boolean {
   if (supa.tag == 'generic') {
+    if (!fnHeader && supa.tag != sub.tag) {
+      return false;
+    }
+
     if (sub.tag == 'generic') {
       return true;
     }
     else if (genericMap.has(supa.val)) {
-      return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap);
+      return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap, fnHeader);
     }
     genericMap.set(supa.val, sub);
     return true;
@@ -197,7 +207,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
     if (sub.constant && !supa.constant) {
       return false;
     }
-    return typeApplicableStateful(sub.val, supa.val, genericMap);
+    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
   }
 
   if (sub.tag == 'enum' && supa.tag == 'enum' || sub.tag == 'struct' && supa.tag == 'struct') {
@@ -210,7 +220,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
     }
 
     for (let i = 0; i < sub.val.generics.length; i++) {
-      if (typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap) == false) {
+      if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader)) {
         return false;
       }
     }
@@ -219,7 +229,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
   }
 
   if (sub.tag == 'fn' && supa.tag == 'fn') {
-    if (typeApplicableStateful(sub.val.returnType, supa.val.returnType, genericMap) == false) {
+    if (!typeApplicableStateful(sub.val.returnType, supa.val.returnType, genericMap, fnHeader)) {
       return false;
     }
 
@@ -227,7 +237,7 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
       return false;
     }
     for (let i = 0; i < sub.val.paramTypes.length; i++) {
-      if (typeApplicableStateful(sub.val.paramTypes[i], supa.val.paramTypes[i], genericMap) == false) {
+      if (!typeApplicableStateful(sub.val.paramTypes[i], supa.val.paramTypes[i], genericMap, fnHeader)) {
         return false;
       }
     }
@@ -238,9 +248,9 @@ function typeApplicableStateful(sub: Type, supa: Type, genericMap: Map<string, T
   return false;
 }
 
-function typeApplicable(sub: Type, supa: Type): boolean {
+function typeApplicable(sub: Type, supa: Type, fnHeader: boolean): boolean {
   let genericMap = new Map<string, Type>();
-  return typeApplicableStateful(sub, supa, genericMap);
+  return typeApplicableStateful(sub, supa, genericMap, fnHeader);
 }
 
 function applyGenericMap(input: Type, map: Map<string, Type>): Type {
@@ -323,33 +333,33 @@ type OperatorResult = { tag: 'default', returnType: Type }
   | null
 
 function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
-  if (typeApplicable(a, INT)) {
-    if (typeApplicable(b, INT)) {
+  if (typeApplicable(a, INT, false)) {
+    if (typeApplicable(b, INT, false)) {
       return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, NUM)) {
+    } else if (typeApplicable(b, NUM, false)) {
       return { tag: 'default', returnType: NUM };
-    } else if (typeApplicable(b, BYTE)) {
+    } else if (typeApplicable(b, BYTE, false)) {
       return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, CHAR)) {
+    } else if (typeApplicable(b, CHAR, false)) {
       return { tag: 'default', returnType: INT };
     }
   }
-  else if (typeApplicable(a, BYTE)) {
-    if (typeApplicable(b, INT)) {
+  else if (typeApplicable(a, BYTE, false)) {
+    if (typeApplicable(b, INT, false)) {
       return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, BYTE)) {
+    } else if (typeApplicable(b, BYTE, false)) {
       return { tag: 'default', returnType: BYTE };
     }
   }
-  else if (typeApplicable(a, CHAR)) {
-    if (typeApplicable(b, INT)) {
+  else if (typeApplicable(a, CHAR, false)) {
+    if (typeApplicable(b, INT, false)) {
       return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, CHAR)) {
+    } else if (typeApplicable(b, CHAR, false)) {
       return { tag: 'default', returnType: CHAR };
     }
   }
-  else if (typeApplicable(a, NUM)) {
-    if (typeApplicable(b, INT) || typeApplicable(b, NUM)) {
+  else if (typeApplicable(a, NUM, false)) {
+    if (typeApplicable(b, INT, false) || typeApplicable(b, NUM, false)) {
       return { tag: 'default', returnType: NUM };
     }
   }
@@ -368,10 +378,10 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
-  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+  if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
     return { tag: 'default', returnType: BOOL };
   }
-  if (typeApplicable(a, NUM) && typeApplicable(b, NUM)) {
+  if (typeApplicable(a, NUM, false) && typeApplicable(b, NUM, false)) {
     return { tag: 'default', returnType: BOOL };
   }
 
@@ -390,13 +400,13 @@ function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
-  if (typeApplicable(a, INT) && typeApplicable(b, INT)) {
+  if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
     return { tag: 'default', returnType: BOOL };
   }
-  if (typeApplicable(a, CHAR) && typeApplicable(b, CHAR)) {
+  if (typeApplicable(a, CHAR, false) && typeApplicable(b, CHAR, false)) {
     return { tag: 'default', returnType: BOOL };
   }
-  if (typeApplicable(a, BOOL) && typeApplicable(b, BOOL)) {
+  if (typeApplicable(a, BOOL, false) && typeApplicable(b, BOOL, false)) {
     return { tag: 'default', returnType: BOOL };
   }
 
@@ -648,7 +658,7 @@ function getFnNamedParams(
       // to standardize the named param function
       let fnTypeReturnType = JSON.parse(JSON.stringify(fnType.val.returnType));
       standardizeType(fnTypeReturnType);
-      if (typeApplicableStateful(fnTypeReturnType, returnType, genericMap) == false) {
+      if (!typeApplicableStateful(fnTypeReturnType, returnType, genericMap, true)) {
         continue;
       }
 
@@ -662,7 +672,7 @@ function getFnNamedParams(
         }
 
         if (j < fnType.val.paramTypes.length 
-          && typeApplicableStateful(fnType.val.paramTypes[j], paramType, genericMap) == false) {
+          && !typeApplicableStateful(fnType.val.paramTypes[j], paramType, genericMap, true)) {
           fnMatches = false;
           break;
         }
@@ -749,7 +759,7 @@ function resolveFn(
         // be used in generics
         if (paramTypes != null) {
           let paramType = paramTypes[i];
-          if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap)) {
+          if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap, true)) {
             wrongTypeFns.push(fnDef);
             allParamsOk = false;
             break;
@@ -769,12 +779,12 @@ function resolveFn(
         let wrongType = false;
         // TODO fix quick hack if it becomes a problem
         if (defReturnType.tag == 'arr' && returnType.tag == 'arr') {
-          if (!typeApplicableStateful(returnType.val, defReturnType.val, genericMap) 
+          if (!typeApplicableStateful(returnType.val, defReturnType.val, genericMap, true) 
             && !returnType.constant && defReturnType.constant) {
 
             wrongType = true;
           }
-        } else if (!typeApplicableStateful(returnType, defReturnType, genericMap)) { // backwards to allow generic returns
+        } else if (!typeApplicableStateful(returnType, defReturnType, genericMap, true)) { // backwards to allow generic returns
           wrongType = true;
         }
 

@@ -83,7 +83,7 @@ function replaceGenerics(prog: Program): CProgram {
     for (let i = 0; i < prog.fns.length; i++) {
       let map: Map<string, Type> = new Map();
       if (prog.fns[i].name == dep.fnName && prog.fns[i].unitName == dep.unitName) {
-        if (typeApplicableStateful(dep.fnType, prog.fns[i].type, map)) {
+        if (typeApplicableStateful(dep.fnType, prog.fns[i].type, map, true)) {
           genericMap = map;
           selectedIndex = i;
           break;

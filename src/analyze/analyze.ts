@@ -362,7 +362,7 @@ function analyzeFn(
     return null;
   }
 
-  if (!Type.typeApplicable(scope.returnType, Type.VOID) && allPaths(body, 'return') == false) {
+  if (!Type.typeApplicable(scope.returnType, Type.VOID, false) && allPaths(body, 'return') == false) {
     logError(fn.position, 'function does not always return');
     return null;
   }
@@ -622,7 +622,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'return_void') {
-    if (!Type.typeApplicable(scope.returnType, Type.VOID)) {
+    if (!Type.typeApplicable(scope.returnType, Type.VOID, false)) {
       logError(inst.position, 'returning from non-void fn without expression');
       return null;
     }
@@ -989,7 +989,7 @@ function ensureLeftExprValid(
       return null;
     }
     else if (operation.tag == 'default') {
-      if (Type.typeApplicable(index.type, Type.INT)) {
+      if (Type.typeApplicable(index.type, Type.INT, false)) {
         let newExpr: LeftExpr = { 
           tag: 'arr_offset_int',
           val: {
@@ -999,7 +999,7 @@ function ensureLeftExprValid(
           type: operation.returnType
         };
         return newExpr;
-      } else if (Type.typeApplicable(index.type, Type.RANGE)) {
+      } else if (Type.typeApplicable(index.type, Type.RANGE, false)) {
         let newExpr: LeftExpr = { 
           tag: 'arr_offset_slice',
           val: {
@@ -1241,14 +1241,14 @@ function ensureFnCallValid(
   }
 
   for (let i = 0; i < paramTypes.length; i++) {
-    if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i]) == false) {
+    if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i], true) == false) {
       logError(position, `invalid type for parameter ${i}`);
       return null;
     }
   }
 
-  if (expectedReturn != null && Type.typeApplicable(fnType.val.returnType, expectedReturn) == false) {
-    if (Type.typeApplicable(expectedReturn, Type.VOID)) {
+  if (expectedReturn != null && Type.typeApplicable(fnType.val.returnType, expectedReturn, true) == false) {
+    if (Type.typeApplicable(expectedReturn, Type.VOID, false)) {
       logError(position, 'return value must be handled');
       return null;
     }
@@ -1509,7 +1509,7 @@ function ensureBinOpValid(
       return null;
     }
 
-    if (Type.typeApplicable(computedExpr.type, expectedReturn) == false) {
+    if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {
       logError(position, `expected ${Type.toStr(expectedReturn)} found ${Type.toStr(computedExpr.type)}`);
       return null;
     }
@@ -1734,7 +1734,7 @@ function ensureExprValid(
       }
 
       let exprFieldType = exprFieldTypes.get(field.name)!;
-      if (Type.typeApplicable(exprFieldType, field.type) == false) {
+      if (Type.typeApplicable(exprFieldType, field.type, false) == false) {
         if (!ignoreErrors) {
           logError(position, `improper type for ${Type.toStr(retType)}.${field.name}`);
         }
@@ -1791,7 +1791,7 @@ function ensureExprValid(
 
       // if the type is not a string, look of the implementation of str and use
       // that instead
-      if (!Type.typeApplicable(e.type, Type.STR)) {
+      if (!Type.typeApplicable(e.type, Type.STR, false)) {
         let fn = Type.resolveFn('toStr', Type.STR, [e.type], table, position);
         if (fn == null) {
           if (e.type.tag == 'generic' && !ignoreErrors) {
@@ -1843,7 +1843,7 @@ function ensureExprValid(
     if (expectedReturn != null && expectedReturn.tag == 'enum' && expr.val.tag == 'var') {
       let fieldIndex = expectedReturn.val.fields.map(f => f.name).indexOf(expr.val.val);
       if (fieldIndex != -1) {
-        if (Type.typeApplicable(expectedReturn.val.fields[fieldIndex].type, Type.VOID)) {
+        if (Type.typeApplicable(expectedReturn.val.fields[fieldIndex].type, Type.VOID, false)) {
           let fieldName = expectedReturn.val.fields[fieldIndex].name;
           computedExpr = {
             tag: 'enum_init',
@@ -1881,12 +1881,12 @@ function ensureExprValid(
       return null;
     }
 
-    if (Type.typeApplicable(computedExpr.type, expectedReturn) == false) {
+    if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {
       // determine if can autocast in the case of opt or res
       if (computedExpr.type.tag == 'enum' && computedExpr.tag == 'left_expr') {
         // turn some(T) -> T
         if (computedExpr.type.val.id == 'std.Opt'
-          && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn)) {
+          && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn, false)) {
 
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
           if (possibleVariants.length != 1 || possibleVariants[0] != 'some') {
@@ -1910,7 +1910,7 @@ function ensureExprValid(
         }
         // turn ok(T) -> T
         else if (computedExpr.type.val.id == 'std.Res'
-          && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn)) {
+          && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn, false)) {
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
           if (possibleVariants.length != 1 || possibleVariants[0] != 'ok') {
             if (!ignoreErrors) {
@@ -1934,7 +1934,7 @@ function ensureExprValid(
       }
       // turn T -> some(T)
       else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Opt'
-        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type)) {
+        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type, false)) {
         return {
           tag: 'enum_init',
           fieldExpr: computedExpr,
@@ -1945,7 +1945,7 @@ function ensureExprValid(
       }
       // trun T -> ok(T)
       else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.Res'
-        && Type.typeApplicable(expectedReturn.val.fields[0].type, computedExpr.type)) {
+        && Type.typeApplicable(expectedReturn.val.fields[0].type, computedExpr.type, false)) {
         return {
           tag: 'enum_init',
           fieldExpr: computedExpr,
