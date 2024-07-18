@@ -817,7 +817,8 @@ function ensureLeftExprValid(
   directAssign: Expr | null,
   table: Type.RefTable,
   scope: FnContext,
-  position: Position
+  position: Position,
+  ignoreErrors: boolean = false
 ): LeftExpr | null {
 
   if (leftExpr.tag == 'dot') {
@@ -830,17 +831,23 @@ function ensureLeftExprValid(
       if (validExpr.tag == 'left_expr') {
         let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, validExpr.val);
         if (possibleVariants.length == 0) {
-          logError(position, 'no variant possible');
+          if (!ignoreErrors) {
+            logError(position, 'no variant possible');
+          }
           return null;
         }
         else if (possibleVariants.length > 1) {
-          logError(position, `enum can be ${ JSON.stringify(possibleVariants) }`);
+          if (!ignoreErrors) {
+            logError(position, `enum can be ${ JSON.stringify(possibleVariants) }`);
+          }
           return null;
         }
 
         let hasField = validExpr.type.val.fields.findIndex(x => x.name == leftExpr.val.varName) != -1;
         if (hasField && possibleVariants[0] != leftExpr.val.varName) {
-          logError(position, `invalid access of variant '${leftExpr.val.varName}' - value is '${possibleVariants[0]}'`)
+          if (!ignoreErrors) {
+            logError(position, `invalid access of variant '${leftExpr.val.varName}' - value is '${possibleVariants[0]}'`)
+          }
           return null;
         }
 
@@ -894,7 +901,9 @@ function ensureLeftExprValid(
         }
 
         if (!fallThrough) {
-          logError(position, 'enum variant does not exist');
+          if (!ignoreErrors) {
+            logError(position, 'enum variant does not exist');
+          }
           return null;
         }
       }
@@ -913,7 +922,9 @@ function ensureLeftExprValid(
         return dotOp;
       }
       else {
-        logError(position, `dot op not applicable to ${Type.toStr(validExpr.type)}`);
+        if (!ignoreErrors) {
+          logError(position, `dot op not applicable to ${Type.toStr(validExpr.type)}`);
+        }
         return null;
       }
     }
@@ -923,7 +934,9 @@ function ensureLeftExprValid(
     for (let field of validExpr.type.val.fields) {
       if (field.name == leftExpr.val.varName) {
         if (field.visibility == null && !inSameUnit) {
-          logError(position, `access of private field '${field.name}'`);
+          if (!ignoreErrors) {
+            logError(position, `access of private field '${field.name}'`);
+          }
           return null;
         }
 
@@ -939,7 +952,9 @@ function ensureLeftExprValid(
       }
     }
 
-    logError(position, `field ${leftExpr.val.varName} not in ${Type.toStr(validExpr.type)}`);
+    if (!ignoreErrors) {
+      logError(position, `field ${leftExpr.val.varName} not in ${Type.toStr(validExpr.type)}`);
+    }
     return null;
   } 
   else if (leftExpr.tag == 'arr_offset') {
@@ -962,11 +977,15 @@ function ensureLeftExprValid(
     }
 
     if (operation == null && directAssign == null) {
-      logError(position, `getIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
+      if (!ignoreErrors) {
+        logError(position, `getIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
+      }
       return null;
     }
     else if (operation == null) {
-      logError(position, `prepareIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
+      if (!ignoreErrors) {
+        logError(position, `prepareIndex not defined for ${Type.toStr(arr.type)} with ${Type.toStr(index.type)}`);
+      }
       return null;
     }
     else if (operation.tag == 'default') {
@@ -1049,7 +1068,9 @@ function ensureLeftExprValid(
       }
     }
 
-    logError(position, 'arr must be indexed with range or int');
+    if (!ignoreErrors) {
+      logError(position, 'arr must be indexed with range or int');
+    }
     return null;
   } 
   else if (leftExpr.tag == 'var') {
@@ -1064,7 +1085,7 @@ function ensureLeftExprValid(
         fnTypeHint.returnType,
         fnTypeHint.paramTypes,
         table,
-        position
+        ignoreErrors ? null : position
       );
 
       if (fn == null) {
@@ -1074,7 +1095,13 @@ function ensureLeftExprValid(
       return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType, refTable: table };
     } 
 
-    let fn = Type.resolveFn(leftExpr.val, null, null, table, position);
+    let fn = Type.resolveFn(
+      leftExpr.val,
+      null,
+      null,
+      table,
+      ignoreErrors ? null : position
+    );
     if (fn == null) {
       return null;
     }
@@ -1098,35 +1125,55 @@ function ensureFnCallValid(
   position: Position
 ): Expr | null {
 
-  // setup check the types of params for use later
-  let paramTypes: Type.Type[] = [];
-  let paramExprs: Expr[] = [];
+  // setup check the types of params for use in attempting
+  // to determine which function will be called
+  let initParamTypes: (Type.Type | null)[] = [];
   for (let i = 0; i < fnCall.exprs.length; i++) {
+    // skip named params to resolve later
     if (fnCall.names[i] != '') {
       continue;
     }
 
     let expr: Parse.Expr = fnCall.exprs[i] ;
-    let validExpr = ensureExprValid(expr, null, table, scope, position);
+    let validExpr = ensureExprValid(expr, null, table, scope, position, true);
     if (validExpr == null) {
-      return null;
+      initParamTypes.push(null);
     }
-    paramTypes.push(validExpr.type);
-    paramExprs.push(validExpr);
+    else {
+      initParamTypes.push(validExpr.type);
+    }
   }
 
-  let fnTypeHint: FnTypeHint = { returnType: expectedReturn , paramTypes };
+  let fnTypeHint: FnTypeHint = { returnType: expectedReturn, paramTypes: initParamTypes };
   let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, null, table, scope, position);
   if (fnResult == null) {
     return null;
   } 
 
+  // now that the function is found, we can use the param types of that function
+  // to determine the types of the expressions
   let fnType = fnResult.type;
 
   // it is a function declared in the scope, ensure that fnType fits the params and return type
   if (fnType.tag != 'fn') {
     logError(position, 'type is not a function');
     return null;
+  }
+
+  let paramTypes: Type.Type[] = [];
+  let paramExprs: Expr[] = [];
+  for (let i = 0; i < fnCall.exprs.length; i++) {
+    // skip named params to resolve later
+    if (fnCall.names[i] != '') {
+      continue;
+    }
+
+    let resolvedExpr = ensureExprValid(fnCall.exprs[i], fnType.val.paramTypes[i], table, scope, position, false);
+    if (resolvedExpr == null) {
+      return null;
+    }
+    paramExprs.push(resolvedExpr);
+    paramTypes.push(resolvedExpr.type);
   }
 
   if (fnResult.tag == 'fn') {
@@ -1477,7 +1524,8 @@ function ensureExprValid(
   expectedReturn: Type.Type | null,
   table: Type.RefTable,
   scope: FnContext,
-  position: Position
+  position: Position,
+  ignoreErrors: boolean = false
 ): Expr | null {
   let computedExpr: Expr | null = null; 
 
@@ -1490,7 +1538,9 @@ function ensureExprValid(
 
   if (expr.tag == 'try' || expr.tag == 'assert') {
     if (Type.isRes(scope.returnType) == false) {
-      logError(position, `${expr.tag} operator can only be used in a function returning result`);
+      if (!ignoreErrors) {
+        logError(position, `${expr.tag} operator can only be used in a function returning result`);
+      }
       return null;
     }
 
@@ -1503,12 +1553,16 @@ function ensureExprValid(
       return null;
     }
     if (Type.isRes(validExpr.type) == false) {
-      logError(position, `${expr.tag} operator can only be used on results`);
+      if (!ignoreErrors) {
+        logError(position, `${expr.tag} operator can only be used on results`);
+      }
       return null;
     }
 
     if (validExpr.type.tag != 'enum') {
-      logError(position, 'compiler error');
+      if (!ignoreErrors) {
+        logError(position, 'compiler error');
+      }
       return null;
     }
 
@@ -1571,7 +1625,9 @@ function ensureExprValid(
     let exprType: Type.Type | null = null;
     if (expectedReturn != null) {
       if (expectedReturn.tag != 'arr') {
-        logError(position, 'arr not expected');
+        if (!ignoreErrors) {
+          logError(position, 'arr not expected');
+        }
         return null;
       }
       exprType = expectedReturn.val;
@@ -1589,7 +1645,9 @@ function ensureExprValid(
 
     // ensure that the type is actually known when done
     if (exprType == null) {
-      logError(position, "unknown arr type")
+      if (!ignoreErrors) {
+        logError(position, "unknown arr type")
+      }
       return null;
     }
 
@@ -1599,13 +1657,17 @@ function ensureExprValid(
 
   if (expr.tag == 'struct_init') {
     if (expectedReturn == null) {
-      logError(position, 'struct initialization type is unknown');
+      if (!ignoreErrors) {
+        logError(position, 'struct initialization type is unknown');
+      }
       return null;
     }
 
     if (expectedReturn.tag != 'struct'
       && !(expectedReturn.tag == 'enum' && (expectedReturn.val.id == 'std.Opt' || expectedReturn.val.id == 'std.Res'))) {
-      logError(position, `expected ${Type.toStr(expectedReturn)}`);
+      if (!ignoreErrors) {
+        logError(position, `expected ${Type.toStr(expectedReturn)}`);
+      }
       return null;
     }
 
@@ -1622,7 +1684,9 @@ function ensureExprValid(
     }
 
     if (retType.tag != 'struct') {
-      logError(position, `expected ${Type.toStr(retType)}`);
+      if (!ignoreErrors) {
+        logError(position, `expected ${Type.toStr(retType)}`);
+      }
       return null;
     }
 
@@ -1631,7 +1695,9 @@ function ensureExprValid(
     for (let initField of expr.val) {
       let matchingFields = retType.val.fields.filter(x => x.name == initField.name);
       if (matchingFields.length == 0) {
-        logError(initField.expr.position, `field ${initField.name} does not exist on type`);
+        if (!ignoreErrors) {
+          logError(initField.expr.position, `field ${initField.name} does not exist on type`);
+        }
         return null;
       }
 
@@ -1642,7 +1708,9 @@ function ensureExprValid(
       }
 
       if (exprFieldTypes.has(initField.name)) {
-        logError(position, 'double initialization of field');
+        if (!ignoreErrors) {
+          logError(position, 'double initialization of field');
+        }
         return null;
       }
 
@@ -1651,19 +1719,25 @@ function ensureExprValid(
     }
 
     if (exprFieldTypes.size != retType.val.fields.length) {
-      logError(position, 'missing fields');
+      if (!ignoreErrors) {
+        logError(position, 'missing fields');
+      }
       return null;
     }
 
     for (let field of retType.val.fields) {
       if (!exprFieldTypes.has(field.name)) {
-        logError(position, `required field ${field.name}`);
+        if (!ignoreErrors) {
+          logError(position, `required field ${field.name}`);
+        }
         return null;
       }
 
       let exprFieldType = exprFieldTypes.get(field.name)!;
       if (Type.typeApplicable(exprFieldType, field.type) == false) {
-        logError(position, `improper type for ${Type.toStr(retType)}.${field.name}`);
+        if (!ignoreErrors) {
+          logError(position, `improper type for ${Type.toStr(retType)}.${field.name}`);
+        }
         return null;
       }
     }
@@ -1720,10 +1794,10 @@ function ensureExprValid(
       if (!Type.typeApplicable(e.type, Type.STR)) {
         let fn = Type.resolveFn('toStr', Type.STR, [e.type], table, position);
         if (fn == null) {
-          if (e.type.tag == 'generic') {
+          if (e.type.tag == 'generic' && !ignoreErrors) {
             logError(position, `hint: no implementation of toStr(${Type.toStr(e.type)}). generic may not have toStr`)
           }
-          else {
+          else if (!ignoreErrors) {
             logError(position, `hint: no implementation of toStr(${Type.toStr(e.type)})`)
           }
           return null;
@@ -1791,7 +1865,7 @@ function ensureExprValid(
         };
       }
 
-      let exprTuple = ensureLeftExprValid(expr.val, fnTypeHint, null, table, scope, position);
+      let exprTuple = ensureLeftExprValid(expr.val, fnTypeHint, null, table, scope, position, ignoreErrors);
       if (exprTuple == null) {
         return null;
       }
@@ -1801,7 +1875,9 @@ function ensureExprValid(
 
   if (expectedReturn != null) {
     if (computedExpr == null) {
-      logError(position, 'ensureExprValid compiler bug');
+      if (!ignoreErrors) {
+        logError(position, 'ensureExprValid compiler bug');
+      }
       return null;
     }
 
@@ -1814,7 +1890,9 @@ function ensureExprValid(
 
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
           if (possibleVariants.length != 1 || possibleVariants[0] != 'some') {
-            logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            if (!ignoreErrors) {
+              logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            }
             return null;
           }
 
@@ -1835,7 +1913,9 @@ function ensureExprValid(
           && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn)) {
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
           if (possibleVariants.length != 1 || possibleVariants[0] != 'ok') {
-            logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            if (!ignoreErrors) {
+              logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
+            }
             return null;
           }
 
@@ -1876,7 +1956,9 @@ function ensureExprValid(
       }
 
       // can not autocast so just error
-      logError(position, `expected ${Type.toStr(expectedReturn)} found ${Type.toStr(computedExpr.type)}`);
+      if (!ignoreErrors) {
+        logError(position, `expected ${Type.toStr(expectedReturn)} found ${Type.toStr(computedExpr.type)}`);
+      }
       return null;
     }
   }
