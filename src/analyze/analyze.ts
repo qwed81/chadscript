@@ -1012,6 +1012,19 @@ function ensureLeftExprValid(
       }
     }
     else if (operation.tag == 'fn' && directAssign == null) {
+      if (operation.fnType.tag != 'fn') {
+        compilerError('fn type should be fn');
+        return null;
+      }
+
+      // check again based on the type (turning option into results)
+      let recalcArr = ensureExprValid(leftExpr.val.var, operation.fnType.val.paramTypes[0], table, scope, position);
+      let recalcIndex = ensureExprValid(leftExpr.val.index, operation.fnType.val.paramTypes[1], table, scope, position);
+      if (recalcIndex == null || recalcArr == null) {
+        compilerError('should always be valid');
+        return null;
+      }
+
       let memLoc: Expr = {
         tag: 'fn_call',
         val: {
@@ -1022,7 +1035,7 @@ function ensureLeftExprValid(
             unitName: operation.unitName,
             type: operation.fnType,
           },
-          exprs: [arr, index]
+          exprs: [recalcArr, recalcIndex]
         },
         type: operation.returnType
       }
@@ -1040,6 +1053,19 @@ function ensureLeftExprValid(
       }
     }
     else if (operation.tag == 'fn' && directAssign != null) {
+      if (operation.fnType.tag != 'fn') {
+        compilerError('fn type should be fn');
+        return null;
+      }
+
+      // check again based on the type (turning option into results)
+      let recalcArr = ensureExprValid(leftExpr.val.var, operation.fnType.val.paramTypes[0], table, scope, position);
+      let recalcIndex = ensureExprValid(leftExpr.val.index, operation.fnType.val.paramTypes[1], table, scope, position);
+      if (recalcIndex == null || recalcArr == null) {
+        compilerError('should always be valid');
+        return null;
+      }
+
       let memLoc: Expr = {
         tag: 'fn_call',
         val: {
@@ -1050,7 +1076,7 @@ function ensureLeftExprValid(
             unitName: operation.unitName,
             type: operation.fnType,
           },
-          exprs: [arr, index, directAssign]
+          exprs: [recalcArr, recalcIndex, directAssign]
         },
         type: operation.returnType
       }

@@ -429,17 +429,45 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
   }
 
   let fnResult = resolveFn('getIndex', null, [struct, index], refTable, null);
-  if (fnResult == null || fnResult.fnType.tag != 'fn' || fnResult.fnType.val.returnType.tag != 'arr') {
-    return null;
+  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'arr') {
+    return {
+      tag: 'fn',
+      returnType: fnResult.fnType.val.returnType,
+      fnName: fnResult.fnName,
+      fnType: fnResult.fnType,
+      unitName: fnResult.unitName
+    };
   }
 
-  return {
-    tag: 'fn',
-    returnType: fnResult.fnType.val.returnType,
-    fnName: fnResult.fnName,
-    fnType: fnResult.fnType,
-    unitName: fnResult.unitName
-  };
+  // try to index with options
+  if (index.tag == 'enum' && index.val.id == 'std.Opt') {
+    let retry = canGetIndex(struct, index.val.fields[1].type, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+  if (struct.tag == 'enum' && struct.val.id == 'std.Opt') {
+    let retry = canGetIndex(struct.val.fields[1].type, index, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+
+  // try to index with results
+  if (index.tag == 'enum' && index.val.id == 'std.Res') {
+    let retry = canGetIndex(struct, index.val.fields[0].type, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+  if (struct.tag == 'enum' && struct.val.id == 'std.Res') {
+    let retry = canGetIndex(struct.val.fields[0].type, index, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+
+  return null;
 }
 
 function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTable): OperatorResult | null {
@@ -448,17 +476,45 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
   }
 
   let fnResult = resolveFn('prepareIndex', null, [struct, index, exprType], refTable, null);
-  if (fnResult == null || fnResult.fnType.tag != 'fn' || fnResult.fnType.val.returnType.tag != 'arr') {
-    return null;
+  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'arr') {
+    return {
+      tag: 'fn',
+      returnType: fnResult.fnType.val.returnType,
+      fnName: fnResult.fnName,
+      fnType: fnResult.fnType,
+      unitName: fnResult.unitName
+    };
   }
 
-  return {
-    tag: 'fn',
-    returnType: fnResult.fnType.val.returnType,
-    fnName: fnResult.fnName,
-    fnType: fnResult.fnType,
-    unitName: fnResult.unitName
-  };
+  // try to index with options
+  if (index.tag == 'enum' && index.val.id == 'std.Opt') {
+    let retry = canSetIndex(struct, index.val.fields[1].type, exprType, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+  if (struct.tag == 'enum' && struct.val.id == 'std.Opt') {
+    let retry = canSetIndex(struct.val.fields[1].type, index, exprType, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+
+  // try to index with results
+  if (index.tag == 'enum' && index.val.id == 'std.Res') {
+    let retry = canSetIndex(struct, index.val.fields[0].type, exprType, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+  if (struct.tag == 'enum' && struct.val.id == 'std.Res') {
+    let retry = canSetIndex(struct.val.fields[0].type, index, exprType, refTable);
+    if (retry != null) {
+      return retry;
+    }
+  }
+
+  return null;
 }
 
 interface RefTable {
