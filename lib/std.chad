@@ -351,27 +351,6 @@ pub toStr(char val) char[]
   return [val]
 
 ##
-struct Map[K, V]
-map() Map[K, V]
-put(Map[K, V]& map, K key, V val)
-get(Map[K, V] map, K key) V
-contains(Map[K, V] map) bool
-
-struct Set[T]
-set()
-contains(Set[T] set) bool
-add(Set[T] set)
-
-struct File
-createFile(char* path) File!
-openFile(char* path) File!
-write(File file, byte* buf) void!
-read(File file, byte* buf) int!
-seek(File file, int offset) void!
-mmap(File file) byte*!
-struct FileInfo
-info(File file) FileInfo!
-
 struct TcpSocket
 struct TcpListener
 bindTcp(char* host, int port) TcpListener!

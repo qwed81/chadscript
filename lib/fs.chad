@@ -132,38 +132,31 @@ pub read(File& file, byte[&] buf) int! amtRead
 
   return buf.len
 
-##
-
-pub read(File file) byte!
-
-pub readAll(File file) byte[]!
-
-pub readUntil(File file, byte terminator, byte[] buf) void! 
-
-
-pub seek(FileStream file, int position) void!
-
-pub struct FileInfo
-
-pub fileInfo(char[] path) FileInfo
-
 pub moveFile(char[] path,  char[] to) void!
+  char[] errorMessage = "could not open file"
+  include
+    if (rename(_path->_start, _to->_start)) {
+      ret = ($(void!)){ .tag = 1, ._Err = _errorMessage };
+      goto cleanup;
+    }
+  return Ok
 
 pub copyFile(char[] path, char[] to) void!
+  File f1 = try open(path, Read, createIfAbsent=false)
+  File f2 = try open(to, ReadWrite, createIfAbsent=true)
+  byte[&] buf = arr(1024)
+  int amtRead = 1
+  while amtRead != 0
+    amtRead = try read(f1, buf)
+    try write(f2, buf[0:amtRead])
+
+  return Ok
 
 pub removeFile(char[] path) void!
-
-struct DirIter
-
-if dirExists("/home/")
-  for filePath try listPathsInDir("/home")  
-    FileInfo info = try getFileInfo(filePath)
-    FileStream! file = open(filePath)
-    FileStream! file2 = create()
-    if !(file is Err)
-      try write(file, asBytes("hello world!"))
-      close(file)
-    else
-      print(file.Err)
-##
-
+  char[] errorMessage = "could not remove file"
+  include
+    if (remove(_path->_start)) {
+      ret = ($(void!)){ .tag = 1, ._Err = _errorMessage };
+      goto cleanup;
+    }
+  return Ok
