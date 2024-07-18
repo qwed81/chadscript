@@ -1,16 +1,29 @@
 use std
 
 pub enum FileMode
-  void read
-  void readWrite
+  void Read
+  void ReadWrite
 
-pub struct File
+struct FileInternal
   # note to implementation that handle is actually the C
   # FILE* but needs to be stored in a chadscript struct
-  int* handle 
-  byte[&] buf
-  int bufIndex
-  int bufCapacity
+  int* handle
+  int refCount
+
+pub struct File
+  FileInternal* f
+
+# so that files can be closed automatically
+unsafeChangeRefCount(File& file, int amt)
+  if file.f.len == 0
+    return
+
+  file.f[0].refCount += amt
+  if file.f[0].refCount == 0
+    include
+      FILE* fp = (FILE*)_file->_f._start[0]._handle._start;
+      fclose(fp);
+    unsafeFree(file.f)
 
 openInternal(char[] path, FileMode mode, bool createIfAbsent) int*!
   char[] errorMessage = "could not open file"
@@ -20,10 +33,9 @@ openInternal(char[] path, FileMode mode, bool createIfAbsent) int*!
     if (*_createIfAbsent == true) {
       firstFile = fopen(path, "a+");
       if (firstFile == NULL) {
-        ret = ($(int*!)){ .tag = 1, ._err = _errorMessage };
+        ret = ($(int*!)){ .tag = 1, ._Err = _errorMessage };
         goto cleanup;
       }
-      fclose(firstFile);
     }
 
     char* options = NULL;
@@ -33,58 +45,92 @@ openInternal(char[] path, FileMode mode, bool createIfAbsent) int*!
     else if (_mode->tag == 1) {
       options = "r+";
     }
-
-    FILE* secondFile = fopen(_path->_start, options);
-    if (secondFile == NULL) {
-      ret = ($(int*!)){ .tag = 1, ._err = _errorMessage };
-      goto cleanup;
+    if (firstFile == NULL) {
+      firstFile = fopen(_path->_start, options);
+      if (firstFile == NULL) {
+        ret = ($(int*!)){ .tag = 1, ._Err = _errorMessage };
+        goto cleanup;
+      }
+    }
+    else {
+      firstFile = freopen(NULL, options, firstFile);
     }
     
-    $(int)* handlePtr = ($(int)*)secondFile;
-    
-    ret = ($(int*!)) { .tag = 0, ._ok = ($(int*)){ ._len = 1, ._refCount = NULL, ._start = handlePtr, ._ptr = handlePtr } };
+    $(int)* handlePtr = ($(int)*)firstFile;
+    ret = ($(int*!)) { .tag = 0, ._Ok = ($(int*)){ ._len = 1, ._refCount = NULL, ._start = handlePtr, ._ptr = handlePtr } };
     goto cleanup;
 
-  return err("unreachable")
+  return Err("unreachable")
 
 pub open(char[] path, FileMode mode, bool createIfAbsent=true) File!
   int* handle = try openInternal(path, mode, createIfAbsent)
-  return { handle = handle, buf = arr(1024), bufIndex = 0, bufCapacity = 0 }
+  FileInternal f = { handle = handle, refCount = 1 }
+  return { f = [f] }
 
-pub close(File& file)
+enum SeekMode
+  void Set
+  void Offset
+  void End
+
+seekInternal(File& file, SeekMode mode, int offset) void!
+  char[] errorMessage = "could not seek"
   include
-    FILE* fp = (FILE*)_file->_handle._start;
-    fclose(fp);
+    FILE* fp = (FILE*)_file->_f._start[0]._handle._start;
+    int whence = 0;
+    if (_mode->tag == 0) {
+      whence = SEEK_SET;
+    }
+    else if (_mode->tag == 1) {
+      whence = SEEK_CUR;
+    }
+    else {
+      whence = SEEK_END;
+    }
+
+    int result = fseek(fp, *_offset, whence);
+    if (result != 0) {
+      ret = ($(void!)){ .tag = 1, ._Err = _errorMessage };
+      goto cleanup;
+    }
+
+  return Ok
+
+pub seek(File& file, int offset) void!
+  return seekInternal(file, Set, offset)
+
+pub seekOffset(File& file, int offset) void!
+  return seekInternal(file, Offset, offset)
+
+pub seekEnd(File& file, int offset) void!
+  return seekInternal(file, End, offset)
   
 pub write(File& file, byte[] bytes) void!
   char[] errorMessage = "could not write all bytes"
   include
-    FILE* fp = (FILE*)_file->_handle._start;
+    FILE* fp = (FILE*)_file->_f._start[0]._handle._start;
     size_t result = fwrite(_bytes->_start, sizeof($(byte)), _bytes->_len, fp);
     if (result < _bytes->_len) {
-      ret = ($(void!)){ .tag = 1, ._err = _errorMessage };
+      ret = ($(void!)){ .tag = 1, ._Err = _errorMessage };
       goto cleanup;
     }
 
-  return ok
+  return Ok
 
-pub read(File& file) byte!
+pub read(File& file, byte[&] buf) int! amtRead
   char[] errorMessage = "could not read all bytes"
-  if file.bufIndex == file.bufCapacity
-    include
-      FILE* fp = (FILE*)_file->_handle._start;
-      size_t result = fread(_file->_buf._start, sizeof($(byte)), _file->_buf._len, fp);
-      if (result < _file->_buf._len) {
-        ret = ($(byte!)){ .tag = 1, ._err = _errorMessage };
+  include
+    FILE* fp = (FILE*)_file->_f._start[0]._handle._start;
+    size_t result = fread(_buf->_start, sizeof($(byte)), _buf->_len, fp);
+    if (result < _buf->_len) {
+      if (feof(fp)) {
+        ret = ($(int!)){ .tag = 0, ._Ok = ($(int))result };
         goto cleanup;
       }
-      _file->_bufCapacity = ($(int))result;
+      ret = ($(int!)){ .tag = 1, ._Err = _errorMessage };
+      goto cleanup;
+    }
 
-    file.bufIndex = 0
-    if file.bufCapacity == 0
-      return err("already finished")
-
-  return file.buf[file.bufIndex]
+  return buf.len
 
 ##
 
@@ -114,10 +160,10 @@ if dirExists("/home/")
     FileInfo info = try getFileInfo(filePath)
     FileStream! file = open(filePath)
     FileStream! file2 = create()
-    if !(file is err)
+    if !(file is Err)
       try write(file, asBytes("hello world!"))
       close(file)
     else
-      print(file.err.message)
+      print(file.Err)
 ##
 

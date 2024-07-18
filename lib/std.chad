@@ -1,10 +1,10 @@
 pub enum Opt[T]
-  void none
-  T some
+  void None
+  T Some
 
 pub enum Res[T]
-  T ok
-  char[] err
+  T Ok
+  char[] Err
 
 pub struct Range
   int start
@@ -13,7 +13,7 @@ pub struct Range
 pub next(Range& range) int?
   int thisIndex = range.start
   if range.start == range.end
-    return none
+    return None
   range.start += 1
   return thisIndex
 
@@ -27,7 +27,7 @@ pub struct RangeReverse
 pub next(RangeReverse& range) int?
   int thisIndex = range.start
   if range.start == range.end
-    return none
+    return None
   range.start -= 1
   return thisIndex
 
@@ -36,6 +36,11 @@ pub enum MathOperator
   void sub
   void mul
   void div
+
+pub unsafeFree(T[] t)
+  include
+    _t->_refCount = NULL;
+    free(_t->_ptr);
 
 pub exit(int code)
   include
@@ -63,7 +68,7 @@ pub input() char[&]! nextLine
   int len = 0
   include
     if (fgets(_buf._start, _buf._len, stdin) == NULL) {
-      return ($(char[&]!)) { .tag = 1, ._err = _errorMessage };
+      return ($(char[&]!)) { .tag = 1, ._Err = _errorMessage };
     }
     _len = strlen(_buf._start);
 
@@ -74,13 +79,13 @@ pub input() int! parsedInt
   include
     scanf("%d", &_output);
     
-  return ok(output)
+  return Ok(output)
 
 pub input() bool! parsedBool
-  return err("not implemented")
+  return Err("not implemented")
 
 pub input() num! parsedFloat
-  return err("not implemented")
+  return Err("not implemented")
 
 
 pub arr(int len) T[&]
@@ -224,11 +229,10 @@ pub map(int(int, K) hashKey=hash, bool(K, K) keyEq=eq) Map[K, V]
 indexOf(Map[K, V]& map, K key) int
   int hash = map.hashKey(0, key)
   int index = hash % map.entries.len
-  int startIndex = index
 
   # because the map will never be full this loop will always terminate
   while true
-    if map.entries[index] is none || map.keyEq(map.entries[index].key, key)
+    if map.entries[index] is None || map.keyEq(map.entries[index].key, key)
       return index
 
     index += 1
@@ -240,12 +244,14 @@ indexOf(Map[K, V]& map, K key) int
 resizeMap(Map[K, V]& map)
   # create a new map which is double the array size to insert elements into
   Entry[K, V]?[&] newEntries = arr(map.entries.len * 2)
-  Map[K, V] newMap = { entries = newEntries, hashKey = map.hashKey, keyEq = map.keyEq, len = 0 } 
 
   # reinsert all of the keys from the old map into the new map
   for i 0:map.entries.len
-    if map.entries[i] is some
-      newMap[map.entries[i].key] = map.entries[i].val
+    Entry[K, V]? entry = map.entries[i]
+    if entry is Some
+      int newIndex = map.hashKey(0, entry.key)
+      newIndex = newIndex % newEntries.len
+      newEntries[newIndex] = { key = entry.key, val = entry.val }
 
   # set back the original maps keys and values
   map.entries = newEntries
@@ -253,7 +259,7 @@ resizeMap(Map[K, V]& map)
 outputEntry(Map[K, V]& map, int entryIndex) V*
   # return the referece to the values array
   include
-    $(V) *outputPtr = &_map->_entries._start[*_entryIndex]._some._val;
+    $(V) *outputPtr = &_map->_entries._start[*_entryIndex]._Some._val;
     $(V*) _output = ($(V*)){ ._ptr = outputPtr, ._start = outputPtr, ._len = 1, ._refCount = NULL };
     ret = _output;
     goto cleanup;
@@ -264,25 +270,25 @@ outputEntry(Map[K, V]& map, int entryIndex) V*
 # only called when assigning to an indexed variable
 pub prepareIndex(Map[K, V]& map, K key, V val) V*
   int index = indexOf(map, key)
-  if map.entries[index] is none
+  if map.entries[index] is None
     map.len += 1
 
-    # if the map is 80% full (calculated with base 2 multiply)
-    if map.len * 128 / map.entries.len >= 102
+    # if the map is 80% full
+    if toNum(map.len) / toNum(map.entries.len) >= 0.8
       resizeMap(map)
     map.entries[index] = { key = key, val = val }
   return outputEntry(map, index)
 
 pub getIndex(Map[K, V]& map, K key) V*
   int index = indexOf(map, key)
-  if map.entries[index] is none
+  if map.entries[index] is None
     panic("invalid access in map")
 
   return outputEntry(map, index)
 
 pub contains(Map[K, V] map, K key) bool
   int index = indexOf(map, key)
-  if map.entries[index] is none 
+  if map.entries[index] is None 
     return false
   return true
 
@@ -296,7 +302,7 @@ pub toStr(Map[K, V] map, char[](K) kToStr=toStr, char[](V) vToStr=toStr) char[]
   bool first = true
   for i 0:map.entries.len
     Entry[K, V]? entry = map.entries[i]
-    if entry is none
+    if entry is None
       continue
 
     if !first
@@ -309,6 +315,12 @@ pub toStr(Map[K, V] map, char[](K) kToStr=toStr, char[](V) vToStr=toStr) char[]
 
   append(output, "]")
   return toStr(output)
+
+toStr(T? val, char[](T) tToStr=toStr) char[]
+  if val is Some
+    return "Some({tToStr(val)})"
+  else
+    return "None"
 
 pub toStr(int val) char[]
   int len
@@ -442,9 +454,19 @@ pub toByte(int val) byte
     return (unsigned char)*_val;
   return toByte(0)
 
+pub asChars(byte[] buf) char[]
+  include
+    if (_buf->_refCount != NULL) {
+      *_buf->_refCount += 1;
+    }
+    return *(($(char[])*)_buf);
+  return asChars([])
+
 pub asBytes(char[] str) byte[]
   include
-    *_str->_refCount += 1;
+    if (_str->_refCount != NULL) {
+      *_str->_refCount += 1;
+    }
     return *(($(byte[])*)_str);
   return asBytes("")
 
