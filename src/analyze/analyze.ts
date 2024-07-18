@@ -142,6 +142,8 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   }
 
   for (let i = 0; i < units.length; i++) {
+
+
     let unitFns: Fn[] | null = analyzeUnitFns(units, i, strTable); 
     if (unitFns == null) {
       validProgram = null;

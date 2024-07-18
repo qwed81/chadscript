@@ -2,7 +2,8 @@ import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../index';
 import {
   Type, typeApplicableStateful, applyGenericMap, standardizeType,
-  getFnNamedParams, RefTable, resolveFn as typeResolveFn,
+  getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,
+  INT
 } from '../analyze/types';
 import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
 
@@ -19,7 +20,7 @@ interface CProgram {
 
 type CStruct = { tag: 'arr', val: Type }
   | { tag: 'fn', val: Type }
-  | { tag: 'struct', val: CStructImpl }
+  | { tag: 'struct', val: CStructImpl, manualRefCount: boolean }
   | { tag: 'enum', val: CStructImpl }
 
 interface CStructImpl {
@@ -45,10 +46,13 @@ interface NeedResolveFn {
 }
 
 interface ResolveContext {
+  allFns: Fn[],
   fnResolveQueue: NeedResolveFn[],
   queuedFns: Set<string>
   typeResolveQueue: Type[]
   queuedTypes: Set<string>,
+  // tells if the type with a key string has a manual reference count impl
+  manualRefCount: Set<string>
 }
 
 function replaceGenerics(prog: Program): CProgram {
@@ -63,6 +67,8 @@ function replaceGenerics(prog: Program): CProgram {
   }
  
   let ctx: ResolveContext = {
+    allFns: prog.fns,
+    manualRefCount: new Set(),
     fnResolveQueue: [],
     queuedFns: new Set(),
     typeResolveQueue: [],
@@ -114,15 +120,39 @@ function replaceGenerics(prog: Program): CProgram {
     resolved.push(cFn);
   }
 
-  let orderedStructs = orderStructs(ctx.typeResolveQueue);
+  let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.manualRefCount);
   return { orderedStructs, fns: resolved, strTable: prog.strTable, entry };
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
+  // all arrays need to have the same constant to work as keys
+  if (type.tag == 'arr') {
+    type.constant = false;
+  }
   let key = JSON.stringify(type);
-  if (!ctx.queuedTypes.has(key)) {
-    ctx.typeResolveQueue.push(type);
-    ctx.queuedTypes.add(key);
+  if (ctx.queuedTypes.has(key)) {
+    return;
+  }
+
+  // have to queue all the types recursively so that resolveManualRefCount
+  // can be called prior to ordering structs
+  if (type.tag == 'struct' || type.tag == 'enum') {
+    for (let i = 0; i < type.val.fields.length; i++) {
+      queueType(ctx, type.val.fields[i].type);
+    }
+  }
+  else if (type.tag == 'fn') {
+    for (let i = 0; i < type.val.paramTypes.length; i++) {
+      queueType(ctx, type.val.paramTypes[i]);
+    }
+    queueType(ctx, type.val.returnType);
+  }
+
+  let isCounted = resolveManualRefCountImpl(type, ctx);
+  ctx.typeResolveQueue.push(type);
+  ctx.queuedTypes.add(key);
+  if (isCounted) {
+    ctx.manualRefCount.add(key);
   }
 }
 
@@ -222,6 +252,22 @@ function resolveInst(
 
   compilerError('resolveInst unreachable');
   return undefined!;
+}
+
+function addFnToResolve(ctx: ResolveContext, fnName: string, unitName: string, fnType: Type, refTable: RefTable) {
+  standardizeType(fnType);
+
+  // set a blank refTable to create proper key
+  let newLeftExpr: LeftExpr = { tag: 'fn', fnName, unitName, type: fnType, refTable: undefined! };
+  let key = JSON.stringify(newLeftExpr);
+  // set the refTable back so its valid
+  newLeftExpr.refTable = refTable;
+
+  if (!ctx.queuedFns.has(key)) {
+    ctx.fnResolveQueue.push({ fnName, unitName, fnType, fnRefTable: refTable });
+    ctx.queuedFns.add(key);
+  }
+  return newLeftExpr;
 }
 
 function resolveExpr(
@@ -353,19 +399,15 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'fn') {
     let depType = applyGenericMap(leftExpr.type, genericMap);
-    standardizeType(depType);
+    addFnToResolve(ctx, leftExpr.fnName, leftExpr.unitName, depType, leftExpr.refTable);
+    let newLeftExpr: LeftExpr = {
+      tag: 'fn',
+      type: depType,
+      fnName: leftExpr.fnName,
+      unitName: leftExpr.unitName,
+      refTable: leftExpr.refTable 
+    };
 
-
-    // set a blank refTable to create proper key
-    let newLeftExpr: LeftExpr = { tag: 'fn', fnName: leftExpr.fnName, unitName: leftExpr.unitName, type: depType, refTable: undefined! };
-    let key = JSON.stringify(newLeftExpr);
-    // set the refTable back so its valid
-    newLeftExpr.refTable = leftExpr.refTable;
-
-    if (!ctx.queuedFns.has(key)) {
-      ctx.fnResolveQueue.push({ fnName: leftExpr.fnName, unitName: leftExpr.unitName, fnType: depType, fnRefTable: leftExpr.refTable });
-      ctx.queuedFns.add(key);
-    }
     return newLeftExpr;
   }
 
@@ -521,13 +563,46 @@ function createDefaultFn(
   return defaultFn;
 }
 
-function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<string>, output: CStruct[]) {
-  if (type.tag == 'arr') {
-    typeTreeRecur(type.val, inStack, alreadyGenned, output);
+function resolveManualRefCountImpl(type: Type, ctx: ResolveContext): boolean {
+  for (let fn of ctx.allFns) {
+    if (fn.name != 'unsafeChangeRefCount') {
+      continue;
+    }
 
-    // prevent redefinition of slices based on mutability, will remove mutability
-    // from the recurse tree completely
-    standardizeType(type);
+    if (fn.type.tag != 'fn') {
+      compilerError('expected fn type');
+      return false;
+    }
+
+    let paramTypes = fn.type.val.paramTypes;
+    if (paramTypes.length < 2 || !typeApplicable(paramTypes[1], INT, false)) {
+      logError(NULL_POS, 'invalid type signature for unsafeChangeRefCount');
+      return false;
+    }
+
+    let genericMap: Map<string, Type> = new Map();
+    if (!typeApplicableStateful(type, paramTypes[0], genericMap, true)) {
+      continue;
+    }
+
+    let newFnType = applyGenericMap(fn.type, genericMap)
+    addFnToResolve(ctx, fn.name, fn.unitName, newFnType, fn.refTable);
+    return true;
+  }
+
+  return false;
+}
+
+function typeTreeRecur(
+  type: Type,
+  inStack: Set<string>,
+  alreadyGenned: Set<string>,
+  output: CStruct[],
+  manualRefCountSet: Set<string>
+) {
+  if (type.tag == 'arr') {
+    typeTreeRecur(type.val, inStack, alreadyGenned, output, manualRefCountSet);
+
     let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
       return;
@@ -541,9 +616,9 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
     if (alreadyGenned.has(typeKey)) {
       return;
     }
-    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output);
+    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, manualRefCountSet);
     for (let i = 0; i < type.val.paramTypes.length; i++) {
-      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output);
+      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, manualRefCountSet);
     }
     alreadyGenned.add(typeKey);
     output.push({ tag: 'fn', val: type });
@@ -553,7 +628,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
     return;
   }
 
-  let typeKey = JSON.stringify(type, null, 2);
+  let typeKey = JSON.stringify(type);
   if (inStack.has(typeKey)) {
     compilerError('recusive struct' + typeKey);
     return;
@@ -565,7 +640,7 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
 
   inStack.add(typeKey);
   for (let field of type.val.fields) {
-    typeTreeRecur(field.type, inStack, alreadyGenned, output);
+    typeTreeRecur(field.type, inStack, alreadyGenned, output, manualRefCountSet);
   }
   inStack.delete(typeKey);
 
@@ -582,17 +657,18 @@ function typeTreeRecur(type: Type, inStack: Set<string>, alreadyGenned: Set<stri
       name: type,
       fieldTypes,
       fieldNames
-    }
+    },
+    manualRefCount: manualRefCountSet.has(typeKey)
   };
 
   output.push(cStruct);
 }
 
-function orderStructs(typeResolveQueue: Type[]): CStruct[] {
+function orderStructs(typeResolveQueue: Type[], manualRefCountSet: Set<string>): CStruct[] {
   let alreadyGenned: Set<string> = new Set();
   let output: CStruct[] = [];
   for (let type of typeResolveQueue) {
-    typeTreeRecur(type, new Set(), alreadyGenned, output);
+    typeTreeRecur(type, new Set(), alreadyGenned, output, manualRefCountSet);
   }
 
   return output;

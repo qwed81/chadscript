@@ -1,7 +1,7 @@
 import { Position, compilerError } from '../index';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
-import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
+import { toStr, Type, STR, VOID, createRes, INT } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
 export {
@@ -207,7 +207,14 @@ function codeGenFnHeader(fn: CFn): string {
     return '';
   }
 
-  let name = getFnUniqueId(fn.unitName, fn.name, fn.type);
+  // unsafeChangeRefCount is a 'global' function as it does not really
+  // exist in any unit because it is called by the compiler regardless of imports
+  let unitName = fn.unitName;
+  if (fn.name == 'unsafeChangeRefCount') {
+    unitName = '';
+  }
+
+  let name = getFnUniqueId(unitName, fn.name, fn.type);
   let headerStr = '\n static ' + codeGenType(fn.type.val.returnType) +  ' ' + name + '(';
   let paramStr = '';
 
@@ -682,6 +689,15 @@ function codeGenStructs(structs: CStruct[]): string {
     // generate out inc and dec reference count for every stryct
     let typeStr = codeGenType(type);
     let typeStrNoSpace = typeStr.replace(' ', '');
+
+    // forward declare the __unsafeChangeRefCount so it can be used
+    let intStr = codeGenType(INT);
+    let refCountFn: Type = { tag: 'fn', val: { returnType: VOID, paramTypes: [type, INT], linkedParams: [true, false] } };
+    let manualRefCountStr: string = getFnUniqueId('', 'unsafeChangeRefCount', refCountFn);
+    if (struct.tag == 'struct' && struct.manualRefCount) {
+      structStr += `\nstatic void ${manualRefCountStr}(${typeStr} *s, ${intStr}* amt);`;
+    }
+
     structStr += `\nstatic void changeRefCount_${typeStrNoSpace}(${typeStr} *s, int amt) {`
     if (struct.tag == 'arr') {
       if (type.tag != 'arr') {
@@ -710,15 +726,22 @@ function codeGenStructs(structs: CStruct[]): string {
       if (type.tag != 'struct') {
         continue;
       }
-      for (let i = 0; i < type.val.fields.length; i++) {
-        let tag = type.val.fields[i].type.tag;
-        if (tag == 'primative' || tag == 'fn') {
-          continue;
-        }
 
-        let typeStrNoSpace = codeGenType(type.val.fields[i].type);
-        typeStrNoSpace = typeStrNoSpace.replace(' ', '');
-        structStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
+      // just call the reference count function instead of auto implement
+      if (struct.manualRefCount) {
+        structStr += `\n  ${manualRefCountStr}(s, &amt);`;
+      }
+      else {
+        for (let i = 0; i < type.val.fields.length; i++) {
+          let tag = type.val.fields[i].type.tag;
+          if (tag == 'primative' || tag == 'fn') {
+            continue;
+          }
+
+          let typeStrNoSpace = codeGenType(type.val.fields[i].type);
+          typeStrNoSpace = typeStrNoSpace.replace(' ', '');
+          structStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
+        }
       }
     }
     else if (struct.tag == 'enum') {
