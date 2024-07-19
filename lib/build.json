@@ -1,0 +1,51 @@
+{
+  "exeName": "output",
+  "files": [
+    {
+      "unitName": "std",
+      "srcPath": "lib/src/std.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    },
+    {
+      "unitName": "fs",
+      "srcPath": "lib/src/fs.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    },
+    {
+      "unitName": "time",
+      "srcPath": "lib/src/time.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    },
+    {
+      "unitName": "test",
+      "srcPath": "lib/src/test.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    }
+  ],
+  "objectNames": [
+
+  ],
+  "buildCommands": [
+
+  ]
+}

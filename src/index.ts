@@ -1,13 +1,15 @@
 import arg from 'arg';
-import { parseDir } from './parse';
+import { parseFile, ProgramUnit } from './parse';
 import { analyze } from './analyze/analyze';
-import { codegen } from './codegen/codegen';
+import { codegen, OutputFile } from './codegen/codegen';
+import path from 'node:path';
+import { spawn } from 'node:child_process'
 import { docgen } from './docgen';
 
 import fs from 'node:fs';
 
 export {
-  logError, compilerError, NULL_POS, Position
+  logError, compilerError, NULL_POS, Position, BuildArgs
 }
 
 interface Position {
@@ -16,6 +18,28 @@ interface Position {
   start: number
   end: number
 }
+
+// build args are sent through stdin in this format to tell
+// the compiler how to treat the code
+interface BuildArgs {
+  exeName: string,
+  files: ChadFile[],
+  // the command to build any C libraries
+  buildComands: Command[]
+  // the name of the resulting object files to link to
+  objectNames: string[] ,
+}
+
+interface ChadFile {
+  // how the file is treated in src (std, time, ect.)
+  unitName: string,
+  // path to the file
+  srcPath: string
+  // header files to include in chadscript code
+  headers: string[]
+}
+
+type Command = string[]
 
 // used when a function requires a position for error checking
 // but the function should never fail with the parameters being called
@@ -41,15 +65,36 @@ const args = arg({
   '-v': Boolean
 });
 
-compile();
+let stdin = process.stdin;
+let inputChunks: Buffer[] = []
 
-function compile() {
-  let sourceDir: string = args._[0];
+stdin.resume();
+stdin.setEncoding('utf8');
 
-  // console.log(sourceDir);
-  let parsedProgram = parseDir(sourceDir, null);
+stdin.on('data', function (chunk) {
+    inputChunks.push(chunk);
+});
 
-  if (parsedProgram == null) {
+stdin.on('end', function () {
+  let inputJSON = inputChunks.join();
+  let buildArgs: BuildArgs = JSON.parse(inputJSON);
+  compile(buildArgs);
+});
+
+function compile(buildArgs: BuildArgs) {
+  let parsedProgram: ProgramUnit[] = [];
+  let parseError = false;
+  for (let i = 0; i < buildArgs.files.length; i++) {
+    let unit = parseFile(buildArgs.files[i].srcPath, buildArgs.files[i].unitName);
+    if (unit != null) {
+      parsedProgram.push(unit);
+    }
+    else {
+      parseError = true;
+    }
+  }
+
+  if (parseError) {
     console.log('invalid program :/ could not parse')
     process.exit(-1);
   } 
@@ -64,26 +109,42 @@ function compile() {
     process.exit(-1);
   } 
 
-  let output = codegen(analyzedProgram);
+  let output: OutputFile[] = codegen(analyzedProgram, buildArgs);
   let outputPath;
   if (args['-o']) {
     outputPath = args['-o'];
   } else {
-    outputPath = './a.out';
+    outputPath = './build';
   }
 
-  let docs = docgen(analyzedProgram);
-  let docsPath;
-  if (args['-d']) {
-    docsPath = args['-d'];
-  } else {
-    docsPath = './docs.html';
-  }
-
-  fs.writeFileSync(docsPath, docs);
-  fs.writeFileSync(outputPath, output);
   if (args['-v']) {
     console.log(output);
   }
+
+  let fileNames: string[] = [];
+  for (let i = 0; i < output.length; i++) {
+    let fileName = path.join(outputPath, output[i].name);
+    if (!fileName.endsWith('.h')) {
+      fileNames.push(fileName);
+    }
+    fs.writeFileSync(fileName, output[i].data);
+  }
+
+  console.log('no compile errors, building with clang...');
+  let outputFileName = path.join(outputPath, buildArgs.exeName);
+  let clangArgs = [...fileNames, '-o', outputFileName]; 
+  console.log(clangArgs);
+  let clang = spawn('clang', clangArgs);
+  clang.stdout.on('data', (data) => {
+    console.log(data.toString());
+  });
+
+  clang.stderr.on('data', (data) => {
+    console.error(data.toString());
+  });
+
+  clang.on('close', (code) => {
+    process.exit(code);
+  });
 }
 

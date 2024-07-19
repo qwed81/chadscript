@@ -40,7 +40,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
-  BinExpr, Expr, parseDir, FieldVisibility
+  BinExpr, Expr, parseDir, parseFile, FieldVisibility
 }
 
 interface SourceLine {

@@ -97,7 +97,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'arr_init', val: Expr[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
-  | { tag: 'str_const', val: number, type: Type.Type }
+  | { tag: 'str_const', val: string, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
@@ -1804,7 +1804,7 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'str_const') {
-    computedExpr = { tag: 'str_const', val: scope.strTable.length, type: Type.STR };
+    computedExpr = { tag: 'str_const', val: expr.val , type: Type.STR };
     scope.strTable.push(expr.val);
   } 
 
