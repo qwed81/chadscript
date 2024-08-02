@@ -79,9 +79,9 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
     if (unitData == undefined) {
       unitData = '#include "chad.h"';
       let headers: string[] | null = null;
-      for (let i = 0; i < buildArgs.files.length; i++) {
-        if (buildArgs.files[i].unitName == fn.unitName) {
-          headers = buildArgs.files[i].headers;
+      for (let i = 0; i < buildArgs.chadFiles.length; i++) {
+        if (buildArgs.chadFiles[i].unitName == fn.unitName) {
+          headers = buildArgs.chadFiles[i].headers;
         }
       }
 
@@ -91,7 +91,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
       }
 
       for (let i = 0; i < headers.length; i++) {
-        unitData += `\n#include <${headers[i]}>`;
+        unitData += `\n#include "${headers[i]}"`;
       }
     }
     unitData += codeGenFn(fn, prog.strTable);
