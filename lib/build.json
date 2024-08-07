@@ -8,17 +8,9 @@
         "stdio.h",
         "stdlib.h",
         "string.h",
-        "stdbool.h"
-      ]
-    },
-    {
-      "unitName": "fs",
-      "srcPath": "lib/src/fs.chad",
-      "headers": [
-        "stdio.h",
-        "stdlib.h",
-        "string.h",
-        "stdbool.h"
+        "stdbool.h",
+        "uv.h",
+        "async/includes/async.h"
       ]
     },
     {
@@ -39,7 +31,6 @@
         "stdlib.h",
         "string.h",
         "stdbool.h",
-        "pthread.h",
         "async/includes/async.h"
       ]
     }

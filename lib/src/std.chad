@@ -51,16 +51,20 @@ pub panic(char[] message)
   print(message)
   exit(-1)
 
-pub print(T toPrint, char[](T) tToStr=toStr)
-  char[] toPrintStr = tToStr(toPrint)
-
-  char[] zeroTerminated = arr(toPrintStr.len + 1)
-  for i 0:toPrintStr.len
-    zeroTerminated[i] = toPrintStr[i]
-  zeroTerminated[toPrintStr.len] = '\0'
-
+pub terminateStr(char[] input) char[]
+  char[] zeroTerminated = arr(input.len + 1)
+  for i 0:input.len
+    zeroTerminated[i] = input[i]
+  zeroTerminated[input.len] = '\0'
   include
-    printf("%s\n", _zeroTerminated._start);
+    _zeroTerminated._len -= 1;
+
+  return zeroTerminated
+
+pub print(T val, char[](T) s=toStr)
+  char[] result = terminateStr(s(val))
+  include
+    printf("%s\n", _result._start);
 
 pub input() char[&]! nextLine
   char[] errorMessage = "could not get line"
@@ -90,12 +94,12 @@ pub input() num! parsedFloat
 
 pub arr(int len) T[&]
   include
-    size_t size = (*_len) * sizeof($(T)) + sizeof(int);
+    size_t size = (*_len) * sizeof($(T)) + sizeof(int64_t);
     void* alloc = malloc(size);
     memset(alloc, 0, size);
     $(T)* typedAlloc = ($(T)*)alloc;
 
-    int* refCount = (int*)(typedAlloc + *_len);
+    int64_t* refCount = (int64_t*)(typedAlloc + *_len);
     *refCount = 1;
 
     $(T[&]) slice = { ._ptr = alloc, ._start = alloc, ._len = *_len, ._refCount = refCount };
@@ -325,11 +329,11 @@ toStr(T? val, char[](T) tToStr=toStr) char[]
 pub toStr(int val) char[]
   int len
   include
-    _len = snprintf(NULL, 0, "%d", *_val);
+    _len = snprintf(NULL, 0, "%ld", *_val);
 
   char[&] output = arr(len + 1)
   include
-    snprintf(_output._start, _len + 1, "%d", *_val);
+    snprintf(_output._start, _len + 1, "%ld", *_val);
   return output[0:output.len - 1]
 
 pub toStr(num val) char[]
@@ -350,50 +354,10 @@ pub toStr(bool val) char[]
 pub toStr(char val) char[]
   return [val]
 
-##
-struct TcpSocket
-struct TcpListener
-bindTcp(char* host, int port) TcpListener!
-listenTcp(TcpListener listener) TcpSocket
-close(TcpListener listener)
-connectTcp(char* host, int port) TcpSocket!
-read(TcpSocket socket, byte* buf) int!
-write(TcpSocket socket, byte* buf) void!
-close(TcpSocket socket)
-
-rand(int start, int end) int
-sleep(int ms)
-
-struct TimeStamp
-struct Duration
-
-now() TimeStamp
-diff(TimeStamp a, TimeStamp b) Duration 
-offset(TimeStamp a, Duration b) TimeStamp
-
-ms(TimeStamp t) int
-sec(TimeStamp t) int
-min(TimeStamp t) int
-hour(TimeStamp t) int
-month(TimeStamp t) int
-year(TimeStamp t) int
-
-ms(Duration dur) int
-sec(Duration dur) int
-min(Duration dur) int
-hour(Duration dur) int
-month(Duration dur) int
-year(Duration dur) int
-
-##
-
 pub toNum(int val) num
   include
     return (double)*_val;
   return 0.0
-
-pub hash(int hash, int val) int hash
-  return hash + val
   
 pub eq(int a, int b) bool
   return a == b
@@ -448,4 +412,111 @@ pub asBytes(char[] str) byte[]
     }
     return *(($(byte[])*)_str);
   return asBytes("")
+
+pub startGreenFn(void(T) routine, T args)
+  include
+    size_t size = sizeof($(T));
+    $(T)* item = malloc(size);
+    *item = *_args;
+    startGreenFn((void*)_routine, item);
+
+pub startThread(void(T) routine, T args)
+  include
+    size_t size = sizeof($(T));
+    $(T)* item = malloc(size);
+    *item = *_args;
+    startThread((void*)_routine, item);
+
+uv_err(int code) T!
+  char[] errMessage = arr(1024)
+  T! err = Err(errMessage)
+  include
+    uv_err_name_r(*_code, _errMessage._start, 1024);
+
+  return err
+
+pub enum FileFlags
+  void Read
+  void ReadWrite
+
+pub struct File
+  int handle
+  int refCountPtr
+
+# so that files can be closed automatically
+unsafeChangeRefCount(File& file, int amt)
+  include
+    if (_file->_refCountPtr == 0) {
+      goto cleanup;
+    }
+
+    int* refCount = (int*)_file->_refCountPtr;
+    *refCount += 1;
+    if (*refCount == 0) {
+      closeFile(_file->_handle);
+      free((void*)_file->_refCountPtr);
+      _file->_refCountPtr = 0;
+    }
+
+pub open(char[] path, FileFlags flags, bool createIfMissing=false) File!
+  int fileHandle = -1
+  int intFlags = 0
+  int intMode
+  include
+    _intMode = S_IRUSR | S_IWUSR;
+
+  if flags is Read
+    include
+      _intFlags = UV_FS_O_RDONLY;
+  elif flags is ReadWrite
+    include
+      _intFlags = UV_FS_O_RDWR;
+
+  if createIfMissing
+    include
+      _intFlags |= UV_FS_O_CREAT;
+
+  char[] cPath = terminateStr(path)
+  include
+    _fileHandle = openFile(_cPath._start, _intFlags, _intMode);
+  if fileHandle < 0
+    return uv_err(fileHandle)
+
+  int refCountPtr
+  include
+    int64_t* ptr = malloc(sizeof(int64_t));
+    *ptr = 1;
+    _refCountPtr = (int64_t)ptr;
+
+  return { handle = fileHandle, refCountPtr = refCountPtr }
+
+pub close(File& file)
+  include
+    if (_file->_refCountPtr == 0) {
+      goto cleanup;
+    }
+    _file->_refCountPtr = 0;
+
+    closeFile(_file->_handle);
+    free((void*)_file->_refCountPtr);
+    _file->_refCountPtr = 0;
+
+pub read(File& file, byte[&] buf, int position=-1) int! amtRead
+  int result
+  include
+    _result = readFile(_file->_handle, _buf->_start, _buf->_len, *_position);
+  if result < 0
+    return uv_err(file.handle)
+  return result
+
+pub write(File& file, byte[] bytes, int position=-1) void!
+  int result
+  include
+    _result = writeFile(_file->_handle, _bytes->_start, _bytes->_len, *_position);
+  if result < 0
+    return uv_err(file.handle)
+
+  return Ok
+
+
 

@@ -36,10 +36,10 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
     chadDotC += '\n#include <' + include + '>';
   }
 
-  chadDotH += '\nvoid chad_panic(const char* file, int line, const char* message);'
+  chadDotH += '\nvoid chad_panic(const char* file, int64_t line, const char* message);'
   chadDotC += '\n#include "chad.h"';
-  chadDotC += '\nvoid chad_panic(const char* file, int line, const char* message) {'
-  chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %d: %s\\n", file, line, message); \nexit(-1); \n}'
+  chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
+  chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %ld: %s\\n", file, line, message); \nexit(-1); \n}'
 
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
@@ -199,6 +199,9 @@ function codeGenType(type: Type): string {
     }
     else if (type.val == 'byte') {
       return 'unsigned char';
+    }
+    else if (type.val == 'int') {
+      return 'int64_t';
     }
     return type.val;
   }
@@ -480,9 +483,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     let ptr = reserveVarNoStack(ctx);
     let refCount = reserveVarNoStack(ctx);
     let typedPtr = reserveVarNoStack(ctx);
-    addInst.before.push(`void *${ptr} = malloc(${expr.val.length} * sizeof(${type}) + sizeof(int));`);
+    addInst.before.push(`void *${ptr} = malloc(${expr.val.length} * sizeof(${type}) + sizeof(int64_t));`);
     addInst.before.push(`${type} *${typedPtr} = (${type}*)(${ptr});`);
-    addInst.before.push(`int *${refCount} = (int*)(${typedPtr} + ${expr.val.length});`);
+    addInst.before.push(`int64_t *${refCount} = (int64_t*)(${typedPtr} + ${expr.val.length});`);
     addInst.before.push(`*${refCount} = 1;`);
     for (let i = 0; i < expr.val.length; i++) {
       addInst.before.push(`${typedPtr}[${i}] = ${ codeGenExpr(expr.val[i], addInst, ctx, position) };`);
@@ -510,8 +513,8 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
       addInst.before.push(`${totalLen} += ${total}[${i}]._len;`);
     }
     
-    addInst.before.push(`char* ${output} = malloc(${totalLen} + sizeof(int));`);
-    addInst.before.push(`int* ${refCount} = (int*)(${output} + ${totalLen});`)
+    addInst.before.push(`char* ${output} = malloc(${totalLen} + sizeof(int64_t));`);
+    addInst.before.push(`int64_t* ${refCount} = (int64_t*)(${output} + ${totalLen});`)
     addInst.before.push(`*${refCount} = 1;`)
     addInst.before.push(`size_t ${idx} = 0;`)
     for (let i = 0; i < exprs.length; i++) {
@@ -609,7 +612,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     let innerName = codeGenExpr(leftExpr.val.index, addInst, ctx, position);
     let memGuard = `if (${innerName} < 0 || ${leftName}._len <= ${innerName}) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
-    memGuard += `snprintf(__buf, 128, "invalid access of array with index %d", ${innerName}); `
+    memGuard += `snprintf(__buf, 128, "invalid access of array with index %ld", ${innerName}); `
     memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
     addInst.before.push(memGuard);
     return `${leftName}._start[${innerName}]`;
@@ -619,7 +622,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     let fromVar = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
     let memGuard = `if (${range}._end < ${range}._start || ${range}._start < 0 || ${fromVar}._len < ${range}._end) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
-    memGuard += `snprintf(__buf, 128, "invalid access of array with range %d:%d", ${range}._start, ${range}._end); `
+    memGuard += `snprintf(__buf, 128, "invalid access of array with range %ld:%ld", ${range}._start, ${range}._end); `
     memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
     addInst.before.push(memGuard);
 
@@ -687,7 +690,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
       refCountStr += `\nvoid ${manualRefCountStr}(${typeStr} *s, ${intStr}* amt);`;
     }
 
-    refCountStr += `\nvoid changeRefCount_${typeStrNoSpace}(${typeStr} *s, int amt) {`
+    refCountStr += `\nvoid changeRefCount_${typeStrNoSpace}(${typeStr} *s, int64_t amt) {`
     if (struct.tag == 'arr') {
       if (type.tag != 'arr') {
         continue;
@@ -771,12 +774,12 @@ function codeGenStructDefs(structs: CStruct[]): string {
     }
     else if (struct.tag == 'enum') {
       structStr += '\n' + codeGenType(struct.val.name) + ' {';
-      structStr += '\n  int tag;';
+      structStr += '\n  int64_t tag;';
       structStr += '\n  union {';
       for (let i = 0; i < struct.val.fieldTypes.length; i++) {
         let typeStr = codeGenType(struct.val.fieldTypes[i]);
         if (typeStr == 'void') {
-          typeStr = 'int';
+          typeStr = 'int64_t';
         }
         structStr += '\n    ' + typeStr + ' _' + struct.val.fieldNames[i] + ';' 
       }
@@ -790,8 +793,8 @@ function codeGenStructDefs(structs: CStruct[]): string {
       structStr += '\n' + codeGenType(struct.val) + ' {';
       structStr += '\n  ' + codeGenType(struct.val.val) + ' *_ptr;';
       structStr += '\n  ' + codeGenType(struct.val.val) + ' *_start;';
-      structStr += '\n  int *_refCount;';
-      structStr += '\n  int _len;'
+      structStr += '\n  int64_t *_refCount;';
+      structStr += '\n  int64_t _len;'
       structStr += '\n};'
     }
 
@@ -806,7 +809,7 @@ function codeGenStructDefs(structs: CStruct[]): string {
     let typeStrNoSpace = typeStr.replace(' ', '');
 
     // declare the refcount function for the header
-    structStr += `\nvoid changeRefCount_${typeStrNoSpace}(${typeStr} *s, int amt);`
+    structStr += `\nvoid changeRefCount_${typeStrNoSpace}(${typeStr} *s, int64_t amt);`
   }
 
   return structStr;

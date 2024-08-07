@@ -1565,7 +1565,7 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'try' || expr.tag == 'assert') {
-    if (Type.isRes(scope.returnType) == false) {
+    if (expr.tag == 'try' && Type.isRes(scope.returnType) == false) {
       if (!ignoreErrors) {
         logError(position, `${expr.tag} operator can only be used in a function returning result`);
       }
