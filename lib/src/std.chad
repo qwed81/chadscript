@@ -81,7 +81,7 @@ pub input() char[&]! nextLine
 pub input() int! parsedInt
   int output = 0
   include
-    scanf("%d", &_output);
+    scanf("%ld", &_output);
     
   return Ok(output)
 
@@ -506,7 +506,7 @@ pub read(File& file, byte[&] buf, int position=-1) int! amtRead
   include
     _result = readFile(_file->_handle, _buf->_start, _buf->_len, *_position);
   if result < 0
-    return uv_err(file.handle)
+    return uv_err(result)
   return result
 
 pub write(File& file, byte[] bytes, int position=-1) void!
@@ -514,9 +514,105 @@ pub write(File& file, byte[] bytes, int position=-1) void!
   include
     _result = writeFile(_file->_handle, _bytes->_start, _bytes->_len, *_position);
   if result < 0
-    return uv_err(file.handle)
+    return uv_err(result)
 
   return Ok
 
+pub struct TcpSocket
+  int handle
+  int refCountPtr
 
+# so that sockets can be closed automatically
+unsafeChangeRefCount(TcpSocket& socket, int amt)
+  include
+    if (_socket->_refCountPtr == 0) {
+      goto cleanup;
+    }
 
+    int64_t* refCount = (int64_t*)_socket->_refCountPtr;
+    *refCount += *_amt;
+    if (*refCount == 0) {
+      closeTcp((TcpHandle)_socket->_handle);
+      free((void*)_socket->_refCountPtr);
+      _socket->_refCountPtr = 0;
+    }
+
+struct TcpConnectionArgs[T]
+  T args
+  void!(TcpSocket, T) handler
+
+tcpListenStart(int handle, TcpConnectionArgs[T] args)
+  int streamHandle
+  include
+    _streamHandle = (size_t)_handle;
+
+  int refCountPtr
+  include
+    int64_t* ptr = malloc(sizeof(int64_t));
+    *ptr = 1;
+    _refCountPtr = (int64_t)ptr;
+
+  TcpSocket socket = { handle = streamHandle, refCountPtr = refCountPtr }
+  void! result = args.handler(socket, args.args)
+  close(socket)
+
+pub listen(char[] host, int port, T args, void!(TcpSocket&, T) handler) void!
+  char[] cHost = terminateStr(host)
+  void(int, TcpConnectionArgs[T]) start = tcpListenStart
+  int result
+  include
+    size_t size = sizeof($(TcpConnectionArgs[T]));
+    $(TcpConnectionArgs[T])* item = malloc(size);
+    item->_args = *_args;
+    item->_handler = *_handler;
+
+    _result = listenTcp(_cHost._start, *_port, item, (void*)_start);
+    free(item);
+  if result < 0
+    return uv_err(result)
+
+  return Ok
+
+pub connect(char[] host, int port) TcpSocket!
+  char[] cHost = terminateStr(host)
+  int result
+  int outHandle
+
+  include
+    _result = connectTcp(_cHost._start, *_port, (TcpHandle*)&_outHandle);
+  if result < 0
+    return uv_err(result)
+
+  int refCountPtr
+  include
+    int64_t* ptr = malloc(sizeof(int64_t));
+    *ptr = 1;
+    _refCountPtr = (int64_t)ptr;
+  
+  return { handle = outHandle, refCountPtr = refCountPtr }
+
+pub read(TcpSocket& socket, byte[&] buf) int!
+  int result
+  include
+    _result = readTcp((void*)_socket->_handle, _buf->_start, _buf->_len);
+  if result < 0
+    return uv_err(result)
+  return result
+
+pub write(TcpSocket& socket, byte[] bytes) void!
+  int result
+  include
+    _result = writeTcp((void*)_socket->_handle, _bytes->_start, _bytes->_len);
+  if result < 0
+    return uv_err(result)
+  return Ok
+
+pub close(TcpSocket& socket)
+  include
+    if (_socket->_refCountPtr == 0) {
+      goto cleanup;
+    }
+    closeTcp((TcpHandle)_socket->_handle);
+    free((void*)_socket->_refCountPtr);
+    _socket->_refCountPtr = 0;
+  

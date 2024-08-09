@@ -11,6 +11,7 @@
 
 #define TASK_STACK_SIZE 1024 * 1024
 #define QUEUE_START_CAPACITY 1000
+#define BACKLOG 2000
 
 typedef struct TaskArgs {
   void* routineArgs;
@@ -50,7 +51,12 @@ typedef enum IORequestTag {
   FileOpen,
   FileWrite,
   FileRead,
-  FileClose
+  FileClose,
+  TcpListen,
+  TcpConnect,
+  TcpRead,
+  TcpWrite,
+  TcpClose
 } IORequestTag;
 
 typedef struct FileOpenRequest {
@@ -72,6 +78,30 @@ typedef struct FileCloseRequest {
   int outResult;
 } FileCloseRequest;
 
+typedef struct TcpListenRequest {
+  struct sockaddr_in addr;
+  void* args;
+  void (*handler)(TcpHandle handle, void* args);
+  int outResult;
+} TcpListenRequest;
+
+typedef struct TcpConnectRequest {
+  struct sockaddr_in addr;
+  TcpHandle outHandle;
+  int outResult;
+} TcpConnectRequest;
+
+typedef struct TcpDataRequest {
+  TcpHandle inHandle;
+  int outResult;
+  uv_buf_t buf;
+} TcpDataRequest;
+
+typedef struct TcpCloseRequest {
+  TcpHandle inHandle;
+  int outResult;
+} TcpCloseRequest;
+
 typedef struct IORequest {
   IORequestTag tag;
   TaskState returnToState;
@@ -80,6 +110,11 @@ typedef struct IORequest {
     FileDataRequest fileRead;
     FileDataRequest fileWrite;
     FileCloseRequest fileClose;
+    TcpListenRequest tcpListen;
+    TcpConnectRequest tcpConnect;
+    TcpDataRequest tcpRead;
+    TcpDataRequest tcpWrite;
+    TcpCloseRequest tcpClose;
   };
 } IORequest;
 
@@ -287,25 +322,145 @@ void onFileClose(uv_fs_t* req) {
   free(req);
 }
 
+typedef struct TcpHandlerArgs {
+  void* args;
+  void (*routine)(TcpHandle handle, void* args);
+  TcpHandle handle;
+} TcpHandlerArgs;
+
+void tcpHandler(void* args) {
+  TcpHandlerArgs* handlerArgs = (TcpHandlerArgs*)args;
+  handlerArgs->routine(handlerArgs->handle, handlerArgs->args);
+  free(handlerArgs);
+}
+
+void onCloseTcpListenClient(uv_handle_t* client) {
+  free(client);
+}
+
+void onTcpListenConnection(uv_stream_t* server, int status) {
+  IORequest* ioReq = server->data;
+  if (status < 0) {
+    return;
+  }
+
+  uv_tcp_t* client = malloc(sizeof(uv_tcp_t));
+  uv_tcp_init(loop, client);
+  status = uv_accept(server, (uv_stream_t*)client);
+  if (status < 0) {
+    uv_close((uv_handle_t*)client, onCloseTcpListenClient);
+    return;
+  }
+
+  TcpHandlerArgs* args = malloc(sizeof(TcpHandlerArgs));
+  args->args = ioReq->tcpListen.args;
+  args->handle = client;
+  args->routine = ioReq->tcpListen.handler;
+  startGreenFn(tcpHandler, args);
+}
+
+void onTcpConnect(uv_connect_t* req, int status) {
+  IORequest* ioReq = (IORequest*)req->data;
+  ioReq->tcpConnect.outHandle = req->handle;
+  ioReq->tcpConnect.outResult = status;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(req);
+}
+
+// the buffer is already allocated and onTcpRead will call stop, so no new
+// buffer needs to be allocated
+void forwardBuf(uv_handle_t* handle, size_t suggestedSize, uv_buf_t* buf) {
+  IORequest* ioReq = (IORequest*)handle->data;
+  *buf = ioReq->tcpRead.buf;
+}
+
+void onTcpRead(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+  IORequest* ioReq = (IORequest*)stream->data;
+  ioReq->tcpRead.outResult = nread;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  uv_read_stop(stream);
+}
+
+void onTcpWrite(uv_write_t* req, int status) {
+  IORequest* ioReq = (IORequest*)req->data;
+  ioReq->tcpWrite.outResult = status;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(req);
+}
+
+void onTcpClose(uv_handle_t* stream) {
+  IORequest* ioReq = (IORequest*)stream->data;
+  ioReq->tcpClose.outResult = 0;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(stream);
+}
+
 void processIORequests() {
   IORequest* ioReq;
   
+  uv_fs_t* fsReq;
+  uv_tcp_t* tcpReq;
+  uv_connect_t* connectReq;
+  uv_write_t* writeReq;
+
+  int result;
   bool hasElement = tryDequeue(&ioQueue, &ioReq);
   while (hasElement) {
-    uv_fs_t* fsReq = malloc(sizeof(uv_fs_t));
-    fsReq->data = ioReq;
     switch (ioReq->tag) {
       case FileOpen:
+        fsReq = malloc(sizeof(uv_fs_t));
+        fsReq->data = ioReq;
         uv_fs_open(loop, fsReq, ioReq->fileOpen.inName, ioReq->fileOpen.flags, ioReq->fileOpen.mode, onFileOpen);
         break;
       case FileRead:
+        fsReq = malloc(sizeof(uv_fs_t));
+        fsReq->data = ioReq;
         uv_fs_read(loop, fsReq, ioReq->fileRead.inHandle, &ioReq->fileRead.buf, 1, ioReq->fileRead.position, onFileRead);
         break;
       case FileWrite:
+        fsReq = malloc(sizeof(uv_fs_t));
+        fsReq->data = ioReq;
         uv_fs_write(loop, fsReq, ioReq->fileWrite.inHandle, &ioReq->fileWrite.buf, 1, ioReq->fileWrite.position, onFileWrite);
         break;
       case FileClose:
+        fsReq = malloc(sizeof(uv_fs_t));
+        fsReq->data = ioReq;
         uv_fs_close(loop, fsReq, ioReq->fileClose.handle, onFileClose);
+        break;
+      case TcpListen:
+        tcpReq = malloc(sizeof(uv_tcp_t));
+        uv_tcp_init(loop, tcpReq);
+        tcpReq->data = ioReq;
+
+        result = uv_tcp_bind(tcpReq, (struct sockaddr*)&ioReq->tcpListen.addr, 0);
+        if (result < 0) {
+          ioReq->fileClose.outResult = result;
+          enqueue(&taskQueue, &ioReq->returnToState);
+          free(tcpReq);
+        }
+        else {
+          uv_listen((uv_stream_t*)tcpReq, BACKLOG, onTcpListenConnection);
+        }
+        break;
+      case TcpConnect:
+        tcpReq = malloc(sizeof(uv_tcp_t));
+        connectReq = malloc(sizeof(uv_connect_t));
+        connectReq->data = ioReq;
+        uv_tcp_init(loop, tcpReq);
+        uv_tcp_connect(connectReq, tcpReq, (struct sockaddr*)&ioReq->tcpConnect.addr, onTcpConnect);
+        break;
+      case TcpRead:
+        ((uv_stream_t*)ioReq->tcpRead.inHandle)->data = ioReq;
+        uv_read_start((uv_stream_t*)ioReq->tcpRead.inHandle, forwardBuf, onTcpRead);
+        break;
+      case TcpWrite:
+        writeReq = malloc(sizeof(uv_write_t));
+        writeReq->data = ioReq;
+        uv_write(writeReq, ioReq->tcpWrite.inHandle, &ioReq->tcpWrite.buf, 1, onTcpWrite);
+        break;
+      case TcpClose:
+        ((uv_handle_t*)ioReq->tcpClose.inHandle)->data = ioReq;
+        uv_close(ioReq->tcpClose.inHandle, onTcpClose);
         break;
     }
     hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -352,6 +507,56 @@ int closeFile(FileHandle handle) {
 
   greenFnYield(&request, &request.returnToState);
   return request.fileClose.outResult;
+}
+
+int listenTcp(char* host, int port, void* args, void (*handler)(TcpHandle handle, void* args)) {
+  IORequest request;
+  request.tag = TcpListen;
+  uv_ip4_addr(host, port, &request.tcpListen.addr);
+  request.tcpListen.args = args;
+  request.tcpListen.handler = handler;
+
+  greenFnYield(&request, &request.returnToState);
+  return request.tcpListen.outResult;
+}
+
+int connectTcp(char* host, int port, TcpHandle* outHandle) {
+  IORequest request;
+  request.tag = TcpConnect;
+  uv_ip4_addr(host, port, &request.tcpConnect.addr);
+
+  greenFnYield(&request, &request.returnToState);
+  *outHandle = request.tcpConnect.outHandle;
+  return request.tcpConnect.outResult;
+}
+
+int readTcp(TcpHandle handle, void* buf, int64_t bufSize) {
+  IORequest request;
+  request.tag = TcpRead;
+  request.tcpRead.inHandle = handle;
+  request.tcpRead.buf = uv_buf_init(buf, bufSize);
+
+  greenFnYield(&request, &request.returnToState);
+  return request.tcpRead.outResult;
+}
+ 
+int writeTcp(TcpHandle handle, void* buf, int64_t bufSize) {
+  IORequest request;
+  request.tag = TcpWrite;
+  request.tcpWrite.inHandle = handle;
+  request.tcpWrite.buf = uv_buf_init(buf, bufSize);
+
+  greenFnYield(&request, &request.returnToState);
+  return request.tcpWrite.outResult;
+}
+
+int closeTcp(TcpHandle handle) {
+  IORequest request;
+  request.tag = TcpClose;
+  request.tcpClose.inHandle = handle;
+
+  greenFnYield(&request, &request.returnToState);
+  return request.tcpWrite.outResult;
 }
 
 void ioThreadStart(void* args) {

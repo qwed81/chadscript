@@ -1472,9 +1472,10 @@ function getLines(data: string, documentName: string): SourceLine[] {
 
     // parse the include block without processing tokens
     if (line == 'include') {
+      let blockLineNumber = lineNumber + 1;
       let startingIndent = indent;
       sourceLines.push({ tokens: [{ val: line, position: linePosition }], indent, position: linePosition });
-      for (let blockLineNumber = lineNumber + 1; blockLineNumber < lines.length; blockLineNumber++) {
+      for (; blockLineNumber < lines.length; blockLineNumber++) {
         let line = lines[blockLineNumber];
         if (line.trim() == '') {
           continue;
@@ -1503,6 +1504,7 @@ function getLines(data: string, documentName: string): SourceLine[] {
         sourceLines.push({ tokens: [{ val: line, position: linePosition }], indent: startingIndent + 1, position: linePosition });
       }
 
+      lineNumber = blockLineNumber - 1;
       continue;
     }
 

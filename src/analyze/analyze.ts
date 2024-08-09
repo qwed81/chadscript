@@ -1881,6 +1881,10 @@ function ensureExprValid(
             type: expectedReturn
           };
         } 
+        else {
+          logError(expr.position, 'enum init expects value - non-void variant');
+          return null;
+        }
       } 
     }
 

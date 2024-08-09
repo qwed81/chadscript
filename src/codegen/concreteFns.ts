@@ -125,6 +125,7 @@ function replaceGenerics(prog: Program): CProgram {
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
+  standardizeType(type);
   // all arrays need to have the same constant to work as keys
   if (type.tag == 'arr') {
     type.constant = false;
