@@ -96,6 +96,9 @@ function standardizeType(type: Type) {
     for (let i = 0; i < type.val.fields.length; i++) {
       standardizeType(type.val.fields[i].type);
     }
+    for (let i = 0; i <type.val.generics.length; i++) {
+      standardizeType(type.val.generics[i]);
+    }
   }
   else if (type.tag == 'fn') {
     standardizeType(type.val.returnType);

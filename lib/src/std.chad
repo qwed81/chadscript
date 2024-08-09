@@ -152,6 +152,21 @@ pub toStr(T[] arr, char[](T) tToStr=toStr) char[]
   
   return toStr(buf)
 
+pub split(char[] str) char[][]
+  return split(str, ' ')
+
+pub split(char[] str, char token) char[][]
+  StrBuf buf = strBuf()
+  List[char[]] output = list()
+  for i 0:str.len
+    if str[i] == token && buf.len != 0
+      add(output, toStr(buf))
+      clear(buf)
+    else
+      append(buf, str[i])
+
+  add(output, toStr(buf))
+  return view(output)
 
 pub struct StrBuf
   List[char] backingList
@@ -165,6 +180,9 @@ pub append(StrBuf& buf, T val, char[](T) tToStr=toStr)
   for i 0:newStr.len
     add(buf.backingList, newStr[i])
     buf.len += 1
+
+pub clear(StrBuf& buf)
+  buf.len = 0
 
 pub toStr(StrBuf buf) char[]
   char[] newStr = view(buf.backingList)
@@ -616,3 +634,24 @@ pub close(TcpSocket& socket)
     free((void*)_socket->_refCountPtr);
     _socket->_refCountPtr = 0;
   
+pub exec(char[] command) void!
+  int result
+  char[][] splits = split(command, ' ')
+  include
+    char** args = malloc((_splits._len + 1) * sizeof(char*));
+    for (int i = 0; i < _splits._len; i++) {
+      size_t strLen = _splits._start[i]._len;
+      args[i] = malloc((strLen + 1) * sizeof(char));
+      memcpy(args[i], _splits._start[i]._start, strLen * sizeof(char));
+      args[i][strLen] = '\0';
+    }
+    args[_splits._len] = NULL;
+    _result = runProgram(args);
+
+    for (int i = 0; i < _splits._len; i++) {
+      free(args[i]);
+    }
+    free(args);
+  if result < 0
+    return Err("could not run program")
+  return Ok

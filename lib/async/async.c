@@ -56,7 +56,8 @@ typedef enum IORequestTag {
   TcpConnect,
   TcpRead,
   TcpWrite,
-  TcpClose
+  TcpClose,
+  ProgramRun
 } IORequestTag;
 
 typedef struct FileOpenRequest {
@@ -102,6 +103,11 @@ typedef struct TcpCloseRequest {
   int outResult;
 } TcpCloseRequest;
 
+typedef struct ProgramRunRequest {
+  char** args;
+  int outResult;
+} RunProgramRequest;
+
 typedef struct IORequest {
   IORequestTag tag;
   TaskState returnToState;
@@ -115,6 +121,7 @@ typedef struct IORequest {
     TcpDataRequest tcpRead;
     TcpDataRequest tcpWrite;
     TcpCloseRequest tcpClose;
+    RunProgramRequest programRun;
   };
 } IORequest;
 
@@ -395,6 +402,13 @@ void onTcpClose(uv_handle_t* stream) {
   free(stream);
 }
 
+void onProcExit(uv_process_t* proc, int64_t exitCode, int signal) {
+  IORequest* ioReq = (IORequest*)proc->data;
+  ioReq->programRun.outResult = exitCode;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(proc);
+}
+
 void processIORequests() {
   IORequest* ioReq;
   
@@ -402,6 +416,8 @@ void processIORequests() {
   uv_tcp_t* tcpReq;
   uv_connect_t* connectReq;
   uv_write_t* writeReq;
+  uv_process_t* procReq;
+  uv_process_options_t options;
 
   int result;
   bool hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -461,6 +477,20 @@ void processIORequests() {
       case TcpClose:
         ((uv_handle_t*)ioReq->tcpClose.inHandle)->data = ioReq;
         uv_close(ioReq->tcpClose.inHandle, onTcpClose);
+        break;
+      case ProgramRun:
+        memset(&options, 0, sizeof(uv_process_options_t));
+        procReq = malloc(sizeof(uv_process_t));
+        procReq->data = ioReq;
+        options.args = ioReq->programRun.args;
+        options.file = ioReq->programRun.args[0];
+        options.exit_cb = onProcExit;
+        result = uv_spawn(loop, procReq, &options);
+        if (result < 0) {
+          ioReq->programRun.outResult = result;
+          enqueue(&taskQueue, &ioReq->returnToState);
+          free(procReq);
+        }
         break;
     }
     hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -557,6 +587,15 @@ int closeTcp(TcpHandle handle) {
 
   greenFnYield(&request, &request.returnToState);
   return request.tcpWrite.outResult;
+}
+
+int runProgram(char** args) {
+  IORequest request;
+  request.tag = ProgramRun;
+  request.programRun.args = args;
+
+  greenFnYield(&request, &request.returnToState);
+  return request.programRun.outResult;
 }
 
 void ioThreadStart(void* args) {

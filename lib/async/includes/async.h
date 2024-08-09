@@ -26,3 +26,5 @@ int readTcp(TcpHandle handle, void* buf, int64_t bufSize);
 int writeTcp(TcpHandle handle, void* buf, int64_t bufSize);
 
 int closeTcp(TcpHandle handle);
+
+int runProgram(char** args);
