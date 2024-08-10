@@ -2,6 +2,16 @@
 
 typedef int FileHandle;
 typedef void* TcpHandle;
+typedef void* PipeHandle;
+struct ProgramWaitState;
+
+typedef struct ChildResult {
+  int result;
+  PipeHandle stdoutHandle;
+  PipeHandle stdinHandle;
+  PipeHandle stderrHandle;
+  struct ProgramWaitState* waitHandle;
+} ChildResult;
 
 int startGreenFn(void (*start)(void*), void* args);
 
@@ -27,4 +37,12 @@ int writeTcp(TcpHandle handle, void* buf, int64_t bufSize);
 
 int closeTcp(TcpHandle handle);
 
-int runProgram(char** args);
+ChildResult runProgram(char** args);
+
+int waitProgram(struct ProgramWaitState* waitStateHandle);
+
+int readPipe(PipeHandle handle, void* buf, int64_t bufSize);
+
+int writePipe(PipeHandle handle, void* buf, int64_t bufSize);
+
+int closePipe(PipeHandle handle);

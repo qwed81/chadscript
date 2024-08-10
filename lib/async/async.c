@@ -57,7 +57,11 @@ typedef enum IORequestTag {
   TcpRead,
   TcpWrite,
   TcpClose,
-  ProgramRun
+  ProgramRun,
+  ProgramWait,
+  PipeRead,
+  PipeWrite,
+  PipeClose
 } IORequestTag;
 
 typedef struct FileOpenRequest {
@@ -103,10 +107,38 @@ typedef struct TcpCloseRequest {
   int outResult;
 } TcpCloseRequest;
 
+typedef struct ProgramWaitState {
+  TaskState exitReturnToState;
+  // runs on the IO thread to avoid
+  // race conditions
+  int outExitCode;
+  bool resumeOnWait;
+  bool alreadyExited;
+} ProgramWaitState;
+
 typedef struct ProgramRunRequest {
   char** args;
   int outResult;
+  ProgramWaitState* waitStateHandle;
+  PipeHandle outStdoutHandle;
+  PipeHandle outStdinHandle;
+  PipeHandle outStderrHandle;
 } RunProgramRequest;
+
+typedef struct ProgramWaitRequest {
+  ProgramWaitState* handle;
+} ProgramWaitRequest;
+
+typedef struct PipeDataRequest {
+  PipeHandle inHandle;
+  int outResult;
+  uv_buf_t buf;
+} PipeDataRequest;
+
+typedef struct PipeCloseRequest {
+  PipeHandle inHandle;
+  int outResult;
+} PipeCloseRequest;
 
 typedef struct IORequest {
   IORequestTag tag;
@@ -122,6 +154,10 @@ typedef struct IORequest {
     TcpDataRequest tcpWrite;
     TcpCloseRequest tcpClose;
     RunProgramRequest programRun;
+    ProgramWaitRequest programWait;
+    PipeDataRequest pipeRead;
+    PipeDataRequest pipeWrite;
+    PipeDataRequest pipeClose;
   };
 } IORequest;
 
@@ -404,9 +440,37 @@ void onTcpClose(uv_handle_t* stream) {
 
 void onProcExit(uv_process_t* proc, int64_t exitCode, int signal) {
   IORequest* ioReq = (IORequest*)proc->data;
-  ioReq->programRun.outResult = exitCode;
-  enqueue(&taskQueue, &ioReq->returnToState);
+  ProgramWaitState* waitHandle = ioReq->programRun.waitStateHandle;
+  waitHandle->outExitCode = exitCode;
+  waitHandle->alreadyExited = true;
+  
+  if (waitHandle->resumeOnWait) {
+    enqueue(&taskQueue, &waitHandle->exitReturnToState);
+  }
+
+  free(ioReq);
   free(proc);
+}
+
+void onPipeRead(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+  IORequest* ioReq = (IORequest*)stream->data;
+  ioReq->pipeRead.outResult = nread;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  uv_read_stop(stream);
+}
+
+void onPipeWrite(uv_write_t* req, int status) {
+  IORequest* ioReq = (IORequest*)req->data;
+  ioReq->pipeWrite.outResult = status;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(req);
+}
+
+void onPipeClose(uv_handle_t* stream) {
+  IORequest* ioReq = (IORequest*)stream->data;
+  ioReq->pipeClose.outResult = 0;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  free(stream);
 }
 
 void processIORequests() {
@@ -418,6 +482,11 @@ void processIORequests() {
   uv_write_t* writeReq;
   uv_process_t* procReq;
   uv_process_options_t options;
+  uv_stdio_container_t ioContainer[3];
+
+  uv_pipe_t* stdoutPipe;
+  uv_pipe_t* stdinPipe;
+  uv_pipe_t* stderrPipe;
 
   int result;
   bool hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -479,18 +548,69 @@ void processIORequests() {
         uv_close(ioReq->tcpClose.inHandle, onTcpClose);
         break;
       case ProgramRun:
-        memset(&options, 0, sizeof(uv_process_options_t));
+        stdoutPipe = malloc(sizeof(uv_pipe_t));
+        stdinPipe = malloc(sizeof(uv_pipe_t));
+        stderrPipe = malloc(sizeof(uv_pipe_t));
+
+        uv_pipe_init(loop, stdoutPipe, 0);
+        uv_pipe_init(loop, stdinPipe, 0);
+        uv_pipe_init(loop, stderrPipe, 0);
+
         procReq = malloc(sizeof(uv_process_t));
         procReq->data = ioReq;
+
+        memset(&options, 0, sizeof(uv_process_options_t));
         options.args = ioReq->programRun.args;
         options.file = ioReq->programRun.args[0];
         options.exit_cb = onProcExit;
+        options.stdio_count = 3;
+        options.stdio = ioContainer;
+        options.stdio[0].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
+        options.stdio[0].data.stream = (uv_stream_t*)stdinPipe;
+
+        options.stdio[1].flags = UV_CREATE_PIPE | UV_WRITABLE_PIPE;
+        options.stdio[1].data.stream = (uv_stream_t*)stdoutPipe;
+
+        options.stdio[2].flags = UV_CREATE_PIPE | UV_WRITABLE_PIPE;
+        options.stdio[2].data.stream = (uv_stream_t*)stderrPipe;
+
+        ioReq->programRun.outStdoutHandle = stdoutPipe;
+        ioReq->programRun.outStdinHandle = stdinPipe;
+        ioReq->programRun.outStderrHandle = stderrPipe;
+
+        ioReq->programRun.waitStateHandle = malloc(sizeof(ProgramWaitState));
+
+        // can't resume before the program calls 'wait'
+        ioReq->programRun.waitStateHandle->resumeOnWait = false;
+        ioReq->programRun.waitStateHandle->alreadyExited = false;
+
         result = uv_spawn(loop, procReq, &options);
-        if (result < 0) {
-          ioReq->programRun.outResult = result;
-          enqueue(&taskQueue, &ioReq->returnToState);
-          free(procReq);
+        ioReq->programRun.outResult = result;
+
+        enqueue(&taskQueue, &ioReq->returnToState);
+        break;
+      case ProgramWait:
+        if (ioReq->programWait.handle->alreadyExited) {
+          // just resume and don't wait, because the program is ready
+          enqueue(&taskQueue, &ioReq->programWait.handle->exitReturnToState);
         }
+        else {
+          // tell the callback to resume where it came from once it finishes
+          ioReq->programWait.handle->resumeOnWait = true;
+        }
+        break;
+      case PipeRead:
+        ((uv_stream_t*)ioReq->pipeRead.inHandle)->data = ioReq;
+        uv_read_start((uv_stream_t*)ioReq->pipeRead.inHandle, forwardBuf, onPipeRead);
+        break;
+      case PipeWrite:
+        writeReq = malloc(sizeof(uv_write_t));
+        writeReq->data = ioReq;
+        uv_write(writeReq, ioReq->pipeWrite.inHandle, &ioReq->pipeWrite.buf, 1, onPipeWrite);
+        break;
+      case PipeClose:
+        ((uv_handle_t*)ioReq->pipeClose.inHandle)->data = ioReq;
+        uv_close(ioReq->pipeClose.inHandle, onPipeClose);
         break;
     }
     hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -589,13 +709,59 @@ int closeTcp(TcpHandle handle) {
   return request.tcpWrite.outResult;
 }
 
-int runProgram(char** args) {
+ChildResult runProgram(char** args) {
+  IORequest* request = malloc(sizeof(IORequest));
+  request->tag = ProgramRun;
+  request->programRun.args = args;
+
+  greenFnYield(request, &request->returnToState);
+
+  ChildResult output;
+  output.result = request->programRun.outResult;
+  output.waitHandle = request->programRun.waitStateHandle;
+  output.stdoutHandle = request->programRun.outStdoutHandle;
+  output.stdinHandle = request->programRun.outStdinHandle;
+  output.stderrHandle = request->programRun.outStderrHandle;
+  return output;
+}
+
+int waitProgram(ProgramWaitState* handle) {
   IORequest request;
-  request.tag = ProgramRun;
-  request.programRun.args = args;
+  request.tag = ProgramWait;
+  request.programWait.handle = handle;
+
+  // store the return to state to handle so that when exit is called it returns here
+  greenFnYield(&request, &request.programWait.handle->exitReturnToState);
+  return request.programWait.handle->outExitCode;
+}
+
+int readPipe(PipeHandle handle, void* buf, int64_t bufSize) {
+  IORequest request;
+  request.tag = PipeRead;
+  request.pipeRead.inHandle = handle;
+  request.pipeRead.buf = uv_buf_init(buf, bufSize);
 
   greenFnYield(&request, &request.returnToState);
-  return request.programRun.outResult;
+  return request.pipeRead.outResult;
+}
+
+int writePipe(PipeHandle handle, void* buf, int64_t bufSize) {
+  IORequest request;
+  request.tag = PipeWrite;
+  request.pipeWrite.inHandle = handle;
+  request.pipeWrite.buf = uv_buf_init(buf, bufSize);
+
+  greenFnYield(&request, &request.returnToState);
+  return request.pipeWrite.outResult;
+}
+
+int closePipe(PipeHandle handle) {
+  IORequest request;
+  request.tag = PipeClose;
+  request.pipeClose.inHandle = handle;
+
+  greenFnYield(&request, &request.returnToState);
+  return request.pipeClose.outResult;
 }
 
 void ioThreadStart(void* args) {

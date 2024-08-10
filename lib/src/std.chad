@@ -161,7 +161,7 @@ pub split(char[] str, char token) char[][]
   for i 0:str.len
     if str[i] == token && buf.len != 0
       add(output, toStr(buf))
-      clear(buf)
+      buf = strBuf()
     else
       append(buf, str[i])
 
@@ -181,13 +181,9 @@ pub append(StrBuf& buf, T val, char[](T) tToStr=toStr)
     add(buf.backingList, newStr[i])
     buf.len += 1
 
-pub clear(StrBuf& buf)
-  buf.len = 0
-
 pub toStr(StrBuf buf) char[]
   char[] newStr = view(buf.backingList)
   return newStr[0:buf.len]
-
 
 pub struct List[T]
   T[&] arr
@@ -633,10 +629,62 @@ pub close(TcpSocket& socket)
     closeTcp((TcpHandle)_socket->_handle);
     free((void*)_socket->_refCountPtr);
     _socket->_refCountPtr = 0;
-  
-pub exec(char[] command) void!
+
+pub struct Pipe
+  int handle
+  int refCountPtr
+
+# so that pipes can be closed automatically
+unsafeChangeRefCount(Pipe& pipe, int amt)
+  include
+    if (_pipe->_refCountPtr == 0) {
+      goto cleanup;
+    }
+
+    int64_t* refCount = (int64_t*)_pipe->_refCountPtr;
+    *refCount += *_amt;
+    if (*refCount == 0) {
+      closePipe((PipeHandle)_pipe->_handle);
+      free((void*)_pipe->_refCountPtr);
+      _pipe->_refCountPtr = 0;
+    }
+
+pub read(Pipe pipe, byte[&] buf) int!
+  int result
+  include
+    _result = readPipe((void*)_pipe->_handle, _buf->_start, _buf->_len);
+  if result < 0
+    return uv_err(result)
+  return result
+
+pub write(Pipe pipe, byte[] bytes) void!
+  int result
+  include
+    _result = writePipe((void*)_pipe->_handle, _bytes->_start, _bytes->_len);
+  if result < 0
+    return uv_err(result)
+  return Ok
+
+pub close(Pipe pipe) void
+  include
+    if (_pipe->_refCountPtr == 0) {
+      goto cleanup;
+    }
+    // closePipe((PipeHandle)_pipe->_handle);
+    free((void*)_pipe->_refCountPtr);
+    _pipe->_refCountPtr = 0;
+
+pub struct Child
+  int waitHandle
+  get Pipe stdout
+  get Pipe stdin
+  get Pipe stderr
+
+pub exec(char[] command) Child!
   int result
   char[][] splits = split(command, ' ')
+  Child child
+
   include
     char** args = malloc((_splits._len + 1) * sizeof(char*));
     for (int i = 0; i < _splits._len; i++) {
@@ -646,12 +694,37 @@ pub exec(char[] command) void!
       args[i][strLen] = '\0';
     }
     args[_splits._len] = NULL;
-    _result = runProgram(args);
+    ChildResult childResult = runProgram(args);
+    _result = childResult.result;
+
+    int64_t* stdoutRefCount = malloc(sizeof(int64_t));
+    *stdoutRefCount = 1;
+
+    int64_t* stdinRefCount = malloc(sizeof(int64_t));
+    *stdinRefCount = 1;
+
+    int64_t* stderrRefCount = malloc(sizeof(int64_t));
+    *stderrRefCount = 1;
+
+    _child._waitHandle = (int64_t)childResult.waitHandle;
+
+    _child._stdout = ($(Pipe)) { ._handle = (int64_t)childResult.stdoutHandle, ._refCountPtr = (int64_t)stdoutRefCount };
+    _child._stdin = ($(Pipe)) { ._handle = (int64_t)childResult.stdinHandle, ._refCountPtr = (int64_t)stdinRefCount };
+    _child._stderr = ($(Pipe)) { ._handle = (int64_t)childResult.stderrHandle, ._refCountPtr = (int64_t)stderrRefCount };
 
     for (int i = 0; i < _splits._len; i++) {
       free(args[i]);
     }
     free(args);
+
   if result < 0
     return Err("could not run program")
-  return Ok
+
+  return child
+
+pub wait(Child child) int exitCode
+  int exitCode
+  include
+    _exitCode = waitProgram((struct ProgramWaitState*)_child->_waitHandle);
+  return exitCode
+
