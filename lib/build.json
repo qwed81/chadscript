@@ -14,16 +14,6 @@
       ]
     },
     {
-      "unitName": "time",
-      "srcPath": "lib/src/time.chad",
-      "headers": [
-        "stdio.h",
-        "stdlib.h",
-        "string.h",
-        "stdbool.h"
-      ]
-    },
-    {
       "unitName": "test",
       "srcPath": "lib/src/test.chad",
       "headers": [

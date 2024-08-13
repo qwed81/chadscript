@@ -17,6 +17,7 @@ typedef struct TaskArgs {
   void* routineArgs;
   void (*routine)(void*);
   void* stackStart;
+  bool freeArgs;
 } TaskArgs;
 
 typedef struct TaskState {
@@ -287,7 +288,9 @@ void greenFnStart(TaskArgs* args) {
   node->stackAddr = args->stackStart;
   stackRecycle = node;
 
-  free(args->routineArgs);
+  if (args->freeArgs) {
+    free(args->routineArgs);
+  }
   free(args);
   greenFnContinue();
 }
@@ -303,7 +306,7 @@ void freeStack(void* stack) {
   munmap(stack, TASK_STACK_SIZE);
 }
 
-int startGreenFn(void (*routine)(void*), void* args) {
+int startGreenFn(void (*routine)(void*), void* args, bool freeArgs) {
   void* newStack = NULL;
 
   if (stackRecycle == NULL) {
@@ -321,6 +324,7 @@ int startGreenFn(void (*routine)(void*), void* args) {
   taskArgs->routine = routine;
   taskArgs->routineArgs = args;
   taskArgs->stackStart = stackStart;
+  taskArgs->freeArgs = freeArgs;
 
   TaskState taskState = {
     .stackPtr = stackStart,
@@ -371,10 +375,9 @@ typedef struct TcpHandlerArgs {
   TcpHandle handle;
 } TcpHandlerArgs;
 
-void tcpHandler(void* args) {
-  TcpHandlerArgs* handlerArgs = (TcpHandlerArgs*)args;
-  handlerArgs->routine(handlerArgs->handle, handlerArgs->args);
-  free(handlerArgs);
+void tcpHandler(TcpHandlerArgs* args) {
+  args->routine(args->handle, args->args);
+  free(args);
 }
 
 void onCloseTcpListenClient(uv_handle_t* client) {
@@ -399,7 +402,7 @@ void onTcpListenConnection(uv_stream_t* server, int status) {
   args->args = ioReq->tcpListen.args;
   args->handle = client;
   args->routine = ioReq->tcpListen.handler;
-  startGreenFn(tcpHandler, args);
+  startGreenFn((void*)tcpHandler, args, false);
 }
 
 void onTcpConnect(uv_connect_t* req, int status) {
@@ -519,7 +522,7 @@ void processIORequests() {
 
         result = uv_tcp_bind(tcpReq, (struct sockaddr*)&ioReq->tcpListen.addr, 0);
         if (result < 0) {
-          ioReq->fileClose.outResult = result;
+          ioReq->tcpListen.outResult = result;
           enqueue(&taskQueue, &ioReq->returnToState);
           free(tcpReq);
         }

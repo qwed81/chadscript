@@ -432,7 +432,7 @@ pub startGreenFn(void(T) routine, T args)
     size_t size = sizeof($(T));
     $(T)* item = malloc(size);
     *item = *_args;
-    startGreenFn((void*)_routine, item);
+    startGreenFn((void*)_routine, item, true);
 
 pub startThread(void(T) routine, T args)
   include
@@ -558,15 +558,9 @@ struct TcpConnectionArgs[T]
 tcpListenStart(int handle, TcpConnectionArgs[T] args)
   int streamHandle
   include
-    _streamHandle = (size_t)_handle;
+    _streamHandle = (int64_t)_handle;
 
-  int refCountPtr
-  include
-    int64_t* ptr = malloc(sizeof(int64_t));
-    *ptr = 1;
-    _refCountPtr = (int64_t)ptr;
-
-  TcpSocket socket = { handle = streamHandle, refCountPtr = refCountPtr }
+  TcpSocket socket = { handle = streamHandle, refCountPtr = 0 }
   void! result = args.handler(socket, args.args)
   close(socket)
 
@@ -674,16 +668,16 @@ pub close(Pipe pipe) void
     free((void*)_pipe->_refCountPtr);
     _pipe->_refCountPtr = 0;
 
-pub struct Child
+pub struct Process
   int waitHandle
   get Pipe stdout
   get Pipe stdin
   get Pipe stderr
 
-pub exec(char[] command) Child!
+pub exec(char[] command) Process!
   int result
   char[][] splits = split(command, ' ')
-  Child child
+  Process child
 
   include
     char** args = malloc((_splits._len + 1) * sizeof(char*));
@@ -722,7 +716,7 @@ pub exec(char[] command) Child!
 
   return child
 
-pub wait(Child child) int exitCode
+pub wait(Process child) int exitCode
   int exitCode
   include
     _exitCode = waitProgram((struct ProgramWaitState*)_child->_waitHandle);

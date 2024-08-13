@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef int FileHandle;
 typedef void* TcpHandle;
@@ -13,7 +14,7 @@ typedef struct ChildResult {
   struct ProgramWaitState* waitHandle;
 } ChildResult;
 
-int startGreenFn(void (*start)(void*), void* args);
+int startGreenFn(void (*start)(void*), void* args, bool freeArgs);
 
 int initRuntime(int threadNum);
 
