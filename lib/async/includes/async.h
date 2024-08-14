@@ -1,3 +1,4 @@
+#include <uv.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -14,11 +15,19 @@ typedef struct ChildResult {
   struct ProgramWaitState* waitHandle;
 } ChildResult;
 
+typedef struct ReadDirResult {
+  uv_dirent_t* files;
+  size_t len;
+  int result;
+} ReadDirResult;
+
 int startGreenFn(void (*start)(void*), void* args, bool freeArgs);
 
 int initRuntime(int threadNum);
 
 int startThread(void (*start)(void*), void* args);
+
+ReadDirResult readDir(char* path);
 
 FileHandle openFile(char* name, int flags, int mode);
 

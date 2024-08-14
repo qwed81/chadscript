@@ -129,6 +129,60 @@ pub reverse(T[&] arr)
     arr[arr.len - 1 - i] = arr[i]
     arr[i] = hold
 
+pub indexOf(T[] arr, T val, bool(T, T) e=eq) int? maybeIndex
+  int? index = None
+  for i 0:arr.len
+    if e(arr[i], val)
+      index = i
+      break
+  return index
+
+pub lastIndexOf(T[] arr, T val, bool(T, T) e=eq) int? maybeIndex
+  int? index = None
+  for i rev(0:arr.len)
+    if e(arr[i], val)
+      index = i
+      break
+  return index
+
+pub startsWith(T[] arr, T[] other, bool(T, T) e=eq) bool
+  if arr.len < other.len
+    return false
+  for i 0:other.len
+    if !e(arr[i], other[i])
+      return false
+  return true
+
+pub endsWith(T[] arr, T[] other, bool(T, T) e=eq) bool
+  if arr.len < other.len
+    return false
+  for i 0:other.len
+    if !e(arr[arr.len - other.len - 1], other[i])
+      return false
+  return true
+
+pub joinPath(char[] start, char[] end) char[]
+  return "{start}/{end}" 
+
+pub fileName(char[] path) char[]
+  int? index = lastIndexOf(path, '/')
+  if index is None
+    return path
+  return path[index.Some + 1:path.len]
+
+pub fileNameWithoutExtension(char[] path) char[]
+  char[] name = fileName(path)
+  int? index = lastIndexOf(name, '.')
+  if index is None
+    return name
+  return name[0:index]
+
+pub fileExtension(char[] path) char[]
+  int? index = lastIndexOf(path, '.')
+  if index is None
+    return ""
+  return path[index.Some + 1:path.len]
+
 pub toStr(T[] arr, char[](T) tToStr=toStr) char[]
   # some serious voodoo to perform the correct operation
   # on either strings or regular arrays
@@ -376,6 +430,9 @@ pub toNum(int val) num
 pub eq(int a, int b) bool
   return a == b
 
+pub eq(char a, char b) bool
+  return a == b
+
 pub toInt(byte val) int
   include
     return (int)*_val
@@ -448,6 +505,54 @@ uv_err(int code) T!
     uv_err_name_r(*_code, _errMessage._start, 1024);
 
   return err
+
+pub enum FileType
+  void File
+  void Dir
+  void Other
+
+pub struct DirEntry
+  get FileType type 
+  get char[] name
+
+pub readDir(char[] path) DirEntry[]!
+  int numEntries = 0
+  int result
+  include
+    ReadDirResult dirResult = readDir(_path->_start);
+    _numEntries = dirResult.len;
+    _result = dirResult.result;
+  if result < 0 && result != -4095 # EOF
+    return uv_err(result)
+
+  DirEntry[&] entries = arr(numEntries) 
+  for i 0:numEntries
+    int index = i
+    int strLen
+    include
+      const char* filePath = dirResult.files[_index].name;
+      _strLen = strlen(filePath);
+
+    char[] name = arr(strLen)
+    FileType fileType = File
+    include
+      // copy the path into name
+      memcpy(_name._start, filePath, _strLen);
+
+      // set the fileType
+      if (dirResult.files[_index].type == UV_DIRENT_FILE) {
+        _fileType.tag = 0;
+      }
+      else if (dirResult.files[_index].type == UV_DIRENT_DIR) {
+        _fileType.tag = 1;
+      }
+      else {
+        _fileType.tag = 2;
+      }
+
+    entries[i] = { type = fileType, name = name }
+
+  return Ok(entries)
 
 pub enum FileFlags
   void Read

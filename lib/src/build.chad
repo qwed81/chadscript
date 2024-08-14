@@ -1,0 +1,127 @@
+use std
+
+struct ChadFile
+  char[] unitName
+  char[] srcPath
+  List[char[]] headers 
+
+pub struct CLib
+  char[] name
+  char[] source
+  char[][] includes
+  char[][] buildCommands
+  char[][] libPaths
+  char[][] dependsOn
+
+pub struct Exe
+  char[] exeName
+  char[] description
+  List[ChadFile] files
+  List[Clib] libs
+
+addChadFileRecursive(DirEntry entry, List[ChadFile]& files, char[] unitName)
+  if entry is OtherPath
+    return
+  elif entry is FilePath
+    if fileExtension(entry.FilePath) != "chad"
+      return
+    char[] modName = fileNameWithoutExtension(entry.FilePath)
+    char[][] headers = ["", "", "", "", ""]
+    ChadFile file = { srcPath = entry.filePath, headers = headers, unitName = "{unitName}.{modName}" }
+    add(files, file)
+  elif entry is DirPath
+    DirEntry[] entries = try readDir(entry.DirPath)
+    char[] name = fileNameWithoutExtension(entry.DirPath)
+    for i 0:entries.len
+      addChadFileRecursive(entries[i], e.files, "{unitName}.{name}")
+
+pub exe(char[] name, char[] description, char[] sourcePath) Exe!
+  Exe e = { exeName = name, description = description, files = list(), libs = list() }
+  DirEntry[] entries = try readDir(sourcePath)
+  for i 0:entries.len
+    addChadFileRecursive(entries[i], e.files)
+  return e
+
+pub addLib(Exe& exe, CLib clib)
+  add(exe.libs, clib)
+
+# serialize the exe structure into json and write to stdout
+# note this can be fixed once serialization is implemented
+pub finalize(Exe exe)
+  StrBuf json = strBuf()
+  append(json, '{')
+
+  appendProp(json, "exeName", exe.exeName)
+  append(json, ',')
+
+  appendProp(json, "description", exe.description)
+  append(json, ',')
+
+  append(json, "\"files\": [")
+  for i 0:exe.files.len
+    appendChadFile(json, exe.files[i])
+    append(json, ',')
+  append(json, "],")
+
+  append(json, "\"libs: [\"")
+  for i 0:exe.libs.len
+    appendCLib(json, exe.libs[i])
+    append(json, ',')
+  append(json, ']')
+
+  append(json, '}')
+  print(json)
+
+# appends "propName": "propValue"
+appendProp(StrBuf& json, char[] propName, char[] propValue)
+  append(json, '\"')
+  append(json, propName)
+  append(json, "\": \"")
+  append(json, propValue)
+  append(json, '\"')
+
+# appends { ... }
+appendChadFile(StrBuf& json, ChadFile file)
+  append(json, '{')
+
+  append(json, "unitName", file.unitName)
+  append(json, ',')
+
+  append(json, "srcPath", file.srcPath)
+  append(json, ',')
+
+  appendPropList(json, "headers", file.headers)
+
+  append(json, '}')
+
+# appends [""]
+appendPropList(StrBuf& json, char[] listName, char[][] items)
+  append(json, "\"{listName}\": [")
+  for i 0:items.len
+    append(json, '\"')
+    append(json, items[i])
+    append(json, "\",")
+  append(json, ']')
+
+# appends { ... }
+appendCLib(StrBuf& json, CLib lib)
+  append(json, '{')
+
+  appendProp(json, "name", lib.name)
+  append(json, ',')
+
+  appendProp(json, "source", lib.source)
+  append(json, ',')
+
+  appendPropList(json, "includes", lib.includes)
+  append(json, ',')
+
+  appendPropList(json, "buildCommands", lib.buildCommands)
+  append(json, ',')
+
+  appendPropList(json, "libPaths", lib.libPaths)
+  append(json, ',')
+
+  appendPropList(json, "dependsOn", lib.dependsOn)
+
+  append(json, '}')

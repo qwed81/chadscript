@@ -49,6 +49,7 @@ typedef struct StackRecycleNode {
 } StackRecycleNode;
 
 typedef enum IORequestTag {
+  ReadDir,
   FileOpen,
   FileWrite,
   FileRead,
@@ -64,6 +65,14 @@ typedef enum IORequestTag {
   PipeWrite,
   PipeClose
 } IORequestTag;
+
+typedef struct ReadDirRequest {
+  char* inPath;
+  uv_dirent_t* files;
+  size_t capacity;
+  size_t index;
+  int outResult;
+} ReadDirRequest;
 
 typedef struct FileOpenRequest {
   char* inName;
@@ -145,6 +154,7 @@ typedef struct IORequest {
   IORequestTag tag;
   TaskState returnToState;
   union {
+    ReadDirRequest readDir;
     FileOpenRequest fileOpen;
     FileDataRequest fileRead;
     FileDataRequest fileWrite;
@@ -337,6 +347,29 @@ int startGreenFn(void (*routine)(void*), void* args, bool freeArgs) {
   return 0;
 }
 
+void onScanDir(uv_fs_t* req) {
+  IORequest* ioReq = req->data;
+  int result = uv_fs_scandir_next(req, &ioReq->readDir.files[ioReq->readDir.index]);
+  while (result >= 0 && result != UV_EOF) {
+    ioReq->readDir.index += 1;
+    // realloc if it needs to
+    if (ioReq->readDir.index == ioReq->readDir.capacity) {
+      ioReq->readDir.capacity *= 2;
+      ioReq->readDir.files = realloc(ioReq->readDir.files, sizeof(uv_dirent_t) * ioReq->readDir.capacity);
+    }
+    result = uv_fs_scandir_next(req, &ioReq->readDir.files[ioReq->readDir.index]);
+  }
+
+  if (result != UV_EOF) {
+    free(ioReq->readDir.files);
+  }
+
+  ioReq->readDir.outResult = result;
+  enqueue(&taskQueue, &ioReq->returnToState);
+  uv_fs_req_cleanup(req);
+  free(req);
+}
+
 void onFileOpen(uv_fs_t* req) {
   IORequest* ioReq = req->data;
   ioReq->fileOpen.outHandle = req->result;
@@ -495,6 +528,15 @@ void processIORequests() {
   bool hasElement = tryDequeue(&ioQueue, &ioReq);
   while (hasElement) {
     switch (ioReq->tag) {
+      case ReadDir:
+        fsReq = malloc(sizeof(uv_fs_t));
+        fsReq->data = ioReq;
+        result = uv_fs_scandir(loop, fsReq, ioReq->readDir.inPath, 0, onScanDir);
+        if (result < 0) {
+          ioReq->readDir.outResult = result;
+          enqueue(&taskQueue, &ioReq->returnToState);
+        }
+        break;
       case FileOpen:
         fsReq = malloc(sizeof(uv_fs_t));
         fsReq->data = ioReq;
@@ -618,6 +660,22 @@ void processIORequests() {
     }
     hasElement = tryDequeue(&ioQueue, &ioReq);
   }
+}
+
+ReadDirResult readDir(char* path) {
+  IORequest request;
+  request.tag = ReadDir;
+  request.readDir.inPath = path;
+  request.readDir.capacity = 4;
+  request.readDir.index = 0;
+  request.readDir.files = malloc(4 * sizeof(uv_dirent_t));
+
+  greenFnYield(&request, &request.returnToState);
+  ReadDirResult result;
+  result.files = request.readDir.files;
+  result.len = request.readDir.index;
+  result.result = request.readDir.outResult;
+  return result;
 }
 
 FileHandle openFile(char* name, int flags, int mode) {
