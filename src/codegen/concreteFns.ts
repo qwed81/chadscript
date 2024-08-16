@@ -236,7 +236,7 @@ function resolveInst(
       let expr = resolveExpr(inst.val.expr, genericMap, ctx);
       return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
     } 
-      return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, position: inst.position }
+    return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, position: inst.position }
   }
   else if (inst.tag == 'assign') {
     let expr = resolveExpr(inst.val.expr, genericMap, ctx);

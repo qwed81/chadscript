@@ -117,6 +117,14 @@ pub asArr(List[T]& list) T[&]
 pub view(List[T] list) T[]
   return list.arr[0:list.len]
 
+pub eq(T[] a, T[] b, bool(T, T) e=eq) bool
+  if a.len != b.len
+    return false
+  for i 0:a.len
+    if !e(a[i], b[i])
+      return false
+  return true
+
 pub clone(T[] toClone) T[&]
   T[&] newArr = arr(toClone.len)
   for i 0:toClone.len
@@ -192,7 +200,8 @@ pub toStr(T[] arr, char[](T) tToStr=toStr) char[]
       if (_arr->_refCount != NULL) {
         *_arr->_refCount += 1;
       }
-      return *(($(char*)*)_arr);
+      ret = *(($(char*)*)_arr);
+      goto cleanup;
     }
 
   StrBuf buf = strBuf()
@@ -228,6 +237,9 @@ pub struct StrBuf
 
 pub strBuf() StrBuf
   return { backingList = list(), len = 0 }
+
+pub view(StrBuf buf) char[]
+  return view(buf.backingList)
 
 pub append(StrBuf& buf, T val, char[](T) tToStr=toStr)
   char[] newStr = tToStr(val)
@@ -388,7 +400,7 @@ pub toStr(Map[K, V] map, char[](K) kToStr=toStr, char[](V) vToStr=toStr) char[]
   append(output, "]")
   return toStr(output)
 
-toStr(T? val, char[](T) tToStr=toStr) char[]
+pub toStr(T? val, char[](T) tToStr=toStr) char[]
   if val is Some
     return "Some({tToStr(val)})"
   else

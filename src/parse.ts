@@ -775,6 +775,7 @@ function parseInstBody(lines: SourceLine[]): Inst[] | null {
     let inst = parseInst(line, body);
     if (inst == null) {
       invalidInstruction = true;
+      logError(lines[i].position, "could not parse");
       continue;
     }
 
@@ -1091,6 +1092,9 @@ function tryParseArrExpr(tokens: Token[]): LeftExpr | null {
   }
 
   let innerTokens = tokens.slice(balanceIndex + 1, -1);
+  if (innerTokens.length == 0) {
+    return null;
+  }
   let innerExpr = tryParseExpr(innerTokens, positionRange(innerTokens));
   if (innerExpr == null) {
     return null;
@@ -1358,10 +1362,14 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
 
       let openCount = 0;
       while (i < line.length && !(line[i] == '"' && openCount == 0)) {
-        if ((i == 0 || line[i - 1] != '\\') && line[i] == '{') {
+        if (line[i] == '\\') {
+          i += 2;
+          continue;
+        }
+        if (line[i] == '{') {
           openCount += 1;
         }
-        else if ((i == 0 || line[i - 1] != '\\') && line[i] == '}') {
+        else if (line[i] == '}') {
           openCount -= 1;
         }
         i += 1;
@@ -1380,6 +1388,9 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
       tokenStart = i + 1;
       i += 1;
       while (i < line.length && line[i] != '\'') {
+        if (line[i] == '\\') {
+          i += 1;
+        }
         i += 1;
       }
       tokens.push({ val: '\'' + line.slice(tokenStart, i) + '\'', position: { document: documentName, line: lineNumber, start: tokenStart, end: i } });

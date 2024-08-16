@@ -322,13 +322,16 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     instText = `${leftExpr} ${inst.val.op} ${rightExpr};`;
     changeRefCount(addInst.after, rightExpr, type, 1);
   } 
-  else if (inst.tag == 'if' || inst.tag == 'elif') {
+  else if (inst.tag == 'if') {
     instText = `if (${ codeGenExpr(inst.val.cond, addInst, ctx, inst.position) }) ${ codeGenBody(inst.val.body, indent + 1, false, true, ctx) }`;
     if (instIndex + 1 < insts.length) {
       let nextInst = insts[instIndex + 1];
       if (nextInst.tag == 'elif') {
         instText += 'else {'
+        // treat the instruction as an if statement embedded in an else
+        insts[instIndex + 1].tag = 'if';
         instText += codeGenInst(insts, instIndex + 1, indent + 1, ctx);
+        insts[instIndex + 1].tag = 'elif';
         instText += '}';
       }
       else if (nextInst.tag == 'else') {
@@ -338,6 +341,10 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
       }
     }
   } 
+  else if (inst.tag == 'elif') {
+    // generated before
+    instText = '';
+  }
   else if (inst.tag == 'else') {
     // generated before
     instText = '';
@@ -420,6 +427,16 @@ function reserveVarNoStack(ctx: FnContext): string {
   return name;
 }
 
+function strLen(expr: string) {
+  let subCount = 0;
+  for (let i = 0; i < expr.length; i++) {
+    if (expr[i] == '\\') {
+      subCount += 1;
+    }
+  }
+  return expr.length - subCount;
+}
+
 // if the instruction is a left expr: returns the c syntax for accessing the variable
 // if the instruction is a expr: reservers a variable and sets it to the expr, and then returns the reserved name
 function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Position): string {
@@ -493,7 +510,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = `(${ codeGenType(expr.type) }){ ._ptr = ${typedPtr}, ._start = ${typedPtr}, ._len = ${expr.val.length}, ._refCount = ${refCount} }`;
   }
   else if (expr.tag == 'str_const') {
-    exprText = `(${ codeGenType(STR) }){ ._ptr = "${expr.val}", ._start = "${expr.val}", ._len = ${ expr.val.length }, ._refCount = NULL }`;
+    exprText = `(${ codeGenType(STR) }){ ._ptr = "${expr.val}", ._start = "${expr.val}", ._len = ${ strLen(expr.val) }, ._refCount = NULL }`;
   }
   else if (expr.tag == 'fmt_str') {
     let exprs = expr.val;
