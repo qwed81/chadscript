@@ -257,6 +257,13 @@ function resolveInst(
 
 function addFnToResolve(ctx: ResolveContext, fnName: string, unitName: string, fnType: Type, refTable: RefTable) {
   standardizeType(fnType);
+  if (fnType.tag != 'fn') {
+    compilerError('expected fn type');
+    return undefined;
+  }
+  for (let i = 0; i < fnType.val.linkedParams.length; i++) {
+    fnType.val.linkedParams[i] = true;
+  }
 
   // set a blank refTable to create proper key
   let newLeftExpr: LeftExpr = { tag: 'fn', fnName, unitName, type: fnType, refTable: undefined! };

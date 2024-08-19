@@ -169,6 +169,12 @@ pub endsWith(T[] arr, T[] other, bool(T, T) e=eq) bool
       return false
   return true
 
+pub dirOf(char[] path) char[]
+  int? index = lastIndexOf(path, '/')
+  if index is None
+    return ""
+  return path[0:index]
+
 pub joinPath(char[] start, char[] end) char[]
   return "{start}/{end}" 
 
@@ -510,6 +516,23 @@ pub startThread(void(T) routine, T args)
     *item = *_args;
     startThread((void*)_routine, item);
 
+pub ioCopy(R from, W to, int!(R&, byte[&]) r=read, void!(W&, byte[]) w=write) void!
+  byte[&] buf = arr(1024)
+  int amtRead = 1
+  while amtRead != 0
+    amtRead = try r(from, buf)
+    try w(to, buf[0:amtRead])
+  return Ok
+
+pub readAll(R& reader, int!(R&, byte[&]) r=read) char[]!
+  StrBuf str = strBuf()
+  byte[&] buf = arr(1024)
+  int amtRead = 1
+  while amtRead != 0
+    amtRead = try r(reader, buf)
+    append(str, asChars(buf[0:amtRead]))
+  return Ok(view(str))
+
 uv_err(int code) T!
   char[] errMessage = arr(1024)
   T! err = Err(errMessage)
@@ -517,6 +540,45 @@ uv_err(int code) T!
     uv_err_name_r(*_code, _errMessage._start, 1024);
 
   return err
+
+pub executionDir() char[]
+  char[] exePath
+  include
+    char buf[1024];
+    size_t len = 1024;
+    uv_exepath(buf, &len);
+    len = strlen(buf);
+    char* ptr = malloc(sizeof(char) * len);
+    int64_t* refCount = malloc(sizeof(int64_t));
+    *refCount = 1;
+    memcpy(ptr, buf, len);
+
+    _exePath = ($(char[])){ ._start = ptr, ._ptr = ptr, ._len = len, ._refCount = refCount };
+  return dirOf(exePath)
+
+pub currentWorkingDir() char[]
+  include
+    char buf[1024];
+    size_t len = 1024;
+    uv_cwd(buf, &len);
+    len = strlen(buf);
+    char* ptr = malloc(sizeof(char) * len);
+    int64_t* refCount = malloc(sizeof(int64_t));
+    *refCount = 1;
+    memcpy(ptr, buf, len);
+
+    ret = ($(char[])){ ._start = ptr, ._ptr = ptr, ._len = len, ._refCount = refCount };
+    goto cleanup;
+  return ""
+
+pub changeWorkingDir(char[] path) void!
+  int result
+  char[] cPath = terminateStr(path)
+  include
+    _result = uv_chdir(_cPath->_start);
+  if result < 0
+    return uv_err(result)
+  return Ok
 
 pub enum FileType
   void File

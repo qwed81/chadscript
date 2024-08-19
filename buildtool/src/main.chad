@@ -1,0 +1,16 @@
+use std, build
+
+main() void!
+  # compile the buildscript
+  Exe buildScript = try exe("buildscript", "builds the project", ".")
+  addDefaultDeps(buildScript)
+  print("building...")
+  try build(buildScript)
+
+  # run the buildscript that was compiled
+  Process runBuildScript = try exec("./build/buildscript")
+  int exitCode = wait(runBuildScript)
+  if exitCode < 0
+    return Err("could not run buildscript")
+
+  return Ok

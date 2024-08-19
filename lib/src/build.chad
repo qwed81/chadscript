@@ -9,7 +9,7 @@ pub struct CLib
   char[] name
   char[] source
   char[][] includes
-  char[][] buildCommands
+  List[char[][]] buildCommands
   char[][] libPaths
   char[][] dependsOn
 
@@ -31,6 +31,7 @@ addChadFileRecursive(DirEntry entry, List[ChadFile]& files, char[] unitName, cha
     add(files, file)
   elif entry.type is Dir
     char[] sourcePath = joinPath(path, entry.name)
+    print(sourcePath)
     DirEntry[] entries = try readDir(sourcePath)
     char[] subModName = fileNameWithoutExtension(entry.name)
     for i 0:entries.len
@@ -49,9 +50,51 @@ pub exe(char[] name, char[] description, char[] sourcePath) Exe!
 pub addLib(Exe& exe, CLib clib)
   add(exe.libs, clib)
 
+pub build(Exe exe) void!
+  Process compiler = try exec("npm run start -- -o build")
+  char[] buildJson = json(exe)
+  try write(compiler.stdin, asBytes(buildJson))
+  int exitCode = wait(compiler)
+  if exitCode < 0
+    return Err("could not compile")
+  return Ok
+
+pub cLib(char[] name) CLib
+  CLib lib
+  lib.name = name
+  lib.source = ""
+  lib.includes = []
+  lib.buildCommands = list()
+  lib.libPaths = []
+  lib.dependsOn = []
+
+  return lib
+
+pub addDefaultDeps(Exe& exe)
+  CLib libuv = cLib("libuv")
+  libuv.source = "git@github.com:libuv/libuv.git"
+  libuv.includes = ["includes"]
+  libuv.buildCommands = list()
+  libuv.libPaths = [".libs/libuv.a"]
+  libuv.dependsOn = []
+
+  CLib async = cLib("async")
+  async.source = "lib/async"
+  List[char[][]] buildCommands = list(3)
+  add(buildCommands, ["clang", "-c", "-o", "async.o", "async.c", "-g", "-I../libuv/includes"])
+  add(buildCommands, ["nasm", "-f", "elf64", "x64.s", "-o", "asm.o"])
+  add(buildCommands, ["ar", "rcs", "libasync.a", "async.o", "asm.o"])
+  async.buildCommands = buildCommands
+  async.includes = ["includes"]
+  async.libPaths = ["libasync.a"]
+  async.dependsOn = ["libuv"]
+
+  add(exe.libs, libuv)
+  add(exe.libs, async)
+
 # serialize the exe structure into json and write to stdout
 # note this can be fixed once serialization is implemented
-pub finalize(Exe exe)
+pub json(Exe exe) char[]
   StrBuf json = strBuf()
   append(json, '{')
 
@@ -77,7 +120,7 @@ pub finalize(Exe exe)
 
   append(json, '}')
 
-  print(json)
+  return view(json)
 
 # appends "propName": "propValue"
 appendProp(StrBuf& json, char[] propName, char[] propValue)
@@ -112,6 +155,26 @@ appendPropList(StrBuf& json, char[] listName, char[][] items)
       append(json, ',')
   append(json, ']')
 
+appendCharList(StrBuf& json, char[][] items)
+  append(json, '[')
+  for i 0:items.len
+    append(json, '\"')
+    append(json, items[i])
+    append(json, '\"')
+    if i != items.len - 1
+      append(json, ',')
+  append(json, ']')
+
+# appends "buildCommands": [...]
+appendBuildCommands(StrBuf& json, List[char[][]] buildCommands)
+  append(json, "\"buildCommands\": [") 
+  for i 0:buildCommands.len
+    appendCharList(json, buildCommands[i])
+    if i != buildCommands.len - 1
+      append(json, ',')
+
+  append(json, ']')
+
 # appends { ... }
 appendCLib(StrBuf& json, CLib lib)
   append(json, '{')
@@ -125,7 +188,7 @@ appendCLib(StrBuf& json, CLib lib)
   appendPropList(json, "includes", lib.includes)
   append(json, ',')
 
-  appendPropList(json, "buildCommands", lib.buildCommands)
+  appendBuildCommands(json, lib.buildCommands)
   append(json, ',')
 
   appendPropList(json, "libPaths", lib.libPaths)
