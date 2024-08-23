@@ -207,6 +207,10 @@ function codeGenType(type: Type): string {
     }
     return type.val;
   }
+  if (type.tag == 'ptr') {
+    return codeGenType(type.val) + '*';
+  }
+
   let typeStr = '_' + toStr(type);
   typeStr = replaceAll(typeStr, '(', '_op');
   typeStr = replaceAll(typeStr, ')', '_cp');
@@ -568,6 +572,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     // doesn't need to reserve the variable
     return exprText;
   }
+  else if (expr.tag == 'ptr') {
+    exprText = `&(${codeGenLeftExpr(expr.val, addInst, ctx, position)})`;
+  }
 
   // void types do not need to reserve their spot or be saved to the stack
   if (expr.type.tag == 'primative' && expr.type.val == 'void') {
@@ -629,6 +636,11 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
   else if (leftExpr.tag == 'arr_offset_int') {
     let leftName = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
     let innerName = codeGenExpr(leftExpr.val.index, addInst, ctx, position);
+
+    if (leftExpr.val.var.type.tag == 'ptr') {
+      return `${leftName}[${innerName}]`;
+    }
+
     let memGuard = `if (${innerName} < 0 || ${leftName}._len <= ${innerName}) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
     memGuard += `snprintf(__buf, 128, "invalid access of array with index %ld", ${innerName}); `

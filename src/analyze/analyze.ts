@@ -104,6 +104,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'bool_const', val: boolean, type: Type.Type }
   | { tag: 'num_const', val: number, type: Type.Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
+  | { tag: 'ptr', val: LeftExpr, type: Type.Type }
 
 interface DotOp {
   left: Expr
@@ -1611,6 +1612,31 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'fn_call') {
+    // check if builtin function
+    if (expr.val.fn.tag == 'var' && expr.val.fn.val == 'ptr') {
+      if (expr.val.exprs.length != 1) {
+        logError(expr.position, 'ptr expects 1 argument');
+        return null;
+      }
+      let variable = ensureExprValid(expr.val.exprs[0], null, table, scope, position, false);
+      if (variable == null) {
+        return null;
+      }
+      if (variable.tag != 'left_expr') {
+        logError(expr.position, 'ptr must be of variable');
+        return null;
+      }
+
+      computedExpr = { 
+        tag: 'ptr',
+        val: variable.val, 
+        type: {
+          tag: 'ptr',
+          val: variable.val.type 
+        }
+      };
+    }
+    
     // check if initialization of enum
     if (expectedReturn != null
       && expectedReturn.tag == 'enum' 

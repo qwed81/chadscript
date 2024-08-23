@@ -48,6 +48,7 @@ interface Struct {
 
 type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte' }
   | { tag: 'generic', val: string }
+  | { tag: 'ptr', val: Type }
   | { tag: 'arr', constant: boolean, val: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
@@ -210,6 +211,10 @@ function typeApplicableStateful(
     if (sub.constant && !supa.constant) {
       return false;
     }
+    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
+  }
+
+  if (sub.tag == 'ptr' && supa.tag == 'ptr') {
     return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
   }
 
@@ -427,7 +432,7 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'arr') {
+  if (struct.tag == 'arr' || struct.tag == 'ptr') {
     return { tag: 'default', returnType: struct.val };
   }
 
@@ -474,7 +479,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
 }
 
 function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'arr') {
+  if (struct.tag == 'arr' || struct.tag == 'ptr') {
     return { tag: 'default', returnType: struct.val };
   }
 
@@ -587,6 +592,14 @@ function resolveType(
       }
       resolvedGenerics.push(resolvedGeneric);
     }
+
+    if (def.val.name == 'ptr') {
+      if (resolvedGenerics.length != 1 && position != null) {
+        logError(position, 'pointer expected 1 generic');
+      }
+      return { tag: 'ptr', val: resolvedGenerics[0] }
+    }
+
     return resolveStruct(def.val.name, resolvedGenerics, refTable, position);
   } 
   else if (def.tag == 'fn') {
