@@ -1,0 +1,59 @@
+{
+  "exeName": "chadhttp",
+  "chadFiles": [
+    {
+      "unitName": "std",
+      "srcPath": "lib/src/std.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h",
+        "uv.h",
+        "async/includes/async.h"
+      ]
+    },
+    {
+      "unitName": "build",
+      "srcPath": "lib/src/build.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    },
+    {
+      "unitName": "test",
+      "srcPath": "chadhttp/src/main.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h"
+      ]
+    }
+  ],
+  "libs": [
+    {
+      "name": "libuv",
+      "source": "git@github.com:libuv/libuv.git",
+      "includes": ["includes"],
+      "buildCommands": [],
+      "libPaths": [".libs/libuv.a"],
+      "dependsOn": []
+    },
+    {
+      "name": "async",
+      "source": "lib/async",
+      "buildCommands": [
+        ["clang", "-c", "-o", "async.o", "async.c", "-g", "-I../libuv/includes"],
+        ["nasm", "-f", "elf64", "x64.s", "-o", "asm.o"],
+        ["ar", "rcs", "libasync.a", "async.o", "asm.o"]
+      ],
+      "includes": ["includes"],
+      "libPaths": ["libasync.a"],
+      "dependsOn": ["libuv"]
+    }
+  ]
+}

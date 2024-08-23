@@ -469,9 +469,17 @@ void onTcpWrite(uv_write_t* req, int status) {
 
 void onTcpClose(uv_handle_t* stream) {
   IORequest* ioReq = (IORequest*)stream->data;
-  ioReq->tcpClose.outResult = 0;
   enqueue(&taskQueue, &ioReq->returnToState);
   free(stream);
+}
+
+void onTcpShutdown(uv_shutdown_t* req, int status) {
+  IORequest* ioReq = (IORequest*)req->data;
+  ioReq->tcpClose.outResult = status;
+
+  req->handle->data = ioReq;
+
+  uv_close((uv_handle_t*)req->handle, onTcpClose);
 }
 
 void onProcExit(uv_process_t* proc, int64_t exitCode, int signal) {
@@ -523,6 +531,7 @@ void processIORequests() {
   uv_pipe_t* stdoutPipe;
   uv_pipe_t* stdinPipe;
   uv_pipe_t* stderrPipe;
+  uv_shutdown_t* shutDown;
 
   int result;
   bool hasElement = tryDequeue(&ioQueue, &ioReq);
@@ -589,8 +598,9 @@ void processIORequests() {
         uv_write(writeReq, ioReq->tcpWrite.inHandle, &ioReq->tcpWrite.buf, 1, onTcpWrite);
         break;
       case TcpClose:
-        ((uv_handle_t*)ioReq->tcpClose.inHandle)->data = ioReq;
-        uv_close(ioReq->tcpClose.inHandle, onTcpClose);
+        shutDown = malloc(sizeof(uv_shutdown_t));
+        shutDown->data = ioReq;
+        uv_shutdown(shutDown, (uv_stream_t*)ioReq->tcpClose.inHandle, onTcpShutdown);
         break;
       case ProgramRun:
         stdoutPipe = malloc(sizeof(uv_pipe_t));
@@ -767,7 +777,7 @@ int closeTcp(TcpHandle handle) {
   request.tcpClose.inHandle = handle;
 
   greenFnYield(&request, &request.returnToState);
-  return request.tcpWrite.outResult;
+  return request.tcpClose.outResult;
 }
 
 ChildResult runProgram(char** args) {

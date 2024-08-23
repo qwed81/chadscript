@@ -679,6 +679,12 @@ tcpListenStart(int handle, TcpConnectionArgs[T] args)
 
   TcpSocket socket = { handle = streamHandle, refCountPtr = 0 }
   void! result = args.handler(socket, args.args)
+
+  # let me close the socket
+  include
+    int64_t* refCount = malloc(sizeof(int64_t));
+    *refCount = 0;
+    _socket._refCountPtr = (int64_t)refCount;
   close(socket)
 
 pub listen(char[] host, int port, T args, void!(TcpSocket&, T) handler) void!

@@ -40,6 +40,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   chadDotC += '\n#include "chad.h"';
   chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
   chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %ld: %s\\n", file, line, message); \nexit(-1); \n}'
+  chadDotC += 'int initRuntime(int amt);';
 
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
@@ -104,6 +105,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   chadDotC +=
   `
   int main() {
+  initRuntime(1);
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
     fprintf(stderr, "%s\\n", result._Err._start);
