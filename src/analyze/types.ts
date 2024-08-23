@@ -2,7 +2,7 @@ import { logError, compilerError, Position, NULL_POS } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR, MATH_OP,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
@@ -20,19 +20,6 @@ const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
 const BYTE: Type = { tag: 'primative', val: 'byte' };
-const MATH_OP = {
-  tag: 'enum' ,
-  val: {
-    fields: [
-      { name: 'add', type: { tag: 'primative', val: 'void' }, visibility: null },
-      { name: 'sub', type: { tag: 'primative', val: 'void' }, visibility: null },
-      { name: 'mul', type: { tag: 'primative', val: 'void' }, visibility: null },
-      { name: 'div', type: { tag: 'primative', val: 'void' }, visibility: null }
-    ],
-    generics: [],
-    id: 'std.MathOperator'
-  }
-}
 
 interface Field {
   visibility: Parse.FieldVisibility
@@ -379,17 +366,7 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
     }
   }
 
-  let fnResult = resolveFn('math', null, [a, b, MATH_OP as Type], refTable, null);
-  if (fnResult == null || fnResult.fnType.tag != 'fn') {
-    return null;
-  }
-  return {
-    tag: 'fn',
-    returnType: fnResult.fnType.val.returnType,
-    fnName: fnResult.fnName,
-    fnType: fnResult.fnType,
-    unitName: fnResult.unitName
-  };
+  return null;
 }
 
 function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {

@@ -1470,31 +1470,6 @@ function ensureBinOpValid(
     else if (operation.tag == 'fn') {
       let exprs: Expr[] = [exprLeft, exprRight];
 
-      // for overloading math
-      let variantIndex: number = -1;
-      if (op == '+') {
-        variantIndex = 0;
-      }
-      else if (op == '-') {
-        variantIndex = 1;
-      }
-      else if (op == '*') {
-        variantIndex = 2;
-      }
-      else if (op == '/') {
-        variantIndex = 3;
-      }
-
-      if (variantIndex != -1) {
-        exprs.push({
-          tag: 'enum_init',
-          variantIndex,
-          fieldName: Type.MATH_OP.val.fields[variantIndex].name,
-          fieldExpr: null,
-          type: Type.MATH_OP as Type.Type 
-        });
-      }
-
       computedExpr = {
         tag: 'fn_call',
         val: {
