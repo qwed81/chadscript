@@ -568,10 +568,10 @@ function tryParseType(tokens: Token[]): Type | null {
       return { tag: 'arr', val: innerType };
     }
     if (lastToken == '!') {
-      return { tag: 'generic', val: { name: 'Res', generics: [innerType] } };
+      return { tag: 'generic', val: { name: 'res', generics: [innerType] } };
     }
     else if (lastToken == '?') {
-      return { tag: 'generic', val: { name: 'Opt', generics: [innerType] } };
+      return { tag: 'generic', val: { name: 'opt', generics: [innerType] } };
     } 
     else {
       return { tag: 'link', val: innerType };

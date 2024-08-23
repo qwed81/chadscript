@@ -108,7 +108,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   initRuntime(1);
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
-    fprintf(stderr, "%s\\n", result._Err._start);
+    fprintf(stderr, "%s\\n", result._Err._base);
   }
   return result.tag;
   }

@@ -12,7 +12,7 @@ export {
 
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
-const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'core.range' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
@@ -27,7 +27,7 @@ const STR: Type = {
       { visibility: 'get', name: 'len', type: INT }
     ],
     generics: [],
-    id: 'std.str'
+    id: 'core.str'
   }
 }
 
@@ -40,7 +40,7 @@ const STR_BUF: Type = {
       { visibility: 'get', name: 'capacity', type: INT }
     ],
     generics: [],
-    id: 'std.strbuf'
+    id: 'core.strbuf'
   }
 }
 
@@ -73,7 +73,7 @@ function createRes(genericType: Type): Type {
   return {
     tag: 'enum',
     val: {
-      id: 'std.Res',
+      id: 'core.res',
       fields: [
         { name: 'Ok', type: genericType, visibility: null },
         { name: 'Err', type: STR, visibility: null }
@@ -188,7 +188,7 @@ function toStr(t: Type | null): string {
 }
 
 function isRes(type: Type): boolean {
-  return type.tag == 'enum' && type.val.id == 'std.Res';
+  return type.tag == 'enum' && type.val.id == 'core.res';
 }
 
 // fnHeader field is used to calculate whether a generic should accept any type
@@ -455,13 +455,13 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
   }
 
   // try to index with options
-  if (index.tag == 'enum' && index.val.id == 'std.Opt') {
+  if (index.tag == 'enum' && index.val.id == 'core.opt') {
     let retry = canGetIndex(struct, index.val.fields[1].type, refTable);
     if (retry != null) {
       return retry;
     }
   }
-  if (struct.tag == 'enum' && struct.val.id == 'std.Opt') {
+  if (struct.tag == 'enum' && struct.val.id == 'core.opt') {
     let retry = canGetIndex(struct.val.fields[1].type, index, refTable);
     if (retry != null) {
       return retry;
@@ -469,13 +469,13 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
   }
 
   // try to index with results
-  if (index.tag == 'enum' && index.val.id == 'std.Res') {
+  if (index.tag == 'enum' && index.val.id == 'core.res') {
     let retry = canGetIndex(struct, index.val.fields[0].type, refTable);
     if (retry != null) {
       return retry;
     }
   }
-  if (struct.tag == 'enum' && struct.val.id == 'std.Res') {
+  if (struct.tag == 'enum' && struct.val.id == 'core.res') {
     let retry = canGetIndex(struct.val.fields[0].type, index, refTable);
     if (retry != null) {
       return retry;
@@ -502,13 +502,13 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
   }
 
   // try to index with options
-  if (index.tag == 'enum' && index.val.id == 'std.Opt') {
+  if (index.tag == 'enum' && index.val.id == 'core.opt') {
     let retry = canSetIndex(struct, index.val.fields[1].type, exprType, refTable);
     if (retry != null) {
       return retry;
     }
   }
-  if (struct.tag == 'enum' && struct.val.id == 'std.Opt') {
+  if (struct.tag == 'enum' && struct.val.id == 'core.opt') {
     let retry = canSetIndex(struct.val.fields[1].type, index, exprType, refTable);
     if (retry != null) {
       return retry;
@@ -516,13 +516,13 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
   }
 
   // try to index with results
-  if (index.tag == 'enum' && index.val.id == 'std.Res') {
+  if (index.tag == 'enum' && index.val.id == 'core.res') {
     let retry = canSetIndex(struct, index.val.fields[0].type, exprType, refTable);
     if (retry != null) {
       return retry;
     }
   }
-  if (struct.tag == 'enum' && struct.val.id == 'std.Res') {
+  if (struct.tag == 'enum' && struct.val.id == 'core.res') {
     let retry = canSetIndex(struct.val.fields[0].type, index, exprType, refTable);
     if (retry != null) {
       return retry;
