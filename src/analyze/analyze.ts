@@ -719,6 +719,62 @@ function analyzeInst(
       return null;
     }
 
+    if (inst.val.op == '+=' && Type.typeApplicable(to.type, Type.STR_BUF, false)) {
+      let expr = ensureExprValid(inst.val.expr, null, table, scope, inst.position);
+      if (expr == null) {
+        return null;
+      }
+
+      let strImpl = Type.resolveFn('str', Type.STR, [expr.type], table, inst.position);
+      if (strImpl == null) {
+        return null;
+      }
+
+      let implFnExpr: Expr = {
+        tag: 'left_expr',
+        val: {
+          tag: 'fn',
+          unitName: strImpl.unitName,
+          fnName: strImpl.fnName,
+          refTable: table,
+          type: strImpl.fnType
+        },
+        type: strImpl.fnType
+      }
+
+      let appendFn = Type.resolveFn('append', Type.VOID, [Type.STR_BUF, expr.type], table, inst.position);
+      if (appendFn == null) {
+        logError(inst.position, "could not find 'append'");
+        return null;
+      }
+      return {
+        tag: 'expr',
+        position: inst.position,
+        val: {
+          tag: 'fn_call',
+          val: {
+            exprs: [
+              {
+                tag: 'left_expr',
+                val: to,
+                type: to.type
+              },
+              expr,
+              implFnExpr
+            ],
+            fn: {
+              tag: 'fn',
+              unitName: appendFn.unitName,
+              fnName: appendFn.fnName,
+              type: appendFn.fnType,
+              refTable: table
+            }
+          },
+          type: Type.VOID
+        }
+      };
+    }
+
     let expr = ensureExprValid(inst.val.expr, to.type, table, scope, inst.position);
     if (expr == null) {
       return null;
@@ -730,6 +786,7 @@ function analyzeInst(
       return null;
     }
 
+    // += on strbuf
     if (inst.val.op == '+=' || inst.val.op == '-=') {
       if (Type.canMath(to.type, expr.type, table) == null) {
         logError(inst.position, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);

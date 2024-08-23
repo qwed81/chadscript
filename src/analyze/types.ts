@@ -2,7 +2,7 @@ import { logError, compilerError, Position, NULL_POS } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, MUT_STR,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, STR_BUF,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
@@ -18,7 +18,7 @@ const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
 const BYTE: Type = { tag: 'primative', val: 'byte' };
-const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
+
 const STR: Type = {
   tag: 'struct',
   val: {
@@ -28,6 +28,19 @@ const STR: Type = {
     ],
     generics: [],
     id: 'std.str'
+  }
+}
+
+const STR_BUF: Type = {
+  tag: 'struct',
+  val: {
+    fields: [
+      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR } },
+      { visibility: 'get', name: 'len', type: INT },
+      { visibility: 'get', name: 'capacity', type: INT }
+    ],
+    generics: [],
+    id: 'std.strbuf'
   }
 }
 
