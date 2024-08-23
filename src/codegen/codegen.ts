@@ -516,7 +516,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = `(${ codeGenType(expr.type) }){ ._ptr = ${typedPtr}, ._start = ${typedPtr}, ._len = ${expr.val.length}, ._refCount = ${refCount} }`;
   }
   else if (expr.tag == 'str_const') {
-    exprText = `(${ codeGenType(STR) }){ ._ptr = "${expr.val}", ._start = "${expr.val}", ._len = ${ strLen(expr.val) }, ._refCount = NULL }`;
+    exprText = `(${ codeGenType(STR) }){ ._base = "${expr.val}", ._len = ${ strLen(expr.val) } }`;
   }
   else if (expr.tag == 'fmt_str') {
     let exprs = expr.val;

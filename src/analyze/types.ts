@@ -10,8 +10,6 @@ export {
   OperatorResult, getUnitNameOfStruct, standardizeType
 }
 
-const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
-const STR: Type = { tag: 'arr', constant: true, val: { tag: 'primative', val: 'char' } }
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
 const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.Range' } };
@@ -20,6 +18,18 @@ const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
 const NUM: Type = { tag: 'primative', val: 'num' };
 const BYTE: Type = { tag: 'primative', val: 'byte' };
+const MUT_STR: Type = { tag: 'arr', constant: false, val: { tag: 'primative', val: 'char' } }
+const STR: Type = {
+  tag: 'struct',
+  val: {
+    fields: [
+      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR } },
+      { visibility: 'get', name: 'len', type: INT }
+    ],
+    generics: [],
+    id: 'std.str'
+  }
+}
 
 interface Field {
   visibility: Parse.FieldVisibility

@@ -1042,7 +1042,9 @@ function ensureLeftExprValid(
         },
         type: operation.returnType
       }
-      if (operation.returnType.tag != 'arr') {
+
+      if (operation.returnType.tag != 'ptr') {
+        logError(leftExpr.val.var.position, 'expected a ptr');
         return null;
       }
 
