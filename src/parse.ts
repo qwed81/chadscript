@@ -677,6 +677,11 @@ function parseFnHeader(
     pub = true;
   }
 
+  if (tokens[0].val != 'fn' && tokens[1].val != 'fn') {
+    logError(header.position, 'fn keyword required');
+    return null;
+  }
+
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
     return null;
