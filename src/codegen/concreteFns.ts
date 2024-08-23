@@ -310,7 +310,7 @@ function resolveExpr(
     let returnType = applyGenericMap(expr.type, genericMap);
     return { tag: 'fn_call', val: { fn, exprs }, type: returnType };
   }
-  else if (expr.tag == 'arr_init') {
+  else if (expr.tag == 'list_init') {
     let exprs: Expr[] = [];
     for (let e of expr.val) {
       let res = resolveExpr(e, genericMap, ctx);
@@ -318,7 +318,7 @@ function resolveExpr(
     }
 
     let type = applyGenericMap(expr.type, genericMap);
-    return { tag: 'arr_init', val: exprs, type: type }
+    return { tag: 'list_init', val: exprs, type: type }
   }
   else if (expr.tag == 'struct_init') {
     let inits = [];

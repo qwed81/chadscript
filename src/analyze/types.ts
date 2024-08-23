@@ -87,12 +87,13 @@ function createList(genericType: Type): Type {
   return {
     tag: 'struct',
     val: {
-      id: 'std.List',
       fields: [
-        { name: 'arr', type: { tag: 'arr', constant: false, val: genericType }, visibility: null },
-        { name: 'len', type: INT, visibility: 'get' }
+        { visibility: 'get', name: 'base', type: { tag: 'ptr', val: genericType } },
+        { visibility: 'get', name: 'len', type: INT },
+        { visibility: 'get', name: 'capacity', type: INT }
       ],
-      generics: [genericType]
+      generics: [genericType],
+      id: 'core.list'
     }
   }
 }

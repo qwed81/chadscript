@@ -498,22 +498,26 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   else if (expr.tag == 'struct_init') {
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
-  else if (expr.tag == 'arr_init') {
-    if (expr.type.tag != 'arr') {
+  else if (expr.tag == 'list_init') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'core.list') {
       return 'undefined';
     }
-    let type = codeGenType(expr.type.val);
+
+    let ptrType = expr.type.val.fields[0].type;
+    if (ptrType.tag != 'ptr') {
+      compilerError('expected ptr field');
+      return 'undefined';
+    }
+    let type = codeGenType(ptrType.val);
+
     let ptr = reserveVarNoStack(ctx);
-    let refCount = reserveVarNoStack(ctx);
     let typedPtr = reserveVarNoStack(ctx);
-    addInst.before.push(`void *${ptr} = malloc(${expr.val.length} * sizeof(${type}) + sizeof(int64_t));`);
+    addInst.before.push(`void *${ptr} = malloc(${expr.val.length} * sizeof(${type}));`);
     addInst.before.push(`${type} *${typedPtr} = (${type}*)(${ptr});`);
-    addInst.before.push(`int64_t *${refCount} = (int64_t*)(${typedPtr} + ${expr.val.length});`);
-    addInst.before.push(`*${refCount} = 1;`);
     for (let i = 0; i < expr.val.length; i++) {
       addInst.before.push(`${typedPtr}[${i}] = ${ codeGenExpr(expr.val[i], addInst, ctx, position) };`);
     }
-    exprText = `(${ codeGenType(expr.type) }){ ._ptr = ${typedPtr}, ._start = ${typedPtr}, ._len = ${expr.val.length}, ._refCount = ${refCount} }`;
+    exprText = `(${ codeGenType(expr.type) }){ ._base = ${typedPtr}, ._len = ${expr.val.length}, ._capacity = ${expr.val.length} }`;
   }
   else if (expr.tag == 'str_const') {
     exprText = `(${ codeGenType(STR) }){ ._base = "${expr.val}", ._len = ${ strLen(expr.val) } }`;

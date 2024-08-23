@@ -195,7 +195,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'assert', val: Expr, position: Position }
   | { tag: 'fn_call', val: FnCall, position: Position }
   | { tag: 'struct_init', val: StructInitField[], position: Position }
-  | { tag: 'arr_init', val: Expr[], position: Position }
+  | { tag: 'list_init', val: Expr[], position: Position }
   | { tag: 'str_const', val: string, position: Position }
   | { tag: 'fmt_str', val: Expr[], position: Position }
   | { tag: 'char_const', val: string, position: Position }
@@ -1014,7 +1014,7 @@ function tryParseArrInit(tokens: Token[], position: Position): Expr | null {
 
   let splits = balancedSplit(tokens.slice(1, -1), ',');
   if (splits.length == 1 && splits[0].length == 0) {
-    return { tag: 'arr_init', val: [], position };
+    return { tag: 'list_init', val: [], position };
   }
 
   let exprs: Expr[] = [];
@@ -1026,7 +1026,7 @@ function tryParseArrInit(tokens: Token[], position: Position): Expr | null {
     exprs.push(expr);
   }
 
-  return { tag: 'arr_init', val: exprs, position };
+  return { tag: 'list_init', val: exprs, position };
 }
 
 function tryParseStructInit(tokens: Token[], position: Position): Expr | null {

@@ -95,7 +95,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'assert_bool', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
-  | { tag: 'arr_init', val: Expr[], type: Type.Type }
+  | { tag: 'list_init', val: Expr[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
   | { tag: 'str_const', val: string, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
@@ -1709,16 +1709,22 @@ function ensureExprValid(
     }
   } 
 
-  if (expr.tag == 'arr_init') {
+  if (expr.tag == 'list_init') {
     let exprType: Type.Type | null = null;
     if (expectedReturn != null) {
-      if (expectedReturn.tag != 'arr') {
+      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'core.list') {
         if (!ignoreErrors) {
-          logError(position, 'arr not expected');
+          logError(position, 'list expected');
         }
         return null;
       }
-      exprType = expectedReturn.val;
+
+      let ptrType = expectedReturn.val.fields[0].type;
+      if (ptrType.tag != 'ptr') {
+        compilerError('expected ptr field');
+        return null;
+      }
+      exprType = ptrType.val;
     }
 
     let newExprs: Expr[] = []
@@ -1739,8 +1745,7 @@ function ensureExprValid(
       return null;
     }
 
-    let type: Type.Type = { tag: 'arr', constant: false, val: exprType };
-    computedExpr = { tag: 'arr_init', val: newExprs, type };
+    computedExpr = { tag: 'list_init', val: newExprs, type: Type.createList(exprType) };
   }
 
   if (expr.tag == 'struct_init') {
