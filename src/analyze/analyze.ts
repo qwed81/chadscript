@@ -1823,7 +1823,7 @@ function ensureExprValid(
       // if the type is not a string, look of the implementation of str and use
       // that instead
       if (!Type.typeApplicable(e.type, Type.STR, false)) {
-        let fn = Type.resolveFn('toStr', Type.STR, [e.type], table, position);
+        let fn = Type.resolveFn('str', Type.STR, [e.type], table, position);
         if (fn == null) {
           if (e.type.tag == 'generic' && !ignoreErrors) {
             logError(position, `hint: no implementation of toStr(${Type.toStr(e.type)}). generic may not have toStr`)
@@ -1854,7 +1854,7 @@ function ensureExprValid(
       }
       newExprs.push(e);
     }
-    computedExpr = { tag: 'fmt_str', val: newExprs, type: Type.MUT_STR }
+    computedExpr = { tag: 'fmt_str', val: newExprs, type: Type.STR }
   }
 
   if (expr.tag == 'char_const') {

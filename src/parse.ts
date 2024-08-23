@@ -919,13 +919,13 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'while', val: { cond, body: b }, position: line.position };
   } 
   else if (keyword == 'for') {
-    if (tokens.length < 3) {
-      logError(line.position, 'expected for <var> <iter>');
+    if (tokens.length < 4 || tokens[2].val != 'in') {
+      logError(line.position, 'expected for <var> in <iter>');
       return null;
     }
 
     let varName = tokens[1].val;
-    let exprTokens = tokens.slice(2);
+    let exprTokens = tokens.slice(3);
     let expr = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (expr == null) {
       return null;

@@ -526,7 +526,6 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     let totalLen = reserveVarNoStack(ctx);
     let output = reserveVarNoStack(ctx);
     let idx = reserveVarNoStack(ctx);
-    let refCount = reserveVarNoStack(ctx);
 
     addInst.before.push(`${strType}* ${total} = malloc(sizeof(${strType}) * ${exprs.length});`);
     addInst.before.push(`size_t ${totalLen} = 0;`);
@@ -537,16 +536,14 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     }
     
     addInst.before.push(`char* ${output} = malloc(${totalLen} + sizeof(int64_t));`);
-    addInst.before.push(`int64_t* ${refCount} = (int64_t*)(${output} + ${totalLen});`)
-    addInst.before.push(`*${refCount} = 1;`)
     addInst.before.push(`size_t ${idx} = 0;`)
     for (let i = 0; i < exprs.length; i++) {
-      addInst.before.push(`memcpy(${output} + ${idx}, ${total}[${i}]._start, ${total}[${i}]._len);`)
+      addInst.before.push(`memcpy(${output} + ${idx}, ${total}[${i}]._base, ${total}[${i}]._len);`)
       addInst.before.push(`${idx} += ${total}[${i}]._len;`)
     }
 
     addInst.before.push(`free(${total});`);
-    exprText = `(${strType}){ ._ptr = ${output}, ._start = ${output}, ._len = ${totalLen}, ._refCount = ${refCount} }`;
+    exprText = `(${strType}){ ._base = ${output}, ._len = ${totalLen} }`;
   } else if (expr.tag == 'char_const') {
     exprText = `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
