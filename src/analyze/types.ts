@@ -144,6 +144,10 @@ function toStr(t: Type | null): string {
     return t.val;
   }
 
+  if (t.tag == 'ptr') {
+    return toStr(t.val) + '*';
+  }
+
   if (t.tag == 'struct' || t.tag == 'enum') {
     let generics: string = '[';
     for (let i = 0; i < t.val.generics.length; i++) {
@@ -285,6 +289,9 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
   }
   else if (input.tag == 'arr') {
     return { tag: 'arr', constant: input.constant, val: applyGenericMap(input.val, map) };
+  }
+  else if (input.tag == 'ptr') {
+    return { tag: 'ptr', val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'fn') {
     let newReturnType: Type = applyGenericMap(input.val.returnType, map);
@@ -437,7 +444,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
   }
 
   let fnResult = resolveFn('getIndex', null, [struct, index], refTable, null);
-  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'arr') {
+  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'ptr') {
     return {
       tag: 'fn',
       returnType: fnResult.fnType.val.returnType,
@@ -484,7 +491,7 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
   }
 
   let fnResult = resolveFn('prepareIndex', null, [struct, index, exprType], refTable, null);
-  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'arr') {
+  if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'ptr') {
     return {
       tag: 'fn',
       returnType: fnResult.fnType.val.returnType,

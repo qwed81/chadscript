@@ -736,7 +736,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
   if (*s->_refCount == 0) {
   `
       let tag = type.val.tag;
-      if (tag != 'primative' && tag != 'fn') {
+      if (tag != 'primative' && tag != 'fn' && tag != 'ptr') {
         refCountStr +=
         `
     for (size_t i = 0; i < s->_len; i++) {
@@ -757,7 +757,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
       else {
         for (let i = 0; i < type.val.fields.length; i++) {
           let tag = type.val.fields[i].type.tag;
-          if (tag == 'primative' || tag == 'fn') {
+          if (tag == 'primative' || tag == 'fn' || tag == 'ptr') {
             continue;
           }
 
@@ -773,7 +773,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
       }
       for (let i = 0; i < type.val.fields.length; i++) {
         let tag = type.val.fields[i].type.tag;
-        if (tag == 'primative' || tag == 'fn') {
+        if (tag == 'primative' || tag == 'fn' || tag == 'ptr') {
           continue;
         }
 

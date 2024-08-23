@@ -359,7 +359,7 @@ function resolveExpr(
   }
   else if (expr.tag == 'ptr') {
     let val = resolveLeftExpr(expr.val, genericMap, ctx);
-    return { tag: 'ptr', val: val, type: { tag: 'ptr', val: val.type } };
+    return { tag: 'ptr', val, type: { tag: 'ptr', val: val.type } };
   }
 
   compilerError('resolveExpr unreachable');
