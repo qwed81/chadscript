@@ -349,6 +349,14 @@ function resolveExpr(
     }
     return { tag: 'fmt_str', val: resolvedExprs, type: expr.type };
   }
+  else if (expr.tag == 'cfn_call') {
+    let resolvedExprs: Expr[] = []
+    for (let val of expr.exprs) {
+      resolvedExprs.push(resolveExpr(val, genericMap, ctx));
+    }
+    let returnType = applyGenericMap(expr.type, genericMap);
+    return { tag: 'cfn_call', type: returnType, exprs: resolvedExprs, fnName: expr.fnName };
+  }
   else if (expr.tag == 'char_const'
     || expr.tag == 'int_const'
     || expr.tag =='bool_const'

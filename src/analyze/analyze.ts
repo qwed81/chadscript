@@ -105,6 +105,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'num_const', val: number, type: Type.Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
   | { tag: 'ptr', val: LeftExpr, type: Type.Type }
+  | { tag: 'cfn_call', fnName: string, exprs: Expr[], type: Type.Type }
 
 interface DotOp {
   left: Expr
@@ -1670,6 +1671,33 @@ function ensureExprValid(
           val: variable.val.type 
         }
       };
+    }
+
+    // check if it was a C fn
+    if (expr.val.fn.tag == 'dot') {
+      let mod = expr.val.fn.val.left;
+      if (mod.tag == 'left_expr' && mod.val.tag == 'var' && mod.val.val == 'C') {
+        let validExprs: Expr[] = [];
+        for (let i = 0; i < expr.val.exprs.length; i++) {
+          let callExpr = ensureExprValid(expr.val.exprs[i], null, table, scope, position, false);
+          if (callExpr == null) {
+            return null;
+          }
+          validExprs.push(callExpr);
+        }
+
+        if (expectedReturn == null) {
+          logError(position, 'C fn can not disambiguate return type');
+          return null;
+        }
+
+        computedExpr = {
+          tag: 'cfn_call',
+          exprs: validExprs,
+          type: expectedReturn,
+          fnName: expr.val.fn.val.varName
+        };
+      }
     }
     
     // check if initialization of enum

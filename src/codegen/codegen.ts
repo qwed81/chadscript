@@ -501,6 +501,16 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   else if (expr.tag == 'fn_call') {
     exprText = codeGenFnCall(expr.val, addInst, ctx, position);
   }
+  else if (expr.tag == 'cfn_call') {
+    exprText = expr.fnName + '(';
+    for (let i = 0; i < expr.exprs.length; i++) {
+      exprText += codeGenExpr(expr.exprs[i], addInst, ctx, position);
+      if (i != expr.exprs.length - 1) {
+        exprText += ', ';
+      }
+    }
+    exprText += ')';
+  }
   else if (expr.tag == 'struct_init') {
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
