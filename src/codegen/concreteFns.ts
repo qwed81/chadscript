@@ -20,7 +20,7 @@ interface CProgram {
 
 type CStruct = { tag: 'arr', val: Type }
   | { tag: 'fn', val: Type }
-  | { tag: 'struct', val: CStructImpl, manualRefCount: boolean }
+  | { tag: 'struct', val: CStructImpl, autoDrop: boolean }
   | { tag: 'enum', val: CStructImpl }
 
 interface CStructImpl {
@@ -52,7 +52,7 @@ interface ResolveContext {
   typeResolveQueue: Type[]
   queuedTypes: Set<string>,
   // tells if the type with a key string has a manual reference count impl
-  manualRefCount: Set<string>
+  autoDropSet: Set<string>
 }
 
 function replaceGenerics(prog: Program): CProgram {
@@ -68,7 +68,7 @@ function replaceGenerics(prog: Program): CProgram {
  
   let ctx: ResolveContext = {
     allFns: prog.fns,
-    manualRefCount: new Set(),
+    autoDropSet: new Set(),
     fnResolveQueue: [],
     queuedFns: new Set(),
     typeResolveQueue: [],
@@ -120,7 +120,7 @@ function replaceGenerics(prog: Program): CProgram {
     resolved.push(cFn);
   }
 
-  let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.manualRefCount);
+  let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.autoDropSet);
   return { orderedStructs, fns: resolved, strTable: prog.strTable, entry };
 }
 
@@ -153,7 +153,7 @@ function queueType(ctx: ResolveContext, type: Type) {
   ctx.typeResolveQueue.push(type);
   ctx.queuedTypes.add(key);
   if (isCounted) {
-    ctx.manualRefCount.add(key);
+    ctx.autoDropSet.add(key);
   }
 }
 
@@ -570,7 +570,7 @@ function createDefaultFn(
 
 function resolveManualRefCountImpl(type: Type, ctx: ResolveContext): boolean {
   for (let fn of ctx.allFns) {
-    if (fn.name != 'unsafeChangeRefCount') {
+    if (fn.name != 'drop') {
       continue;
     }
 
@@ -580,8 +580,8 @@ function resolveManualRefCountImpl(type: Type, ctx: ResolveContext): boolean {
     }
 
     let paramTypes = fn.type.val.paramTypes;
-    if (paramTypes.length < 2 || !typeApplicable(paramTypes[1], INT, false)) {
-      logError(NULL_POS, 'invalid type signature for unsafeChangeRefCount');
+    if (paramTypes.length < 1) {
+      logError(NULL_POS, 'invalid type signature for drop');
       return false;
     }
 
@@ -603,10 +603,10 @@ function typeTreeRecur(
   inStack: Set<string>,
   alreadyGenned: Set<string>,
   output: CStruct[],
-  manualRefCountSet: Set<string>
+  autoDropSet: Set<string>
 ) {
   if (type.tag == 'arr') {
-    typeTreeRecur(type.val, inStack, alreadyGenned, output, manualRefCountSet);
+    typeTreeRecur(type.val, inStack, alreadyGenned, output, autoDropSet);
 
     let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
@@ -621,9 +621,9 @@ function typeTreeRecur(
     if (alreadyGenned.has(typeKey)) {
       return;
     }
-    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, manualRefCountSet);
+    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, autoDropSet);
     for (let i = 0; i < type.val.paramTypes.length; i++) {
-      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, manualRefCountSet);
+      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, autoDropSet);
     }
     alreadyGenned.add(typeKey);
     output.push({ tag: 'fn', val: type });
@@ -645,7 +645,7 @@ function typeTreeRecur(
 
   inStack.add(typeKey);
   for (let field of type.val.fields) {
-    typeTreeRecur(field.type, inStack, alreadyGenned, output, manualRefCountSet);
+    typeTreeRecur(field.type, inStack, alreadyGenned, output, autoDropSet);
   }
   inStack.delete(typeKey);
 
@@ -663,17 +663,17 @@ function typeTreeRecur(
       fieldTypes,
       fieldNames
     },
-    manualRefCount: manualRefCountSet.has(typeKey)
+    autoDrop: autoDropSet.has(typeKey)
   };
 
   output.push(cStruct);
 }
 
-function orderStructs(typeResolveQueue: Type[], manualRefCountSet: Set<string>): CStruct[] {
+function orderStructs(typeResolveQueue: Type[], autoDropSet: Set<string>): CStruct[] {
   let alreadyGenned: Set<string> = new Set();
   let output: CStruct[] = [];
   for (let type of typeResolveQueue) {
-    typeTreeRecur(type, new Set(), alreadyGenned, output, manualRefCountSet);
+    typeTreeRecur(type, new Set(), alreadyGenned, output, autoDropSet);
   }
 
   return output;

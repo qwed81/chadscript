@@ -11,6 +11,7 @@ export {
 interface FnContext {
   strTable: string[]
   genericMap: Map<string, Type>,
+  cstructMap: Map<string, CStruct> // maps the type to its CStruct
   vars: [Type, string][]
   varsNoStack: string[]
   returnType: Type
@@ -42,9 +43,13 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %ld: %s\\n", file, line, message); \nexit(-1); \n}'
   chadDotC += 'int initRuntime(int amt);';
 
+  let cstructMap: Map<string, CStruct> = new Map();
+
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
+
     if (struct.tag == 'struct' || struct.tag == 'enum') {
+      cstructMap.set(JSON.stringify(struct.val.name), struct);
       chadDotH += '\n' + codeGenType(struct.val.name) + ';';
     }
     else if (struct.tag == 'arr') {
@@ -95,7 +100,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
         unitData += `\n#include "${headers[i]}"`;
       }
     }
-    unitData += codeGenFn(fn, prog.strTable);
+    unitData += codeGenFn(fn, prog.strTable, cstructMap);
     unitMap.set(fn.unitName, unitData);
   }
 
@@ -105,7 +110,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   chadDotC +=
   `
   int main() {
-  initRuntime(1);
+  initRuntime(0);
   ${ codeGenType(createRes(VOID)) } result = ${entryName}();
   if (result.tag == 1) {
     fprintf(stderr, "%s\\n", result._Err._base);
@@ -125,7 +130,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   return outputFiles;
 }
 
-function codeGenFn(fn: CFn, strTable: string[]) {
+function codeGenFn(fn: CFn, strTable: string[], cstructMap: Map<string, CStruct>) {
   if (fn.type.tag != 'fn') {
     return;
   }
@@ -135,7 +140,8 @@ function codeGenFn(fn: CFn, strTable: string[]) {
     vars: [],
     genericMap: fn.genericMap,
     strTable: strTable,
-    returnType: fn.type.val.returnType
+    returnType: fn.type.val.returnType,
+    cstructMap
   };
   let fnCode = codeGenFnHeader(fn) + ' {';
   let retType = fn.type.val.returnType;
@@ -233,10 +239,10 @@ function codeGenFnHeader(fn: CFn): string {
     return '';
   }
 
-  // unsafeChangeRefCount is a 'global' function as it does not really
+  // drop is a 'global' function as it does not really
   // exist in any unit because it is called by the compiler regardless of imports
   let unitName = fn.unitName;
-  if (fn.name == 'unsafeChangeRefCount') {
+  if (fn.name == 'drop') {
     unitName = '';
   }
 
@@ -611,6 +617,14 @@ function codeGenStructInit(expr: Expr, addInst: AddInst, ctx: FnContext, positio
     }
   }
 
+  let cStruct = ctx.cstructMap.get(JSON.stringify(expr.type));
+  let refCountVar = reserveVarNoStack(ctx);
+  addInst.before.push(`int64_t* ${refCountVar} = malloc(sizeof(int64_t));`);
+  addInst.before.push(`*${refCountVar} = 1;`)
+  if (cStruct != undefined && cStruct.tag == 'struct' && cStruct.autoDrop) {
+    output += `, .refCount = ${refCountVar}`;
+  }
+
   return output + ' }'
 }
 
@@ -714,64 +728,40 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
     let typeStr = codeGenType(type);
     let typeStrNoSpace = typeStr.replace(' ', '');
 
-    // forward declare the __unsafeChangeRefCount so it can be used
-    let intStr = codeGenType(INT);
-    let refCountFn: Type = { tag: 'fn', val: { returnType: VOID, paramTypes: [type, INT], linkedParams: [true, false] } };
-    let manualRefCountStr: string = getFnUniqueId('', 'unsafeChangeRefCount', refCountFn);
-    if (struct.tag == 'struct' && struct.manualRefCount) {
-      refCountStr += `\nvoid ${manualRefCountStr}(${typeStr} *s, ${intStr}* amt);`;
+    // forward declare the __drop so it can be used
+    let dropFn: Type = { tag: 'fn', val: { returnType: VOID, paramTypes: [type], linkedParams: [true] } };
+    let dropName: string = getFnUniqueId('', 'drop', dropFn);
+    if (struct.tag == 'struct' && struct.autoDrop) {
+      refCountStr += `\nvoid ${dropName}(${typeStr} *s);`;
     }
 
     refCountStr += `\nvoid changeRefCount_${typeStrNoSpace}(${typeStr} *s, int64_t amt) {`
-    if (struct.tag == 'arr') {
-      if (type.tag != 'arr') {
-        continue;
-      }
-      let innerTypeStr = codeGenType(type.val);
-      let innerTypeStrNoSpace = innerTypeStr.replace(' ', '');
-
-      refCountStr += 
-      `
-  if (s->_refCount == NULL) return;
-  *s->_refCount += amt;
-  if (*s->_refCount == 0) {
-  `
-      let tag = type.val.tag;
-      if (tag != 'primative' && tag != 'fn' && tag != 'ptr') {
-        refCountStr +=
-        `
-    for (size_t i = 0; i < s->_len; i++) {
-      changeRefCount_${innerTypeStrNoSpace}(&s->_ptr[i], amt);
-    }`
-      }
-      refCountStr += `\n  free(s->_ptr);\n  }`
-    }
-    else if (struct.tag == 'struct'){
+    if (struct.tag == 'struct'){
       if (type.tag != 'struct') {
         continue;
       }
 
-      // just call the reference count function instead of auto implement
-      if (struct.manualRefCount) {
-        refCountStr += `\n  ${manualRefCountStr}(s, &amt);`;
+      // drop will be called before all of its fields
+      if (struct.autoDrop) {
+        refCountStr += `if (s->refCount != NULL) { *s->refCount += amt; if (*s->refCount == 0) ${dropName}(s); }`
       }
-      else {
-        for (let i = 0; i < type.val.fields.length; i++) {
-          let tag = type.val.fields[i].type.tag;
-          if (tag == 'primative' || tag == 'fn' || tag == 'ptr') {
-            continue;
-          }
 
-          let typeStrNoSpace = codeGenType(type.val.fields[i].type);
-          typeStrNoSpace = typeStrNoSpace.replace(' ', '');
-          refCountStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
+      for (let i = 0; i < type.val.fields.length; i++) {
+        let tag = type.val.fields[i].type.tag;
+        if (tag == 'primative' || tag == 'fn' || tag == 'ptr') {
+          continue;
         }
+
+        let typeStrNoSpace = codeGenType(type.val.fields[i].type);
+        typeStrNoSpace = typeStrNoSpace.replace(' ', '');
+        refCountStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
       }
     }
     else if (struct.tag == 'enum') {
       if (type.tag != 'enum') {
         continue;
       }
+
       for (let i = 0; i < type.val.fields.length; i++) {
         let tag = type.val.fields[i].type.tag;
         if (tag == 'primative' || tag == 'fn' || tag == 'ptr') {
@@ -802,6 +792,10 @@ function codeGenStructDefs(structs: CStruct[]): string {
       for (let i = 0; i < struct.val.fieldTypes.length; i++) {
         structStr += '\n  ' + codeGenType(struct.val.fieldTypes[i]) + ' _' + struct.val.fieldNames[i] + ';';
       }
+      if (struct.autoDrop) {
+        structStr += '\n  int64_t* refCount;';
+      }
+
       structStr += '\n};'
     }
     else if (struct.tag == 'enum') {
