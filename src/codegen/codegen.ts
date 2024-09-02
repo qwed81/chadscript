@@ -515,7 +515,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
   else if (expr.tag == 'list_init') {
-    if (expr.type.tag != 'struct' || expr.type.val.id != 'core.list') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'core.arr') {
       return 'undefined';
     }
 

@@ -93,7 +93,7 @@ function createList(genericType: Type): Type {
         { visibility: 'get', name: 'capacity', type: INT }
       ],
       generics: [genericType],
-      id: 'core.list'
+      id: 'core.arr'
     }
   }
 }

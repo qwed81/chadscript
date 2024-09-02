@@ -42,30 +42,30 @@ pub fn null() ptr[T]
     return NULL;
   return null()
 
-pub struct list[T]
+pub struct arr[T]
   get ptr[T] base
   get int capacity
   get int len
 
-pub fn list() list[T]
+pub fn arr() arr[T]
   return { base = alloc(4), capacity = 4, len = 0 }
 
-pub fn list(int amt) list[T]
+pub fn arr(int amt) arr[T]
   return { base = alloc(amt), capacity = amt, len = amt }
 
-pub fn prepareIndex(list[T]& l, int index, T val) ptr[T]
+pub fn prepareIndex(arr[T]& l, int index, T val) ptr[T]
   return ptr(l.base[index])
 
-pub fn getIndex(list[T]& l, int index) ptr[T]
+pub fn getIndex(arr[T]& l, int index) ptr[T]
   return ptr(l.base[index])
 
-pub fn getIndex(list[T]& l, range r) ptr[list[T]]
-  ptr[list[T]] newList = alloc(1)
+pub fn getIndex(arr[T]& l, range r) ptr[arr[T]]
+  ptr[arr[T]] newList = alloc(1)
   int len = r.end - r.start
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
   return newList
 
-pub fn add(list[T]& l, T val)
+pub fn add(arr[T]& l, T val)
   if l.len == l.capacity
     ptr[T] newAlloc = alloc(l.capacity * 2)
 
@@ -110,16 +110,16 @@ pub fn strbuf() strbuf
 pub fn strbuf(int size) strbuf
   return { base = alloc(size), capacity = size, len = size }
 
-pub fn fromUtf8(list[byte] bytes) strbuf
+pub fn fromUtf8(arr[byte] bytes) strbuf
   strbuf buf = strbuf(bytes.len)
   for i in 0:bytes.len
     buf[i] = char(bytes[i])
   return buf
 
-pub fn toUtf8(strbuf buf) list[byte]
-  list[byte] bytes = list(strbuf.len)
+pub fn toUtf8(strbuf buf) arr[byte]
+  arr[byte] bytes = arr(buf.len)
   for i in 0:buf.len
-    bytes[i] = buf[i]
+    bytes[i] = byte(buf[i])
   return bytes
 
 pub fn strbuf(str start) strbuf

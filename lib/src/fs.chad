@@ -53,7 +53,7 @@ pub fn close(File& file)
     closeFile(_file->_handle);
   file.alreadyClosed = false
 
-pub fn read(File& file, list[byte] buf, int position=-1) int! amtRead
+pub fn read(File& file, arr[byte] buf, int position=-1) int! amtRead
   int result
   include
     _result = readFile(_file->_handle, _buf->_base, _buf->_len, *_position);
@@ -61,7 +61,7 @@ pub fn read(File& file, list[byte] buf, int position=-1) int! amtRead
     return uv_err(result)
   return result
 
-pub fn write(File& file, list[byte] bytes, int position=-1) void!
+pub fn write(File& file, arr[byte] bytes, int position=-1) void!
   int result
   include
     _result = writeFile(_file->_handle, _bytes->_base, _bytes->_len, *_position);
@@ -79,7 +79,7 @@ pub struct DirEntry
   get DirEntryType type
   get str name
 
-pub fn readDir(str path) list[DirEntry]!
+pub fn readDir(str path) arr[DirEntry]!
   int numEntries = 0
   int result = 0
   include
@@ -89,7 +89,7 @@ pub fn readDir(str path) list[DirEntry]!
   if result < 0 && result != -4095 # EOF
     return uv_err(result)
 
-  list[DirEntry] entries = list(numEntries) 
+  arr[DirEntry] entries = arr(numEntries) 
   for i in 0:numEntries
     int index = i
     int strLen

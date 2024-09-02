@@ -1741,7 +1741,7 @@ function ensureExprValid(
   if (expr.tag == 'list_init') {
     let exprType: Type.Type | null = null;
     if (expectedReturn != null) {
-      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'core.list') {
+      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'core.arr') {
         if (!ignoreErrors) {
           logError(position, 'list expected');
         }
