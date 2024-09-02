@@ -1,0 +1,186 @@
+pub enum opt[T]
+  void None
+  T Some
+
+pub enum res[T]
+  T Ok
+  str Err
+
+pub struct range
+  int start
+  int end
+
+pub fn next(range& range) int?
+  int thisIndex = range.start
+  if range.start == range.end
+    return None
+  range.start += 1
+  return thisIndex
+
+pub fn rev(range range) RangeReverse
+  return { start = range.end - 1, end = range.start - 1 }
+
+pub struct RangeReverse
+  int start
+  int end
+
+pub fn next(RangeReverse& range) int?
+  int thisIndex = range.start
+  if range.start == range.end
+    return None
+  range.start -= 1
+  return thisIndex
+
+pub fn alloc(int amt) ptr[T]
+  ptr[T] output
+  include
+    _output = malloc(sizeof($(T)) * *_amt);
+  return output
+
+pub fn null() ptr[T]
+  include
+    return NULL;
+  return null()
+
+pub struct list[T]
+  get ptr[T] base
+  get int capacity
+  get int len
+
+pub fn list() list[T]
+  return { base = alloc(4), capacity = 4, len = 0 }
+
+pub fn list(int amt) list[T]
+  return { base = alloc(amt), capacity = amt, len = amt }
+
+pub fn prepareIndex(list[T]& l, int index, T val) ptr[T]
+  return ptr(l.base[index])
+
+pub fn getIndex(list[T]& l, int index) ptr[T]
+  return ptr(l.base[index])
+
+pub fn getIndex(list[T]& l, range r) ptr[list[T]]
+  ptr[list[T]] newList = alloc(1)
+  int len = r.end - r.start
+  newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
+  return newList
+
+pub fn add(list[T]& l, T val)
+  if l.len == l.capacity
+    ptr[T] newAlloc = alloc(l.capacity * 2)
+
+    for i in 0:l.len
+      newAlloc[i] = l.base[i]
+    l.base = newAlloc
+    l.capacity = l.capacity * 2
+
+  l.base[l.len] = val
+  l.len += 1
+
+pub struct str
+  get ptr[char] base
+  get int len
+
+pub fn str(str s) str
+  return s
+
+pub fn getIndex(str& s, int index) ptr[char]
+  return ptr(s.base[index])
+
+pub fn getIndex(str& s, range r) ptr[str]
+  ptr[str] newStr = alloc(1)
+  int len = r.end - r.start
+  newStr[0] = { base = ptr(s.base[r.start]), len = len }
+  return newStr
+
+pub fn cstr(str s) ptr[char]
+  ptr[char] cstr = alloc(s.len + 1)
+  for i in 0:s.len
+    cstr[i] = s[i]
+  return cstr
+
+pub struct strbuf
+  get ptr[char] base
+  get int capacity
+  get int len
+
+pub fn strbuf() strbuf
+  return { base = alloc(8), capacity = 8, len = 0 }
+
+pub fn strbuf(int size) strbuf
+  return { base = alloc(size), capacity = size, len = size }
+
+pub fn fromUtf8(list[byte] bytes) strbuf
+  strbuf buf = strbuf(bytes.len)
+  for i in 0:bytes.len
+    buf[i] = char(bytes[i])
+  return buf
+
+pub fn toUtf8(strbuf buf) list[byte]
+  list[byte] bytes = list(strbuf.len)
+  for i in 0:buf.len
+    bytes[i] = buf[i]
+  return bytes
+
+pub fn strbuf(str start) strbuf
+  strbuf buf = strbuf()
+  append(buf, start)
+  return buf
+
+pub fn str(strbuf buf) str
+  return { base = buf.base, len = buf.len }
+
+fn appendOne(strbuf& s, char c)
+  if s.len == s.capacity
+    ptr[char] newAlloc = alloc(s.capacity * 2)
+
+    for i in 0:s.len
+      newAlloc[i] = s.base[i]
+    s.base = newAlloc
+    s.capacity = s.capacity * 2
+
+  s.base[s.len] = c
+  s.len += 1
+
+pub fn append(strbuf& s, T val, str(T) strImpl=str)
+  str valAsStr = strImpl(val)
+  for i in 0:valAsStr.len
+    appendOne(s, valAsStr[i])
+  
+pub fn prepareIndex(strbuf& s, int index, T val) ptr[char]
+  return ptr(s.base[index])
+
+pub fn getIndex(strbuf& s, int index) ptr[char]
+  return ptr(s.base[index])
+
+pub fn getIndex(strbuf& s, range r) ptr[strbuf]
+  ptr[strbuf] newStr = alloc(1)
+  int len = r.end - r.start
+  newStr[0] = { base = ptr(s.base[r.start]), capacity = len, len = len }
+  return newStr
+
+pub fn str(int val) str
+  int len
+  include
+    _len = snprintf(NULL, 0, "%ld", *_val);
+
+  ptr[char] output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%ld", *_val);
+  return { base = output, len = len }
+  
+pub fn print(T val, str(T) strImpl=str) 
+  ptr[char] printStr = cstr(strImpl(val))
+  include
+    printf("%s\n", _printStr);
+
+pub fn char(byte val) char
+  include 
+    return (char)(*_val);
+  return '\0'
+
+pub fn byte(char val) byte
+  include
+    return (byte)(*_val);
+  return byte('\0')
+

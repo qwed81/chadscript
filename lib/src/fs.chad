@@ -1,0 +1,121 @@
+use core
+
+fn uv_err(int code) T!
+  strbuf errMessage = strbuf(1024)
+  include
+    uv_err_name_r(*_code, _errMessage._base, 1024);
+  T! err = Err(str(errMessage))
+
+  return err
+
+pub enum FileFlags
+  void Read
+  void ReadWrite
+
+pub struct File
+  int handle
+  bool alreadyClosed
+
+fn drop(File& file)
+  close(file)
+
+pub fn open(str path, FileFlags flags, bool createIfMissing=false) File!
+  int fileHandle = -1
+  int intFlags = 0
+  int intMode
+  include
+    _intMode = S_IRUSR | S_IWUSR;
+
+  if flags is Read
+    include
+      _intFlags = UV_FS_O_RDONLY;
+  elif flags is ReadWrite
+    include
+      _intFlags = UV_FS_O_RDWR;
+
+  if createIfMissing
+    include
+      _intFlags |= UV_FS_O_CREAT;
+
+  ptr[char] cPath = cstr(path)
+  include
+    _fileHandle = openFile(_cPath, _intFlags, _intMode);
+  if fileHandle < 0
+    return uv_err(fileHandle)
+
+  return { handle = fileHandle, alreadyClosed = false }
+
+pub fn close(File& file)
+  if file.alreadyClosed
+    return
+
+  include
+    closeFile(_file->_handle);
+  file.alreadyClosed = false
+
+pub fn read(File& file, list[byte] buf, int position=-1) int! amtRead
+  int result
+  include
+    _result = readFile(_file->_handle, _buf->_base, _buf->_len, *_position);
+  if result < 0
+    return uv_err(result)
+  return result
+
+pub fn write(File& file, list[byte] bytes, int position=-1) void!
+  int result
+  include
+    _result = writeFile(_file->_handle, _bytes->_base, _bytes->_len, *_position);
+  if result < 0
+    return uv_err(result)
+
+  return Ok
+
+pub enum DirEntryType
+  void File
+  void Dir
+  void Other
+
+pub struct DirEntry
+  get DirEntryType type
+  get str name
+
+pub fn readDir(str path) list[DirEntry]!
+  int numEntries = 0
+  int result = 0
+  include
+    ReadDirResult dirResult = readDir(_path->_base);
+    _numEntries = dirResult.len;
+    _result = dirResult.result;
+  if result < 0 && result != -4095 # EOF
+    return uv_err(result)
+
+  list[DirEntry] entries = list(numEntries) 
+  for i in 0:numEntries
+    int index = i
+    int strLen
+    include
+      const char* filePath = dirResult.files[_index].name;
+      _strLen = strlen(filePath);
+
+    strbuf name = strbuf(strLen)
+    DirEntryType fileType = File
+    include
+      // copy the path into name
+      memcpy(_name._base, filePath, _strLen);
+
+      // set the fileType
+      if (dirResult.files[_index].type == UV_DIRENT_FILE) {
+        _fileType.tag = 0;
+      }
+      else if (dirResult.files[_index].type == UV_DIRENT_DIR) {
+        _fileType.tag = 1;
+      }
+      else {
+        _fileType.tag = 2;
+      }
+
+    entries[i] = { type = fileType, name = str(name) }
+
+  return Ok(entries)
+  
+  
