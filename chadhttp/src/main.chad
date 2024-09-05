@@ -1,19 +1,39 @@
-use std
+use core, http
 
-main() void!
-  try listen("127.0.0.1", 3000, 0, handler)
+fn main() void!
+  Routes p = routes()
+  addRoute(p, "/", defaultPath)
+  addRoute(p, "/home", homePath)
+  try httpListen("127.0.0.1", 3000, p)
   return Ok
 
-handler(TcpSocket& socket, int args) void!
-  char[] content = "What's up sigmas"
-  StrBuf buf = strBuf()
-  append(buf, "HTTP/1.1 200 OK\n")
-  append(buf, "Date: Thu, 22 Aug 2024 18:17:31 GMT\n")
-  append(buf, "Server: Apache/2.4.41 (Ubuntu)\n")
-  append(buf, "Content-Type: text/html; charset=UTF-8\n")
-  append(buf, "Content-Length: {content.len}\n\n")
-  append(buf, content)
+pub fn defaultPath(HttpRequest req) HttpResponse!
+  strbuf content = strbuf()
+  content += "<html>"
+  content += "<head>"
+  content += "<title>Sample Response</title>"
+  content += "</head>"
+  content += "<body>"
+  content += "<h1>Hello, World!</h1>"
+  content += "</body>"
+  content += "</html>"
 
-  try write(socket, asBytes(toStr(buf)))
-  return Ok
+  return { body = str(content), status = OK, contentType = Html }
+
+pub fn homePath(HttpRequest req) HttpResponse!
+  strbuf content = strbuf()
+  content += "<html>"
+  content += "<head>"
+  content += "<title>Sample Response</title>"
+  content += "</head>"
+  content += "<body>"
+  content += "<h1>Home Page</h1>"
+  content += "</body>"
+  content += "</html>"
+
+  return { body = str(content), status = OK, contentType = Html }
+
+  
+
+
 

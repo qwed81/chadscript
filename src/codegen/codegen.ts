@@ -325,6 +325,9 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     }
 
   } 
+  else if (inst.tag == 'arena') {
+    instText = codeGenBody(inst.val, indent + 1, false, false, ctx);
+  }
   else if (inst.tag == 'assign') {
     let rightExpr = codeGenExpr(inst.val.expr, addInst, ctx, inst.position);
     let leftExpr = codeGenLeftExpr(inst.val.to, addInst, ctx, inst.position);
@@ -716,6 +719,12 @@ function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: 
   if (type.tag == 'enum' || type.tag == 'struct' || type.tag == 'arr') {
     addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
   }
+}
+
+function codeGenArenaMoveImpls(structs: CStruct[]): string {
+  let arenaMoveStr = '';
+
+  return arenaMoveStr;
 }
 
 // belongs in the C file

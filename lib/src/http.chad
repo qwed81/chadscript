@@ -1,0 +1,77 @@
+use core, net
+
+pub struct Routes
+  arr[HttpResponse!(HttpRequest)] handlers
+  arr[str] paths
+
+pub fn routes() Routes 
+  return { handlers = [], paths = [] }
+
+pub fn addRoute(Routes& routes, str path, HttpResponse!(HttpRequest) handler) 
+  add(routes.handlers, handler)
+  add(routes.paths, path)
+
+fn httpEntry(TcpSocket& socket, Routes routes) void!
+  Scanner[TcpSocket] reqScanner = scanner(socket)
+
+  str firstLine = try nextLine(reqScanner)
+  arr[str] splits = split(firstLine)
+  if splits.len < 3
+    return Err("malformed request")
+
+  HttpMethod method = GET
+  if eq(splits[0], "POST")
+    method = POST
+  elif !eq(splits[0], "GET")
+    return Err("unsupported method")
+
+  HttpRequest req = { method = method, route = splits[1] }
+  HttpResponse res = { status = NOT_FOUND, contentType = Html, body = "not found" }
+  for i in 0:routes.paths.len
+    if eq(routes.paths[i], req.route)
+      HttpResponse! resultRes = routes.handlers[i](req)
+      if resultRes is Ok 
+        res = resultRes
+      else
+        res = { status = INTERNAL_SERVER_ERROR, contentType = Html, body = "internal server error"}
+
+  strbuf responseStr = strbuf()
+  if res.status is OK
+    responseStr += "HTTP/1.1 200 OK\n"
+  elif res.status is NOT_FOUND
+    responseStr += "HTTP/1.1 404 NOT FOUND\n"
+  else
+    responseStr += "HTTP/1.1 500 Internal Server Error\n"
+
+  responseStr += "Content-Type: text/html; charset=UTF-8\n"
+  responseStr += "Content-Length: {res.body.len}\n\n"
+  responseStr += res.body
+  try write(socket, toUtf8(responseStr))
+
+  return Ok
+
+pub fn httpListen(str host, int port, Routes routes) void!
+  return listen(host, port, routes, httpEntry)
+
+pub enum HttpMethod
+  void GET
+  void POST
+
+pub enum HttpStatusCode
+  void OK
+  void NOT_FOUND
+  void INTERNAL_SERVER_ERROR 
+
+pub enum HttpContentType
+  void Html
+  void Json
+
+pub struct HttpResponse
+  get HttpStatusCode status
+  get HttpContentType contentType
+  get str body
+
+pub struct HttpRequest
+  get str route
+  get HttpMethod method
+

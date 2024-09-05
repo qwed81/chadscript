@@ -2,8 +2,8 @@
   "exeName": "chadhttp",
   "chadFiles": [
     {
-      "unitName": "std",
-      "srcPath": "lib/src/std.chad",
+      "unitName": "core",
+      "srcPath": "lib/src/core.chad",
       "headers": [
         "stdio.h",
         "stdlib.h",
@@ -14,8 +14,8 @@
       ]
     },
     {
-      "unitName": "build",
-      "srcPath": "lib/src/build.chad",
+      "unitName": "http",
+      "srcPath": "lib/src/http.chad",
       "headers": [
         "stdio.h",
         "stdlib.h",
@@ -24,7 +24,31 @@
       ]
     },
     {
-      "unitName": "test",
+      "unitName": "fs",
+      "srcPath": "lib/src/fs.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h",
+        "uv.h",
+        "async/includes/async.h"
+      ]
+    },
+    {
+      "unitName": "net",
+      "srcPath": "lib/src/net.chad",
+      "headers": [
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "stdbool.h",
+        "uv.h",
+        "async/includes/async.h"
+      ]
+    },
+    {
+      "unitName": "main",
       "srcPath": "chadhttp/src/main.chad",
       "headers": [
         "stdio.h",

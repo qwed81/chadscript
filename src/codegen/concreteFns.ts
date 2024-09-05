@@ -210,6 +210,10 @@ function resolveInst(
     let body = resolveInstBody(inst.val, genericMap, ctx);
     return { tag: 'else', val: body, position: inst.position };
   }
+  else if (inst.tag == 'arena') {
+    let body = resolveInstBody(inst.val, genericMap, ctx);
+    return { tag: 'arena', val: body, position: inst.position };
+  }
   else if (inst.tag == 'for_in') {
     let body = resolveInstBody(inst.val.body, genericMap, ctx);
     let iter = resolveExpr(inst.val.iter, genericMap, ctx);

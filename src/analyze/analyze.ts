@@ -63,6 +63,7 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'for_in', val: ForIn, position: Position }
   | { tag: 'expr', val: Expr, position: Position }
   | { tag: 'else', val: Inst[], position: Position }
+  | { tag: 'arena', val: Inst[], position: Position }
   | { tag: 'return', val: Expr | null, position: Position }
   | { tag: 'break', position: Position }
   | { tag: 'continue', position: Position }
@@ -617,6 +618,14 @@ function analyzeInst(
     };
   }
 
+  if (inst.tag == 'arena') {
+    let body = analyzeInstBody(inst.val, table, scope);
+    if (body == null) {
+      return null;
+    }
+    return { tag: 'arena', val: body, position: inst.position };
+  }
+
   if (inst.tag == 'break' || inst.tag == 'continue') {
     if (!scope.inLoop) {
       logError(inst.position, inst.tag + ' must be used in a loop');
@@ -933,13 +942,13 @@ function ensureLeftExprValid(
           fallThrough = true;
         }
         else if (!hasField && validExpr.type.val.id == 'core.res'
-          && possibleVariants[0] == 'Err') {
+          && possibleVariants[0] == 'Ok') {
           validExpr = {
             tag: 'left_expr',
             val: {
               tag: 'dot',
               val: {
-                varName: 'Err',
+                varName: 'Ok',
                 left: validExpr
               },
               type: validExpr.type.val.fields[0].type
@@ -1246,7 +1255,7 @@ function ensureFnCallValid(
 
   // it is a function declared in the scope, ensure that fnType fits the params and return type
   if (fnType.tag != 'fn') {
-    logError(position, 'type is not a function');
+    logError(position, `${Type.toStr(fnType)} type is not a function`);
     return null;
   }
 

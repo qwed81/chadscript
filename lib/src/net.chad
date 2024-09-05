@@ -1,4 +1,4 @@
-use std
+use core
 
 fn uv_err(int code) T!
   strbuf errMessage = strbuf(1024)
@@ -12,24 +12,20 @@ pub struct TcpSocket
   ptr[void] handle
   bool alreadyClosed
 
-drop(TcpSocket& socket)
-  close(socket);
+fn drop(TcpSocket& socket)
+  close(socket)
 
 struct TcpConnectionArgs[T]
   T args
   void!(TcpSocket, T) handler
 
-tcpListenStart(int handle, TcpConnectionArgs[T] args)
-  int streamHandle
-  include
-    _streamHandle = (int64_t)_handle;
-
-  TcpSocket socket = { handle = streamHandle, alreadyClosed = false }
+fn tcpListenStart(int handle, TcpConnectionArgs[T] args)
+  TcpSocket socket = { handle = ptrCast(ptr(handle)), alreadyClosed = false }
   void! result = args.handler(socket, args.args)
   close(socket)
 
-pub listen(str host, int port, T args, void!(TcpSocket&, T) handler) void!
-  str cHost = cstr(host)
+pub fn listen(str host, int port, T args, void!(TcpSocket&, T) handler) void!
+  ptr[char] cHost = cstr(host)
   void(int, TcpConnectionArgs[T]) start = tcpListenStart
   int result
   include
@@ -38,43 +34,43 @@ pub listen(str host, int port, T args, void!(TcpSocket&, T) handler) void!
     item->_args = *_args;
     item->_handler = *_handler;
 
-    _result = listenTcp(_cHost._start, *_port, item, (void*)_start);
+    _result = listenTcp(_cHost, *_port, item, (void*)_start);
     free(item);
   if result < 0
     return uv_err(result)
 
   return Ok
 
-pub connect(str host, int port) TcpSocket!
-  str cHost = cstr(host)
+pub fn connect(str host, int port) TcpSocket!
+  ptr[char] cHost = cstr(host)
   int result
-  int outHandle
+  ptr[void] outHandle
 
   include
-    _result = connectTcp(_cHost._start, *_port, (TcpHandle*)&_outHandle);
+    _result = connectTcp(_cHost, *_port, (TcpHandle*)&_outHandle);
   if result < 0
     return uv_err(result)
   
   return { handle = outHandle, alreadyClosed = false }
 
-pub read(TcpSocket& socket, list[byte] buf) int!
+pub fn read(TcpSocket& socket, arr[byte] buf) int!
   int result
   include
-    _result = readTcp((void*)_socket->_handle, _buf->_start, _buf->_len);
+    _result = readTcp((void*)_socket->_handle, _buf->_base, _buf->_len);
   if result < 0
     return uv_err(result)
   return result
 
-pub write(TcpSocket& socket, list[byte] bytes) void!
+pub fn write(TcpSocket& socket, arr[byte] bytes) void!
   int result
   include
-    _result = writeTcp((void*)_socket->_handle, _bytes->_start, _bytes->_len);
+    _result = writeTcp((void*)_socket->_handle, _bytes->_base, _bytes->_len);
   if result < 0
     return uv_err(result)
   return Ok
 
-pub close(TcpSocket& socket)
-  if socket.alreadyClose == true
+pub fn close(TcpSocket& socket)
+  if socket.alreadyClosed == true
     return
     
   socket.alreadyClosed = true

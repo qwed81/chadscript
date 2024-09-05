@@ -162,6 +162,7 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'assign', val: Assign, position: Position }
   | { tag: 'macro', val: Macro, position: Position }
   | { tag: 'include', val: Include, position: Position }
+  | { tag: 'arena', val: Inst[], position: Position }
 
 interface DotOp {
   left: Expr,
@@ -855,6 +856,18 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'if', val: { cond, body: b }, position: line.position };
   } 
+  else if (keyword == 'arena') {
+    if (tokens.length != 1) {
+      logError(line.position, 'unexpected tokens');
+      return null;
+    }
+
+    let b = parseInstBody(body);
+    if (b == null) {
+      return null;
+    }
+    return { tag: 'arena', val: b, position: line.position };
+  }
   else if (line.tokens[0].val == '@') {
     if (tokens.length != 2) {
       logError(line.position, 'invalid macro');

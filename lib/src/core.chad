@@ -42,6 +42,11 @@ pub fn null() ptr[T]
     return NULL;
   return null()
 
+pub fn ptrCast(ptr[S] input) ptr[E]
+  include
+    return ($(ptr[E]))(*_input);
+  return ptrCast(input)
+
 pub struct arr[T]
   get ptr[T] base
   get int capacity
@@ -54,12 +59,15 @@ pub fn arr(int amt) arr[T]
   return { base = alloc(amt), capacity = amt, len = amt }
 
 pub fn prepareIndex(arr[T]& l, int index, T val) ptr[T]
+  assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
 pub fn getIndex(arr[T]& l, int index) ptr[T]
+  assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
 pub fn getIndex(arr[T]& l, range r) ptr[arr[T]]
+  assert r.start >= 0 && r.end <= l.len
   ptr[arr[T]] newList = alloc(1)
   int len = r.end - r.start
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
@@ -84,10 +92,20 @@ pub struct str
 pub fn str(str s) str
   return s
 
+pub fn eq(str a, str b) bool
+  if a.len != b.len
+    return false
+  for i in 0:a.len
+    if a[i] != b[i]
+      return false
+  return true
+
 pub fn getIndex(str& s, int index) ptr[char]
+  assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
 pub fn getIndex(str& s, range r) ptr[str]
+  assert r.start >= 0 && r.end <= s.len
   ptr[str] newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), len = len }
@@ -99,6 +117,23 @@ pub fn cstr(str s) ptr[char]
     cstr[i] = s[i]
   return cstr
 
+pub fn split(str s) arr[str]
+  return split(s, ' ')
+
+pub fn split(str s, char c) arr[str]
+  arr[str] output = []
+  int end = 0
+  int start = 0
+  while true
+    if end >= s.len 
+      break
+    if s[end] == c
+      add(output, s[start:end])
+      start = end + 1
+    end += 1
+  add(output, s[start:s.len])
+  return output
+
 pub struct strbuf
   get ptr[char] base
   get int capacity
@@ -109,6 +144,12 @@ pub fn strbuf() strbuf
 
 pub fn strbuf(int size) strbuf
   return { base = alloc(size), capacity = size, len = size }
+
+pub fn clone(strbuf buf) strbuf
+  ptr[char] newBase = alloc(buf.len)
+  for i in 0:buf.len
+    newBase[i] = buf[i]
+  return { base = newBase, capacity = buf.len, len = buf.len }
 
 pub fn fromUtf8(arr[byte] bytes) strbuf
   strbuf buf = strbuf(bytes.len)
@@ -148,12 +189,15 @@ pub fn append(strbuf& s, T val, str(T) strImpl=str)
     appendOne(s, valAsStr[i])
   
 pub fn prepareIndex(strbuf& s, int index, T val) ptr[char]
+  assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
 pub fn getIndex(strbuf& s, int index) ptr[char]
+  assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
 pub fn getIndex(strbuf& s, range r) ptr[strbuf]
+  assert r.start >= 0 && r.end <= s.len
   ptr[strbuf] newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), capacity = len, len = len }
@@ -174,6 +218,11 @@ pub fn print(T val, str(T) strImpl=str)
   include
     printf("%s\n", _printStr);
 
+pub fn str(char val) str
+  strbuf buf = strbuf(1)
+  buf[0] = val
+  return str(buf)
+
 pub fn char(byte val) char
   include 
     return (char)(*_val);
@@ -181,6 +230,31 @@ pub fn char(byte val) char
 
 pub fn byte(char val) byte
   include
-    return (byte)(*_val);
+    return ($(byte))(*_val);
   return byte('\0')
 
+pub struct Scanner[T]
+  arr[byte] buf
+  T stream
+  int!(T, arr[byte]) readBytes
+  int amtInBuf
+  int i
+
+pub fn scanner(T stream, int!(T, arr[byte]) r=read) Scanner[T]
+  return { buf = arr(1024), stream = stream, readBytes = r, amtInBuf = 0, i = 0 }
+
+pub fn nextLine(Scanner[T]& scanner) str!
+  strbuf output = strbuf()
+
+  while true
+    if scanner.i == scanner.amtInBuf
+      scanner.amtInBuf = try scanner.readBytes(scanner.stream, scanner.buf)
+      scanner.i = 0
+    if scanner.amtInBuf == 0
+      return Err("no next element")
+    output += char(scanner.buf[scanner.i])
+    scanner.i += 1
+    if scanner.buf[scanner.i] == byte('\n')
+      break
+
+  return Ok(str(output))

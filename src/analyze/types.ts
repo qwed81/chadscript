@@ -425,6 +425,9 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (typeApplicable(a, BOOL, false) && typeApplicable(b, BOOL, false)) {
     return { tag: 'default', returnType: BOOL };
   }
+  if (typeApplicable(a, BYTE, false) && typeApplicable(b, BYTE, false)) {
+    return { tag: 'default', returnType: BOOL };
+  }
 
   let fnResult = resolveFn('eq', BOOL, [a, b], refTable, null);
   if (fnResult == null) {
