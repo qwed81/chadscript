@@ -30,7 +30,7 @@ interface OutputFile {
 function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   let newProg: CProgram = replaceGenerics(prog);
 
-  let chadDotH = '';
+  let chadDotH = 'char **uv_setup_args(int argc, char **argv); int initRuntime(int threadCount);';
   let chadDotC = '';
   for (let include of includes) {
     chadDotH += '\n#include <' + include + '>';
@@ -485,7 +485,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   } 
   else if (expr.tag == 'try') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
+    changeRefCount(addInst.before, exprName, expr.val.type, 1);
     addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._Err = ${exprName}._Err }; goto cleanup; }`);
+    changeRefCount(addInst.before, exprName, expr.val.type, -1);
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'primative' && expr.type.val == 'void') {
       return '';
