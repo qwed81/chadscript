@@ -8,8 +8,8 @@ pub fn routes() Routes
   return { handlers = [], paths = [] }
 
 pub fn addRoute(Routes& routes, str path, HttpResponse!(HttpRequest) handler) 
-  add(routes.handlers, handler)
-  add(routes.paths, path)
+  routes.handlers += handler
+  routes.paths += path
 
 fn httpEntry(TcpSocket& socket, Routes routes) void!
   Scanner[TcpSocket] reqScanner = scanner(socket)

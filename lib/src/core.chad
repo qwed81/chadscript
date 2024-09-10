@@ -58,6 +58,16 @@ pub fn arr() arr[T]
 pub fn arr(int amt) arr[T]
   return { base = alloc(amt), capacity = amt, len = amt }
 
+pub fn str(arr[T] l, str(T) strImpl=str) str
+  strbuf buf = strbuf()
+  buf += "["
+  for i in 0:l.len
+    buf += strImpl(l[i])
+    if i != l.len - 1
+      buf += ','
+  buf += ']'
+  return str(buf)
+
 pub fn prepareIndex(arr[T]& l, int index, T val) ptr[T]
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
@@ -73,7 +83,7 @@ pub fn getIndex(arr[T]& l, range r) ptr[arr[T]]
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
   return newList
 
-pub fn add(arr[T]& l, T val)
+pub fn append(arr[T]& l, T val)
   if l.len == l.capacity
     ptr[T] newAlloc = alloc(l.capacity * 2)
 
@@ -84,6 +94,10 @@ pub fn add(arr[T]& l, T val)
 
   l.base[l.len] = val
   l.len += 1
+
+pub fn append(arr[T]& to, arr[T] from)
+  for i in 0:from.len
+    to += from[i]
 
 pub struct str
   get ptr[char] base
@@ -128,10 +142,10 @@ pub fn split(str s, char c) arr[str]
     if end >= s.len 
       break
     if s[end] == c
-      add(output, s[start:end])
+      output += s[start:end]
       start = end + 1
     end += 1
-  add(output, s[start:s.len])
+  output += s[start:s.len]
   return output
 
 pub struct strbuf

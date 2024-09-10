@@ -866,6 +866,45 @@ function analyzeInst(
       };
     }
 
+    if (inst.val.op == '+=' && to.type.tag != 'primative') {
+      let expr = ensureExprValid(inst.val.expr, null, table, scope, inst.position);
+      if (expr == null) {
+        return null;
+      }
+
+      let appendFn = Type.resolveFn('append', Type.VOID, [to.type, expr.type], table, inst.position);
+      if (appendFn == null) {
+        logError(inst.position, "'append' does not exist");
+        return null;
+      }
+
+      return {
+        tag: 'expr',
+        position: inst.position,
+        val: {
+          tag: 'fn_call',
+          val: {
+            exprs: [
+              {
+                tag: 'left_expr',
+                val: to,
+                type: to.type
+              },
+              expr
+            ],
+            fn: {
+              tag: 'fn',
+              unitName: appendFn.unitName,
+              fnName: appendFn.fnName,
+              type: appendFn.fnType,
+              refTable: table
+            }
+          },
+          type: Type.VOID
+        }
+      };
+    }
+
     let expr = ensureExprValid(inst.val.expr, to.type, table, scope, inst.position);
     if (expr == null) {
       return null;
