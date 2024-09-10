@@ -1,7 +1,7 @@
 import { Position, compilerError, BuildArgs } from '../index';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
-import { toStr, Type, STR, VOID, createRes, INT } from '../analyze/types';
+import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
 export {
@@ -72,6 +72,10 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   chadDotH += codeGenStructDefs(newProg.orderedStructs);
   chadDotC += codeGenRefcountImpls(newProg.orderedStructs);
 
+  for (let c of newProg.consts) {
+    chadDotH += `\nextern ${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)};`;
+  }
+
   for (let fn of newProg.fns) {
     chadDotH += codeGenFnHeader(fn) + ';';
   }
@@ -79,26 +83,21 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   // maps the unit name to its output string
   let unitMap: Map<string, string> = new Map();
 
+  // generate all constants
+  for (let c of newProg.consts) {
+    let unitData: string | undefined = unitMap.get(c.unitName);
+    if (unitData == undefined) {
+      unitData = defaultUnitData(buildArgs, c.unitName);
+    }
+    unitData += `\n${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)} = ${codeGenConst(c.expr)};`;
+    unitMap.set(c.unitName, unitData);
+  }
+
   // generate all of the functions
   for (let fn of newProg.fns) {
     let unitData: string | undefined = unitMap.get(fn.unitName);
     if (unitData == undefined) {
-      unitData = '#include "chad.h"';
-      let headers: string[] | null = null;
-      for (let i = 0; i < buildArgs.chadFiles.length; i++) {
-        if (buildArgs.chadFiles[i].unitName == fn.unitName) {
-          headers = buildArgs.chadFiles[i].headers;
-        }
-      }
-
-      if (headers == null) {
-        compilerError(`unit ${fn.unitName} not in build args`);
-        return [];
-      }
-
-      for (let i = 0; i < headers.length; i++) {
-        unitData += `\n#include "${headers[i]}"`;
-      }
+      unitData = defaultUnitData(buildArgs, fn.unitName);
     }
     unitData += codeGenFn(fn, prog.strTable, cstructMap);
     unitMap.set(fn.unitName, unitData);
@@ -128,6 +127,45 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
     outputFiles.push({ name: fileName, data: unitData });
   }
   return outputFiles;
+}
+
+function codeGenConst(expr: Expr): string {
+  if (expr.tag == 'bin') {
+    return `${codeGenConst(expr.val.left)} ${expr.val} ${codeGenConst(expr.val.right)}`;
+  } else if (expr.tag == 'char_const') {
+    return `'${expr.val}'`;
+  } else if (expr.tag == 'int_const') {
+    return `${expr.val}`;
+  } else if (expr.tag == 'bool_const') {
+    return `${expr.val}`;
+  } else if (expr.tag == 'num_const') {
+    return `${expr.val}`;
+  } else if (expr.tag == 'str_const') {
+    return `(${ codeGenType(STR) }){ ._base = "${expr.val}", ._len = ${ strLen(expr.val) } }`;
+  }
+
+  compilerError('unexpected expression in const');
+  return 'undefined';
+}
+
+function defaultUnitData(buildArgs: BuildArgs, unitName: string): string {
+  let unitData = '#include "chad.h"';
+  let headers: string[] | null = null;
+  for (let i = 0; i < buildArgs.chadFiles.length; i++) {
+    if (buildArgs.chadFiles[i].unitName == unitName) {
+      headers = buildArgs.chadFiles[i].headers;
+    }
+  }
+  
+  if (headers == null) {
+    compilerError(`unit ${unitName} not in build args`);
+    return '';
+  }
+
+  for (let i = 0; i < headers.length; i++) {
+    unitData += `\n#include "${headers[i]}"`;
+  }
+  return unitData;
 }
 
 function codeGenFn(fn: CFn, strTable: string[], cstructMap: Map<string, CStruct>) {
@@ -705,10 +743,18 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     else if (leftExpr.mode == 'iter_copy') {
       return `(_${leftExpr.val}__opt._Some)`
     }
-    else {
+    else if (leftExpr.mode == 'none') {
       return `_${leftExpr.val}`;
     }
+    else {
+      // for constants
+      return getConstUniqueId(leftExpr.mode.unitName, leftExpr.val);
+    }
   }
+}
+
+function getConstUniqueId(unitName: string, constName: string) {
+  return `_${unitName}_${constName}`;
 }
 
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {

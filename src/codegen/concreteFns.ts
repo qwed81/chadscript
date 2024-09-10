@@ -1,4 +1,4 @@
-import { Program, Fn, Inst, Expr, LeftExpr } from '../analyze/analyze';
+import { Program, Fn, Inst, Expr, LeftExpr, Const } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../index';
 import {
   Type, typeApplicableStateful, applyGenericMap, standardizeType,
@@ -13,6 +13,7 @@ export {
 
 interface CProgram {
   fns: CFn[]
+  consts: Const[]
   strTable: string[]
   orderedStructs: CStruct[]
   entry: CFn
@@ -121,7 +122,7 @@ function replaceGenerics(prog: Program): CProgram {
   }
 
   let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.autoDropSet);
-  return { orderedStructs, fns: resolved, strTable: prog.strTable, entry };
+  return { orderedStructs, consts: prog.consts, fns: resolved, strTable: prog.strTable, entry };
 }
 
 function queueType(ctx: ResolveContext, type: Type) {

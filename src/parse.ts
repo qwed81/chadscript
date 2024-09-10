@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError, NULL_POS, Position } from './index';
+import { logError, compilerError, NULL_POS, Position } from './index';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
@@ -54,10 +54,19 @@ interface Token {
   val: string
 }
 
+interface Const {
+  position: Position
+  pub: boolean
+  name: string
+  type: Type
+  expr: Expr
+}
+
 interface ProgramUnit {
   fullName: string
   uses: string[]
   fns: Fn[]
+  consts: Const[]
   structs: Struct[]
   enums: Struct[]
 }
@@ -234,7 +243,7 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
 // returns the program, null if invalid syntax, and logs all errors to the console
 function parse(unitText: string, documentName: string): ProgramUnit | null {
   let lines = getLines(unitText, documentName);
-  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], enums: [] };
+  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], consts: [], enums: [] };
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
@@ -263,7 +272,7 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
           return null;
         }
         program.enums.push(en);
-      } else if (line.tokens[0].val == 'use') {
+      } else if (line.tokens[start].val == 'use') {
         if (line.position.line != 1) {
           logError(line.position, 'uses must be at top of file');
           return null;
@@ -273,13 +282,28 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
           return null;
         }
         program.uses = uses;
-      } else {
+      } else if (line.tokens[start].val == 'fn') {
         let fn = parseFn(line, body);
         if (fn == null) {
           return null;
         }
         program.fns.push(fn);
-        
+      }
+      else if (line.tokens[start].val == 'const') {
+        let c = parseConst(line, pub);
+        if (body.length != 0) {
+          logError(line.position, 'unexpected body');
+          return null;
+        }
+
+        if (c == null) {
+          return null
+        }
+        program.consts.push(c);
+      }
+      else {
+        logError(line.position, 'unexepected statement');
+        return null;
       }
     }
   }
@@ -482,6 +506,40 @@ function parseUses(header: SourceLine): string[] | null {
 
   return uses;
 } 
+
+function parseConst(header: SourceLine, pub: boolean): Const | null {
+  if (header.tokens.length < 4) {
+    logError(header.position, 'constant and assignemnt');
+    return null;
+  }
+
+  if (header.tokens[0].val != 'const') {
+    compilerError('expected const');
+    return null;
+  }
+
+  let splitEq: Token[][] = balancedSplitTwo(header.tokens, '=');
+  if (splitEq.length != 2) {
+    logError(header.position, 'expected expression');
+    return null;
+  }
+
+  let leftLen = splitEq[0].length;
+  let name: string = splitEq[0][leftLen - 1].val;
+  let type: Type | null = tryParseType(splitEq[0].slice(1, leftLen - 1));
+  if (type == null) {
+    logError(header.position, 'expected type');
+    return null;
+  }
+
+  let expr: Expr | null = tryParseExpr(splitEq[1], positionRange(splitEq[1]));
+  if (expr == null) {
+    logError(header.position, 'expected expression');
+    return null;
+  }
+
+  return { position: header.position, pub, name, type, expr };
+}
 
 // returns the struct if it could valid parse from the header and the body, logs errors
 function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Struct | null {

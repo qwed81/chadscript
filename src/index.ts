@@ -224,7 +224,7 @@ function compile(buildArgs: BuildArgs) {
 
   console.log(process.cwd());
   let outputFileName = path.join(outputPath, buildArgs.exeName);
-  let clangArgs = [...fileNames, ...allIncludes, ...allLibs, '/home/josh/repos/chadscript/build/libuv/.libs/libuv.so'];
+  let clangArgs = [...fileNames, ...allIncludes, ...allLibs, '/home/josh/repos/chadscript/build/libuv/build/libuv.so'];
   clangArgs = ['-g', '-o', outputFileName, ...clangArgs]; 
   console.log(clangArgs);
   execProgram('clang', clangArgs)

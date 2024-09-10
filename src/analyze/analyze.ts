@@ -5,7 +5,17 @@ import * as Enum from './enum';
 
 interface Program {
   fns: Fn[]
+  consts: Const[]
   strTable: string[]
+}
+
+interface Const {
+  position: Position
+  pub: boolean
+  name: string
+  unitName: string
+  type: Type.Type
+  expr: Expr
 }
 
 interface Fn {
@@ -123,7 +133,7 @@ interface ArrOffsetSlice {
   range: Expr
 }
 
-type Mode = 'none' | 'param' | 'iter' | 'iter_copy';
+type Mode = 'none' | 'param' | 'iter' | 'iter_copy' | { tag: 'const', unitName: string};
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'prime', val: Expr, variant: string, variantIndex: number, type: Type.Type }
@@ -132,11 +142,11 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'var', val: string, mode: Mode, type: Type.Type }
   | { tag: 'fn', unitName: string, refTable: Type.RefTable, fnName: string, type: Type.Type }
 
-export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, Mode }
+export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, Mode, Const }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let strTable: string[] = [];
-  let validProgram: Program | null = { fns: [], strTable };
+  let validProgram: Program | null = { fns: [], consts: [], strTable };
 
   for (let i = 0; i < units.length; i++) {
     if (analyzeUnitDataTypes(units, i) == false) {
@@ -145,12 +155,26 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   }
 
   for (let i = 0; i < units.length; i++) {
+    let unitConsts: Const[] | null = analyzeUnitConsts(units, i); 
+    if (unitConsts == null) {
+      validProgram = null;
+    } 
+    else if (validProgram != null) {
+      for (let j = 0; j < unitConsts.length; j++) {
+        validProgram.consts.push(unitConsts[j]);
+      }
+    }
+  }
 
-
-    let unitFns: Fn[] | null = analyzeUnitFns(units, i, strTable); 
+  for (let i = 0; i < units.length; i++) {
+    let unitFns: Fn[] | null = null;
+    if (validProgram != null) {
+      unitFns = analyzeUnitFns(units, i, validProgram.consts); 
+    }
     if (unitFns == null) {
       validProgram = null;
-    } else if (validProgram != null) {
+    } 
+    else if (validProgram != null) {
       for (let j = 0; j < unitFns.length; j++) {
         validProgram.fns.push(unitFns[j]);
       }
@@ -160,7 +184,64 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   return validProgram;
 }
 
-function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, strTable: string[]): Fn[] | null {
+function analyzeUnitConsts(units: Parse.ProgramUnit[], unitIndex: number): Const[] | null {
+  let unit = units[unitIndex];
+  let table = Type.getUnitReferences(units[unitIndex], units);
+
+  // scope outside of a fn
+  let scope: FnContext = {
+    typeScope: [],
+    generics: new Set(),
+    returnType: Type.VOID,
+    inLoop: false,
+    variantScope: [],
+    consts: []
+  };
+  let consts: Const[] | null = [];
+  for (let c of unit.consts) {
+    let type = Type.resolveType(c.type, table, c.position);
+    if (type == null) {
+      consts = null;
+      break;
+    }
+
+    if (type.tag != 'primative') {
+      logError(c.position, 'only primatives supported in constants');
+      return null;
+    }
+
+    let expr = ensureExprValid(c.expr, type, table, scope, c.position, false);
+    if (expr == null) {
+      consts = null;
+      break;
+    }
+
+    if (!exprIsConst(expr)) {
+      logError(c.position, 'expression may not be constant');
+      return null;
+    }
+
+    consts.push({
+      type,
+      expr,
+      position: c.position,
+      pub: c.pub,
+      name: c.name,
+      unitName: unit.fullName
+    });
+  }
+
+  return consts;
+}
+
+function exprIsConst(expr: Expr): boolean {
+  if (expr.tag == 'bin') {
+    return exprIsConst(expr.val.left) && exprIsConst(expr.val.right);
+  }
+  return expr.tag == 'str_const' || expr.tag == 'int_const' || expr.tag == 'char_const' || expr.tag == 'num_const';
+}
+ 
+function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, consts: Const[]): Fn[] | null {
   let unit = units[unitIndex];
   let lookupTable = Type.getUnitReferences(units[unitIndex], units);
 
@@ -179,7 +260,7 @@ function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, strTable:
       return null;
     }
 
-    let scope = newScope(returnType, generics, strTable);
+    let scope = newScope(returnType, generics, consts);
     let validFn = analyzeFn(fn, lookupTable, unit, scope);
 
     if (validFn == null) {
@@ -845,7 +926,7 @@ function canMutate(leftExpr: LeftExpr, table: Type.RefTable, scope: FnContext): 
     return canMutate(leftExpr.val.val, table, scope);
   }
   else if (leftExpr.tag == 'var') {
-    let v = getVar(scope, leftExpr.val);
+    let v = getVar(scope, leftExpr.val, table);
     if (v == null) {
       return false;
     }
@@ -1173,8 +1254,8 @@ function ensureLeftExprValid(
     return null;
   } 
   else if (leftExpr.tag == 'var') {
-    let v = getVar(scope, leftExpr.val);
-    if (v != null) { // possible bug? seems fine
+    let v = getVar(scope, leftExpr.val, table);
+    if (v != null) {
       return { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
     }
 
@@ -1908,7 +1989,6 @@ function ensureExprValid(
 
   if (expr.tag == 'str_const') {
     computedExpr = { tag: 'str_const', val: expr.val , type: Type.STR };
-    scope.strTable.push(expr.val);
   } 
 
   if (expr.tag == 'fmt_str') {
@@ -2113,17 +2193,17 @@ interface FnContext {
   returnType: Type.Type
   inLoop: boolean
   variantScope: Enum.VariantScope 
-  strTable: string[]
+  consts: Const[]
 };
 
-function newScope(returnType: Type.Type, generics: Set<string>, strTable: string[]): FnContext {
+function newScope(returnType: Type.Type, generics: Set<string>, consts: Const[]): FnContext {
   return {
     typeScope: [],
     variantScope: [[]],
     generics,
     returnType: returnType,
     inLoop: false,
-    strTable
+    consts
   };
 }
 
@@ -2139,11 +2219,27 @@ function setValToScope(scope: FnContext, name: string, type: Type.Type, mut: boo
   scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, mode });
 }
 
-function getVar(scope: FnContext, name: string): Var | null {
+function getVar(scope: FnContext, name: string, table: Type.RefTable): Var | null {
   for (let i = scope.typeScope.length - 1; i >= 0; i--) {
     if (scope.typeScope[i].has(name)) {
       return scope.typeScope[i].get(name)!;
     }
   }
+
+  // look for it as a constant
+  for (let c of scope.consts) {
+    if (c.name != name) {
+      continue;
+    }
+
+    if (c.unitName == table.thisUnit.fullName || table.thisUnit.uses.includes(c.unitName)) {
+      return {
+        type: c.type,
+        mut: false,
+        mode: { tag: 'const', unitName: c.unitName }
+      }
+    }
+  }
+
   return null;
 }
