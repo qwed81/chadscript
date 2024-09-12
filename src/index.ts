@@ -4,12 +4,11 @@ import { analyze } from './analyze/analyze';
 import { codegen, OutputFile } from './codegen/codegen';
 import path from 'node:path';
 import { execSync } from 'node:child_process'
-import { docgen } from './docgen';
 
-import fs from 'node:fs';
+import fs, { readdirSync } from 'node:fs';
 
 export {
-  logError, compilerError, NULL_POS, Position, BuildArgs
+  logError, compilerError, NULL_POS, Position
 }
 
 interface Position {
@@ -18,34 +17,6 @@ interface Position {
   start: number
   end: number
 }
-
-// build args are sent through stdin in this format to tell
-// the compiler how to treat the code
-interface BuildArgs {
-  exeName: string,
-  chadFiles: ChadFile[],
-  libs: Lib[]
-}
-
-interface Lib {
-  name: string,
-  includes: string[],
-  source: string,
-  buildCommands: Command[],
-  libPaths: string[]
-  dependsOn: string[],
-}
-
-interface ChadFile {
-  // how the file is treated in src (std, time, ect.)
-  unitName: string,
-  // path to the file
-  srcPath: string
-  // header files to include in chadscript code
-  headers: string[]
-}
-
-type Command = string[]
 
 // used when a function requires a position for error checking
 // but the function should never fail with the parameters being called
@@ -67,176 +38,83 @@ function logError(position: Position, message: string) {
 
 const args = arg({
 	'-o': String, 
-  '-d': String,
   '-v': Boolean
 });
 
-let stdin = process.stdin;
-let inputChunks: Buffer[] = []
+// gets all of the parse units according to the file structure
+function parseUnits(basePath: string, moduleName: string, outParseUnits: ProgramUnit[]) {
+  let subPaths = readdirSync(basePath);
+  for (let subPath of subPaths) {
+    let fullPath = path.join(basePath, subPath);
 
-stdin.resume();
-stdin.setEncoding('utf8');
+    let stats = fs.statSync(fullPath);
+    if (stats.isDirectory()) {
+      let modBaseName = path.basename(fullPath);
+      let nextModName = `${moduleName}.${modBaseName}`;
+      parseUnits(fullPath, nextModName, outParseUnits);
+    }
+    else if (subPath.endsWith('.chad')) {
+      let unitBaseName = path.basename(fullPath).slice(0, -5);
+      let unitName = `${moduleName}.${unitBaseName}`;
+      if (moduleName == '') {
+        unitName = unitBaseName;
+      }
 
-stdin.on('data', function (chunk) {
-    inputChunks.push(chunk);
-});
-
-stdin.on('end', function () {
-  let inputJSON = inputChunks.join();
-  let buildArgs: BuildArgs = JSON.parse(inputJSON);
-  buildLibs(buildArgs);
-  compile(buildArgs);
-});
-
-
-// builds all the required libraries in order
-function buildLibs(buildArgs: BuildArgs) {
-  let alreadyBuilt: Set<string> = new Set();
-  let inStack: Set<string> = new Set();
-  for (let i = 0; i < buildArgs.libs.length; i++) {
-    let lib: Lib = buildArgs.libs[i];
-    orderLibRecur(buildArgs, lib, alreadyBuilt, inStack);
-  }
-}
-
-// will recursively try to build the dependencies first
-function orderLibRecur(buildArgs: BuildArgs, lib: Lib, alreadyBuilt: Set<string>, inStack: Set<string>) {
-  if (alreadyBuilt.has(lib.source)) {
-    return;
-  }
-
-  if (inStack.has(lib.source)) {
-    compilerError('recursive dependencies');
-    return;
-  }
-
-  inStack.add(lib.source);
-  for (let i = 0; i < lib.dependsOn.length; i++) {
-    let foundLib: Lib | null = null;
-    for (let j = 0; j < buildArgs.libs.length; j++) {
-      if (lib.dependsOn[i] == buildArgs.libs[j].name) {
-        foundLib = buildArgs.libs[j];
+      let parseUnit = parseFile(fullPath, unitName);
+      if (parseUnit != null) {
+        outParseUnits.push(parseUnit);
       }
     }
-
-    if (foundLib == null) {
-      compilerError('can not find ' + lib.dependsOn[i]);
-      return;
-    }
-
-    orderLibRecur(buildArgs, foundLib, alreadyBuilt, inStack);
   }
-
-  buildLib(lib);
-  alreadyBuilt.add(lib.source);
 }
 
-function buildLib(lib: Lib) {
-  let saveDir = process.cwd();
-  let destName = path.join('build', lib.name);
+let programUnits: ProgramUnit[] = [];
 
-  if (!fs.existsSync(destName)) {
-    if (lib.source.startsWith("git@")) {
-      process.chdir('build');
-      execProgram('git', ['clone', lib.source]);
-      process.chdir('../')
-    }
+// compile the library files
+let libNames: string[] = readdirSync('lib');
+for (let libName of libNames) {
+  let libPath = path.join('lib', libName);
+  let stats = fs.statSync(libPath);
+  if (!stats.isDirectory()) {
+    continue;
   }
-
-  if (!lib.source.startsWith("git")) {
-    fs.cpSync(lib.source, destName, {recursive: true});
-  }
-
-  process.chdir(destName);
-  for (let i = 0; i < lib.buildCommands.length; i++) {
-    let progName = lib.buildCommands[i][0];
-    let args = lib.buildCommands[i].slice(1);
-    execProgram(progName, args);
-  }
-  process.chdir(saveDir);
+  parseUnits(libPath, libName, programUnits);
 }
 
-// compiles the chadscript
-function compile(buildArgs: BuildArgs) {
-  let parsedProgram: ProgramUnit[] = [];
-  let parseError = false;
-  for (let i = 0; i < buildArgs.chadFiles.length; i++) {
-    let chadFile = buildArgs.chadFiles[i];
-    let unit = parseFile(chadFile.srcPath, chadFile.unitName);
-    if (unit != null) {
-      parsedProgram.push(unit);
-    }
-    else {
-      parseError = true;
-    }
+// compile the program files
+parseUnits('src', '', programUnits);
+
+let program = analyze(programUnits);
+let fileNames: string[] = []
+if (program != null) {
+  let outputFiles: OutputFile[] = codegen(program);
+  for (let file of outputFiles) {
+    fileNames.push(file.name);
+    fs.writeFileSync(path.join('build', file.name), file.data);
   }
-
-  if (parseError) {
-    console.log('invalid program :/ could not parse')
-    process.exit(-1);
-  } 
-
-  let analyzedProgram = analyze(parsedProgram);
-  if (args['-v']) {
-    console.log('parse tree: ')
-    console.log(JSON.stringify(parsedProgram, null, 2));
-  }
-  if (analyzedProgram == null) {
-    console.log('invalid program');
-    process.exit(-1);
-  } 
-
-  let output: OutputFile[] = codegen(analyzedProgram, buildArgs);
-  let outputPath;
-  if (args['-o']) {
-    outputPath = args['-o'];
-  } else {
-    outputPath = './build';
-  }
-
-  if (args['-v']) {
-    console.log(output);
-  }
-
-  console.log('no compile errors, building with clang...');
-  let fileNames: string[] = [];
-  for (let i = 0; i < output.length; i++) {
-    let fileName = path.join(outputPath, output[i].name);
-    if (!fileName.endsWith('.h')) {
-      fileNames.push(fileName);
-    }
-    fs.writeFileSync(fileName, output[i].data);
-  }
-
-  let allLibs: string[] = []; 
-  let allIncludes: string[] = [];
-  for (let lib of buildArgs.libs) {
-    let libRoot = path.join('build', lib.name);
-    for (let libPath of lib.libPaths) {
-      let archivePath = path.resolve(path.join(libRoot, libPath));
-      allLibs.push(archivePath);
-    }
-    for (let include of lib.includes) {
-      let includePath = path.join(libRoot, include);
-      allIncludes.push('-I./' + includePath);
-    }
-  }
-
-  console.log(process.cwd());
-  let outputFileName = path.join(outputPath, buildArgs.exeName);
-  let clangArgs = [...fileNames, ...allIncludes, ...allLibs, '/home/josh/repos/chadscript/build/libuv/build/libuv.so'];
-  clangArgs = ['-g', '-o', outputFileName, ...clangArgs]; 
-  console.log(clangArgs);
-  execProgram('clang', clangArgs)
 }
 
-function execProgram(programName: string, programArgs: string[]) {
-  try {
-    let command = programName + ' ' + programArgs.join(' ')
-    console.log(command);
-    execSync(command);
-  } catch (error: any) {
-    console.error(error.message);
+// only if there are some files to codegen
+if (fileNames.length > 0) {
+  // compile all of the code into shared objects
+  let objPaths = '';
+  let includePath = path.join(__dirname, 'includes');
+  for (let fileName of fileNames) {
+    if (path.extname(fileName) != '.c') {
+      continue;
+    }
+
+    let objPath = path.join('build', fileName.slice(0, -2) + '.o');
+    let cSrcPath = path.join('build', fileName);
+    execSync(`clang -c -fPIC ${cSrcPath} -o ${objPath} -I${includePath}`);
+    objPaths += objPath + ' ';
   }
+
+  let libuvPath = path.join(__dirname, 'libuv.so');
+  let asyncPath = path.join(__dirname, 'async.o');
+  let asmPath = path.join(__dirname, 'asm.o');
+
+  let outputPath = path.join('build', 'output');
+  execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} -o ${outputPath}`);
 }
 

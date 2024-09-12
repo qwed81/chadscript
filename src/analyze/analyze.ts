@@ -660,7 +660,7 @@ function analyzeInst(
     }
 
     let returnType = fnResult.fnType.val.returnType;
-    if (returnType.tag != 'enum' || returnType.val.id != 'core.opt') {
+    if (returnType.tag != 'enum' || returnType.val.id != 'std.core.opt') {
       logError(inst.position, 'next function does not return an option');
       return null;
     }
@@ -1045,7 +1045,7 @@ function ensureLeftExprValid(
         // the dot operator on the occuring struct. note this does not happen recursively
         // only 1 level deep
         let fallThrough: boolean = false;
-        if (!hasField && validExpr.type.val.id == 'core.opt'
+        if (!hasField && validExpr.type.val.id == 'std.core.opt'
           && possibleVariants[0] == 'Some') {
           validExpr = {
             tag: 'left_expr',
@@ -1061,7 +1061,7 @@ function ensureLeftExprValid(
           };
           fallThrough = true;
         }
-        else if (!hasField && validExpr.type.val.id == 'core.res'
+        else if (!hasField && validExpr.type.val.id == 'std.core.res'
           && possibleVariants[0] == 'Ok') {
           validExpr = {
             tag: 'left_expr',
@@ -1870,7 +1870,7 @@ function ensureExprValid(
   if (expr.tag == 'list_init') {
     let exprType: Type.Type | null = null;
     if (expectedReturn != null) {
-      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'core.arr') {
+      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'std.core.arr') {
         if (!ignoreErrors) {
           logError(position, 'list expected');
         }
@@ -1915,7 +1915,7 @@ function ensureExprValid(
     }
 
     if (expectedReturn.tag != 'struct'
-      && !(expectedReturn.tag == 'enum' && (expectedReturn.val.id == 'core.opt' || expectedReturn.val.id == 'core.res'))) {
+      && !(expectedReturn.tag == 'enum' && (expectedReturn.val.id == 'std.core.opt' || expectedReturn.val.id == 'std.core.res'))) {
       if (!ignoreErrors) {
         logError(position, `expected ${Type.toStr(expectedReturn)}`);
       }
@@ -1925,11 +1925,11 @@ function ensureExprValid(
     let retType: Type.Type = expectedReturn;
     let castType: 'opt' | 'res' | 'none' = 'none';
     // determine the resulting struct type
-    if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'core.opt') {
+    if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.opt') {
       retType = expectedReturn.val.fields[1].type;
       castType = 'opt';
     }
-    else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'core.res') {
+    else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.res') {
       retType = expectedReturn.val.fields[0].type;
       castType = 'res';
     }
@@ -2139,7 +2139,7 @@ function ensureExprValid(
       // determine if can autocast in the case of opt or res
       if (computedExpr.type.tag == 'enum' && computedExpr.tag == 'left_expr') {
         // turn Some(T) -> T
-        if (computedExpr.type.val.id == 'core.opt'
+        if (computedExpr.type.val.id == 'std.core.opt'
           && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn, false)) {
 
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
@@ -2163,7 +2163,7 @@ function ensureExprValid(
           };
         }
         // turn ok(T) -> T
-        else if (computedExpr.type.val.id == 'core.res'
+        else if (computedExpr.type.val.id == 'std.core.res'
           && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn, false)) {
           let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
           if (possibleVariants.length != 1 || possibleVariants[0] != 'Ok') {
@@ -2187,7 +2187,7 @@ function ensureExprValid(
         }
       }
       // turn T -> Some(T)
-      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'core.opt'
+      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.opt'
         && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type, false)) {
         return {
           tag: 'enum_init',
@@ -2198,7 +2198,7 @@ function ensureExprValid(
         };
       }
       // trun T -> ok(T)
-      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'core.res'
+      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.res'
         && Type.typeApplicable(expectedReturn.val.fields[0].type, computedExpr.type, false)) {
         return {
           tag: 'enum_init',

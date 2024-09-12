@@ -64,7 +64,7 @@
       "source": "git@github.com:libuv/libuv.git",
       "includes": ["includes"],
       "buildCommands": [],
-      "libPaths": [".libs/libuv.a"],
+      "libPaths": ["build/libuv.a"],
       "dependsOn": []
     },
     {

@@ -495,13 +495,13 @@ function parseUses(header: SourceLine): string[] | null {
   }
 
   let uses = [];
-  let splits = balancedSplit(header.tokens.slice(1), ',');
+  let splits: Token[][] = balancedSplit(header.tokens.slice(1), ',');
   for (let modName of splits) {
     if (modName.length == 0) {
       return null;
     }
 
-    uses.push(modName.map(x => x.val).join());
+    uses.push(modName.map(x => x.val).join(''));
   }
 
   return uses;

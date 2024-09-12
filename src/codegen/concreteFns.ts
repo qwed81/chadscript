@@ -56,17 +56,7 @@ interface ResolveContext {
   autoDropSet: Set<string>
 }
 
-function replaceGenerics(prog: Program): CProgram {
-  let entries: Fn[] = prog.fns.filter(x => x.name == 'main');
-  if (entries.length > 1) {
-    logError(NULL_POS, 'more than one \'main\' function provided');
-    return undefined!;
-  }
-  else if (entries.length == 0) {
-    logError(NULL_POS, 'no \'main\' function provided');
-    return undefined!;
-  }
- 
+function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
   let ctx: ResolveContext = {
     allFns: prog.fns,
     autoDropSet: new Set(),
@@ -76,7 +66,7 @@ function replaceGenerics(prog: Program): CProgram {
     queuedTypes: new Set()
   };
 
-  let entry: CFn = resolveFn(entries[0], new Map(), ctx);
+  let entry: CFn = resolveFn(mainFn, new Map(), ctx);
 
   let resolved: CFn[] = [];
   resolved.push(entry);

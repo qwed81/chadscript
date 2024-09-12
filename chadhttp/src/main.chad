@@ -32,8 +32,3 @@ pub fn homePath(HttpRequest req) HttpResponse!
   content += "</html>"
 
   return { body = str(content), status = OK, contentType = Html }
-
-  
-
-
-

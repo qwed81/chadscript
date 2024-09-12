@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap" rel="stylesheet">   <link rel="stylesheet" href="index.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <article>
+    <h1>
+      ChadScript Reference Manual
+    </h1>
+    <img src="https://i.kym-cdn.com/entries/icons/facebook/000/031/015/cover5.jpg" width="600" height="100"/>
+    <h2>
+      Table of Contents
+    </h2>
+    <ul>
+      <li><a class="internal-link" href="#purpose">Purpose</a></li>
+      <li><a class="internal-link" href="#introduction">Introduction</a></li>
+      <li><a class="internal-link" href="#features">Features</a></li>
+      <li><a class="internal-link" href="#examples">Examples</a></li>
+    </ul>
+    <section id="purpose">
+      <h2>Purpose</h2>
+      <p>
+        ChadScript exists as a programming language built to solve hard
+        problems in a simple way without sacrificing speed, control, or safety.
+        It effectively functions like a simple Rust, or a systems programming
+        Go.
+      </p>
+      <h3>Simplicity</h3>
+      <p>
+        Most symbols have been removed and the syntax has been decreased to
+        a small set of operations. Additionally, generics are just a place
+        holder for any type. Object Oriented Programming concepts have been
+        removed in place of procedural code.
+      </p>
+      <h3>Speed</h3>
+      <p>
+        ChadScript compares well written to C++, C that do not heavily
+        focus on individual lifetimes. It uses an arena based memory model
+        that functions like a garbage collected with deterministic behaviour.
+        This is super useful in almost all applications as allocations become
+        significantly faster than repeated calls to malloc. Most data in the
+        program follows the lifetime of the subprocess like a web request or
+        and update of the game loop. By providing smart times to free the memory
+        allocation becomes near free and fragmentation is lost. On the contrary
+        if you are not aware of where your sub-algorithm lifetimes should start
+        and end you can end up with huge amounts of memory lost. This also removes
+        the need for RAII or manual memory management and gets rid of the use of
+        garbage collector pauses as garbage collection is just releasing the buffer
+        used to store all the lifetimes of the sub-algorithm.
+      </p>
+      <h3>Safety</h3>
+      <p>
+        ChadScript without using pointers is completly memory safe (assuming
+        no bugs). Every problem can be solved with just the built-in primatives
+        which will check for out of bounds accesses and does not allow for
+        double free. Work on thread safety is still in progress and has not
+        been finalized but eventually it will be thread safe as well.
+      </p>
+      <h3>Freedom</h3>
+      <p>
+        Finally, ChadScript aims to get out of the way of programmers as much
+        as possible. If it is in the programmers best interest to use a pointer,
+        the it should be simple and intuitive to use. Additionally, there are
+        plans to allow custom macros that transform any syntax into any other
+        syntax. Macros like these can create amazing APIs to work with that
+        simplify programs by orders of magnitude. If they are misused sometimes
+        it is a small price to pay to sacrifice the low quality libraries
+        for the high quality ones that use them properly
+      </p>
+    </section>
+    <h2 id="introduction">Introduction</h2>
+      <section>
+        <h3>Requirments</h3>
+        <p>This document assumes moderate profeciency in any popular programming language</p>
+        <ul>
+          <li>C</li>
+          <li>C++</li>
+          <li>Python</li>
+          <li>Java</li>
+          <li>JavaScript</li>
+          <li>C#</li>
+        </ul>
+        <p>
+          Additionally, knowledge of 
+          <a href="https://en.wikipedia.org/wiki/Type_system">static types</a>
+          and their usage in programming is required
+        </p>
+        <h3>Syntax Overview</h3>
+        ChadScript aims to minimize typing. Excessive symbols make the language
+        hard to type, hard to read, and hard to remember. There is no semi-colon
+        to end the statements, there is no colon to mark the next block, and
+        all control flow is determined by whitespace. Additionally, in the
+        python spirit '#' is the symbol for a comment
+        <pre><code>
+use core # use all items from 'core' in the current program
+fn main() void! # entry point of the program
+  int a = 0 # declare a variable 'a' with type of int set to 0
+  print(a) # call the function 'core.print' with value of a
+  return Ok # the program exits without error
+        </code></pre>
+        <h3>Built-in Types</h3>
+        <pre><code>
+use core
+
+fn main() void!
+  int a = 0 # 64 bit signed integer
+  num b = 0.0 # 64 bit signed floating point
+  char c = '@' # an 8 bit integer representing a character
+  byte d = byte(10) # an 8 bit unsigned integer representing 1 byte
+  bool e = true # a 'true' or 'false' value used for representing conditionals
+
+  # <a href="https://en.wikipedia.org/wiki/Pointer_(computer_programming)">a memory address of the value 'a'</a>
+  ptr[int] e = ptr(a)
+  assert a == e[0] # deref the pointer
+
+  str f = "hello" # an immutable ptr to a character with a length
+  print(f[0]) # print 'h'
+  print(f.len) # print '5'
+
+  # a mutable string used to build new strings. It comes with functions
+  # to modify the strbuf as well as syntax sugar to append anything that can
+  # be turned into a string
+  strbuf g = strbuf("starting string")
+  g += b
+  g[0] = 'w'
+
+  # contiguous memory based list that can be resized. This acts as the
+  # slice, array, vec, ect.
+  list[int] h = [1, 2, 3, 4]
+
+  # there are no 'methods' so the list is passed as the first
+  # parameter to the function
+  add(h, 5)
+  print(h) # prints '[1, 2, 3, 4, 5]'
+
+  # 'optional' values are represented with either Some or None
+  int? i = None # i is None
+  i = 10 # i is Some(10)
+
+  # 'result' values are represented with either Ok or Err
+  int! j = Err("could not set") # j is in the Err state
+  j = 5 # j is Ok(5)
+
+  # a function that takes in any T and returns void
+  # assigned to the print function
+  void(T) h = print
+
+  return Ok
+        </code></pre>
+        
+        <h3>Structs and Generics</h3>
+        <p>
+          Structs are just groups of variables. As opposed to Java, C#, Python,
+          or JavaScript structs are passed by value. In fact the behave exactly
+          as C structs becuase they are compiled to C structs. However, structs
+          support some higher level functionallity such as generics and destructors
+        </p>
+
+        <pre><code>
+use core
+# define the Point struct with 2 fields
+struct Point
+  int x
+  int y
+
+fn main() void!
+  Point p = { x = 0, y = 0 }
+  Point p2 = p
+  print(p.x) # prints '0'
+  p.x = 10
+  print(p2.x) # prints '10'
+  return Ok
+        </code></pre>
+
+        <pre><code>
+use core
+# Defining a more complicated struct. This will hold values and once all
+# goes out of scope it will drop the memory. T is a generic that represents
+# any type. Note that generics must be single letter upper case names
+pub struct DropStack[T]
+  ptr[T] ptr # private by default, could use pub to allow for setting
+  get int len
+  get int capacity  # get lets anyone outside of the module read the field
+
+# 'constructor' function for the dropstack. T will turn into the type
+# that is defined on call. for example: DropStack[int] stack = dropStack()
+pub dropStack() DropStack[T]
+  return { ptr = alloc(4), len = 0, capacity = 4 }
+
+# function to all the value to the DropStack. Because of the generic the
+# T must match in both cases. The &amp means that it will pass by mutable referece
+# by default all values are pased by const reference
+pub push(DropStack[T]&amp l, T val)
+  if l.len == l.capacity
+    ptr[T] newAlloc = alloc(l.capacity * 2)
+    l.capacity = l.capacity * 2
+    for i in 0:l.len
+      newAlloc[i] = l.ptr[i]
+    free(l.ptr)
+    l.ptr = newAlloc
+  l.ptr[l.len] = val
+  l.len += 1
+
+# pop will return an optional because the length of the stack might be 0
+pub pop(DropStack[T]&amp l) T?
+  if l.len == 0
+    return None
+  l.len -= 1
+  return l[l.len]
+
+# free the memory that the stack uses once there are no more references to
+# the stack
+drop(DropStack[T]&amp stack)
+  free(stack.ptr)
+        </code></pre>
+
+        <h3>Enums, Optionals, and Error Handling</h3>
+        <p>
+          It is common for new programming languages to have tagged unions.
+          Effectively a value can be in 1 state at a type with multiple different
+          types. This is very useful for message passing and variables that
+          could be returned as different types. In ChadScript you can use the
+          fields just like a struct, however you must prove that the field
+          you are using is actually correct. This is done with the 'is' keyword.
+        </p>
+        <pre><code>
+use core
+
+enum MyMessage
+  void Init
+  int ChangeWorkload
+  void Close
+
+fn main() void!
+  MyMessage message = ChangeWorkload(0) # init with an int
+  if message is ChangeWorkload # check the variant
+    print(message.ChangeWorkload)
+  message = Init # set it to a void variant
+  if message is Close
+    return Ok
+  if message is Close
+    return Ok
+  # message can only be ChangeWorkload in this case as well
+  print("change workload to: ", mesasge.ChangeWorkload)
+  return Ok
+        </code></pre>
+
+      <p>
+        This construct is also useful for representing errors and
+        optional values. In fact, this is what ChadScript does with
+        additional syntax sugar. It means that there are no exceptions
+        as well as no null values to accidently use
+      </p>
+      <pre><code>
+use core
+fn main() void!
+  int? a = None
+  if a is Some
+    print(a.Some)
+  if a is Some
+    print(a) # sugar to just use the value only if a is Some
+  # additionally values van be set using the syntax sugar
+  a = Some(10)
+  a = 10
+
+  # errors act in the same way except have a couple more properties
+  int! b = 0 # declare a result (Err or Ok)
+  int c = try a # if it is Err then return Err, otherwise assign C to a.Some
+
+  # if a should never be an err,
+  # if a is an err then crash the program and give debug info
+  int d = assert a 
+      </code></pre>
+      <h3>Default Paramaters</h3>
+      <p>
+        Default parameters exist to handle the outlier cases to make
+        the api simpler for most use cases. It can also be used
+        to provide an API where functionallity based on type is
+        automatic but can be changed in exception. This is useful
+        for things like hash functions, comparison of integers, in
+        ordered data structures, and even mocking as mock functions
+        can be passed in instead of full mocked classes.
+      </p>
+      <pre><code>
+use core
+fn main() void!
+
+# a function that takes in a default parameter of a function
+# named 'str'. This will find a function that matches the type
+# signature. ex: myPrint(10) will use str(int) str fucnction
+# this can be used to implement 'trait bounds' because this function
+# can only be called if given an implementation of str that matches
+# the function type. Also a function can be provided for mocking
+# purposes or for special cases
+fn myPrint(T val, str(T) implStr=str)
+  str thisStr = implStr(val)
+  ptr[char] terminated = cstr(thisStr)
+  C.printf(cstr("%s\n"), terminated)
+
+      </code></pre>
+      <p>This also works with any other constant expressions</p>
+      <pre><code>
+# the -1 position means read from the last position in the file
+fn read(File&amp file, list[byte]&amp buf, int position=-1) int! amtRead
+      </code></pre>
+
+      <h3>Trivial Async</h3>
+      <p>
+        In ChadScript async is not thought of in the same way as other
+        languages. It is most similar to go but not exactly.
+        There is no Built In language features to support async but
+        the standard IO libraries all will yield execution to another
+        running function instead of blocking. The standard library also
+        supports both green threads in the form of greenFns (a function
+        running inside a worker pool that is optimized to perform IO.
+        Think of handling a Http Request). It also supports standard
+        OS threads that will block on IO operations and is optimized
+        for high compute applications.
+      </p>
+      <img src="https://i.ytimg.com/vi/RAXZKqsxKOA/sddefault.jpg" width="300" height="150"/>
+      </section>
+    <h2 id="examples">Examples</h2>
+  </article>
+  </body>
+</html>

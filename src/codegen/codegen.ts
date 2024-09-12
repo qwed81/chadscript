@@ -1,6 +1,6 @@
-import { Position, compilerError, BuildArgs } from '../index';
+import { Position, compilerError, logError, NULL_POS } from '../index';
 import { Program  } from '../analyze/analyze';
-import { Inst, LeftExpr, Expr, StructInitField, FnCall } from '../analyze/analyze';
+import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn } from '../analyze/analyze';
 import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
@@ -27,8 +27,18 @@ interface OutputFile {
 }
 
 // generates the c output for the given program
-function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
-  let newProg: CProgram = replaceGenerics(prog);
+function codegen(prog: Program): OutputFile[] {
+  let mainFns: Fn[] = prog.fns.filter(x => x.name == 'main');
+  if (mainFns.length > 1) {
+    logError(NULL_POS, 'more than one \'main\' function provided');
+    return [];
+  }
+  else if (mainFns.length == 0) {
+    logError(NULL_POS, 'no \'main\' function provided');
+    return [];
+  }
+ 
+  let newProg: CProgram = replaceGenerics(prog, mainFns[0]);
 
   let chadDotH = 'char **uv_setup_args(int argc, char **argv); int initRuntime(int threadCount);';
   let chadDotC = '';
@@ -87,7 +97,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   for (let c of newProg.consts) {
     let unitData: string | undefined = unitMap.get(c.unitName);
     if (unitData == undefined) {
-      unitData = defaultUnitData(buildArgs, c.unitName);
+      unitData = defaultUnitData();
     }
     unitData += `\n${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)} = ${codeGenConst(c.expr)};`;
     unitMap.set(c.unitName, unitData);
@@ -97,7 +107,7 @@ function codegen(prog: Program, buildArgs: BuildArgs): OutputFile[] {
   for (let fn of newProg.fns) {
     let unitData: string | undefined = unitMap.get(fn.unitName);
     if (unitData == undefined) {
-      unitData = defaultUnitData(buildArgs, fn.unitName);
+      unitData = defaultUnitData();
     }
     unitData += codeGenFn(fn, prog.strTable, cstructMap);
     unitMap.set(fn.unitName, unitData);
@@ -148,20 +158,9 @@ function codeGenConst(expr: Expr): string {
   return 'undefined';
 }
 
-function defaultUnitData(buildArgs: BuildArgs, unitName: string): string {
+function defaultUnitData(): string {
   let unitData = '#include "chad.h"';
-  let headers: string[] | null = null;
-  for (let i = 0; i < buildArgs.chadFiles.length; i++) {
-    if (buildArgs.chadFiles[i].unitName == unitName) {
-      headers = buildArgs.chadFiles[i].headers;
-    }
-  }
-  
-  if (headers == null) {
-    compilerError(`unit ${unitName} not in build args`);
-    return '';
-  }
-
+  let headers = ["stdio.h", "stdlib.h", "string.h", "stdbool.h", "uv.h", "async.h"];
   for (let i = 0; i < headers.length; i++) {
     unitData += `\n#include "${headers[i]}"`;
   }
@@ -558,7 +557,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
   else if (expr.tag == 'list_init') {
-    if (expr.type.tag != 'struct' || expr.type.val.id != 'core.arr') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'std.core.arr') {
       return 'undefined';
     }
 
