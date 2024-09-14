@@ -548,10 +548,12 @@ function getUnitReferences(
 ): RefTable {
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
   for (let i = 0; i < allUnits.length; i++) {
-    if (thisUnit.uses.includes(allUnits[i].fullName)) {
+    let addCore = allUnits[i].fullName == 'std.core' && thisUnit.fullName != 'std.core';
+    if (thisUnit.uses.includes(allUnits[i].fullName) || addCore) {
       newUnits.push(allUnits[i]);
     }
   }
+
   return { units: newUnits, allUnits, thisUnit };
 }
 

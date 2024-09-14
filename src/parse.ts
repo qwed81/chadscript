@@ -617,8 +617,16 @@ function tryParseType(tokens: Token[]): Type | null {
     return null;
   }
 
+  if (tokens[0].val == 'mut') {
+    let inner = tryParseType(tokens.slice(1));
+    if (inner == null) {
+      return null;
+    }
+    return { tag: 'link', val: inner };
+  }
+
   let lastToken = tokens[tokens.length - 1].val; 
-  if (lastToken == '!' || lastToken == '&' || lastToken == '?' || lastToken == '*') {
+  if (lastToken == '!' || lastToken == '?' || lastToken == '*') {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
@@ -632,9 +640,7 @@ function tryParseType(tokens: Token[]): Type | null {
     else if (lastToken == '?') {
       return { tag: 'generic', val: { name: 'opt', generics: [innerType] } };
     } 
-    else {
-      return { tag: 'link', val: innerType };
-    }
+    return null;
   }
   else if (lastToken == ')') { // parse fn
     let fnParamBegin = getFirstBalanceIndexFromEnd(tokens, '(', ')') + 1;

@@ -1,4 +1,4 @@
-use core, net
+use std.net
 
 pub struct Routes
   arr[HttpResponse!(HttpRequest)] handlers
@@ -7,11 +7,11 @@ pub struct Routes
 pub fn routes() Routes 
   return { handlers = [], paths = [] }
 
-pub fn addRoute(Routes& routes, str path, HttpResponse!(HttpRequest) handler) 
+pub fn addRoute(mut Routes routes, str path, HttpResponse!(HttpRequest) handler) 
   routes.handlers += handler
   routes.paths += path
 
-fn httpEntry(TcpSocket& socket, Routes routes) void!
+fn httpEntry(mut TcpSocket socket, Routes routes) void!
   Scanner[TcpSocket] reqScanner = scanner(socket)
 
   str firstLine = try nextLine(reqScanner)

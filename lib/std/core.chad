@@ -10,7 +10,7 @@ pub struct range
   int start
   int end
 
-pub fn next(range& range) int?
+pub fn next(mut range range) int?
   int thisIndex = range.start
   if range.start == range.end
     return None
@@ -24,7 +24,7 @@ pub struct RangeReverse
   int start
   int end
 
-pub fn next(RangeReverse& range) int?
+pub fn next(mut RangeReverse range) int?
   int thisIndex = range.start
   if range.start == range.end
     return None
@@ -68,22 +68,22 @@ pub fn str(arr[T] l, str(T) strImpl=str) str
   buf += ']'
   return str(buf)
 
-pub fn prepareIndex(arr[T]& l, int index, T val) ptr[T]
+pub fn prepareIndex(mut arr[T] l, int index, T val) ptr[T]
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-pub fn getIndex(arr[T]& l, int index) ptr[T]
+pub fn getIndex(mut arr[T] l, int index) ptr[T]
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-pub fn getIndex(arr[T]& l, range r) ptr[arr[T]]
+pub fn getIndex(mut arr[T] l, range r) ptr[arr[T]]
   assert r.start >= 0 && r.end <= l.len
   ptr[arr[T]] newList = alloc(1)
   int len = r.end - r.start
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
   return newList
 
-pub fn append(arr[T]& l, T val)
+pub fn append(mut arr[T] l, T val)
   if l.len == l.capacity
     ptr[T] newAlloc = alloc(l.capacity * 2)
 
@@ -95,7 +95,7 @@ pub fn append(arr[T]& l, T val)
   l.base[l.len] = val
   l.len += 1
 
-pub fn append(arr[T]& to, arr[T] from)
+pub fn append(mut arr[T] to, arr[T] from)
   for i in 0:from.len
     to += from[i]
 
@@ -114,11 +114,11 @@ pub fn eq(str a, str b) bool
       return false
   return true
 
-pub fn getIndex(str& s, int index) ptr[char]
+pub fn getIndex(mut str s, int index) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(str& s, range r) ptr[str]
+pub fn getIndex(mut str s, range r) ptr[str]
   assert r.start >= 0 && r.end <= s.len
   ptr[str] newStr = alloc(1)
   int len = r.end - r.start
@@ -185,7 +185,7 @@ pub fn strbuf(str start) strbuf
 pub fn str(strbuf buf) str
   return { base = buf.base, len = buf.len }
 
-fn appendOne(strbuf& s, char c)
+fn appendOne(mut strbuf s, char c)
   if s.len == s.capacity
     ptr[char] newAlloc = alloc(s.capacity * 2)
 
@@ -197,20 +197,20 @@ fn appendOne(strbuf& s, char c)
   s.base[s.len] = c
   s.len += 1
 
-pub fn append(strbuf& s, T val, str(T) strImpl=str)
+pub fn append(mut strbuf s, T val, str(T) strImpl=str)
   str valAsStr = strImpl(val)
   for i in 0:valAsStr.len
     appendOne(s, valAsStr[i])
   
-pub fn prepareIndex(strbuf& s, int index, T val) ptr[char]
+pub fn prepareIndex(mut strbuf s, int index, T val) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(strbuf& s, int index) ptr[char]
+pub fn getIndex(mut strbuf s, int index) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(strbuf& s, range r) ptr[strbuf]
+pub fn getIndex(mut strbuf s, range r) ptr[strbuf]
   assert r.start >= 0 && r.end <= s.len
   ptr[strbuf] newStr = alloc(1)
   int len = r.end - r.start
@@ -257,7 +257,7 @@ pub struct Scanner[T]
 pub fn scanner(T stream, int!(T, arr[byte]) r=read) Scanner[T]
   return { buf = arr(1024), stream = stream, readBytes = r, amtInBuf = 0, i = 0 }
 
-pub fn nextLine(Scanner[T]& scanner) str!
+pub fn nextLine(mut Scanner[T] scanner) str!
   strbuf output = strbuf()
 
   while true
@@ -272,3 +272,10 @@ pub fn nextLine(Scanner[T]& scanner) str!
       break
 
   return Ok(str(output))
+
+pub fn input(str output) int!
+  C.printf(cstr("%s"), cstr(output))
+  int val = 0
+  C.scanf(cstr("%ld"), ptr(val))
+  return val
+

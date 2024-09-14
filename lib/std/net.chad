@@ -1,5 +1,3 @@
-use core
-
 fn uv_err(int code) T!
   strbuf errMessage = strbuf(1024)
   include
@@ -12,7 +10,7 @@ pub struct TcpSocket
   ptr[void] handle
   bool alreadyClosed
 
-fn drop(TcpSocket& socket)
+fn drop(mut TcpSocket socket)
   close(socket)
 
 struct TcpConnectionArgs[T]
@@ -24,7 +22,7 @@ fn tcpListenStart(int handle, TcpConnectionArgs[T] args)
   void! result = args.handler(socket, args.args)
   close(socket)
 
-pub fn listen(str host, int port, T args, void!(TcpSocket&, T) handler) void!
+pub fn listen(str host, int port, T args, void!(mut TcpSocket, T) handler) void!
   ptr[char] cHost = cstr(host)
   void(int, TcpConnectionArgs[T]) start = tcpListenStart
   int result
@@ -53,7 +51,7 @@ pub fn connect(str host, int port) TcpSocket!
   
   return { handle = outHandle, alreadyClosed = false }
 
-pub fn read(TcpSocket& socket, arr[byte] buf) int!
+pub fn read(mut TcpSocket socket, arr[byte] buf) int!
   int result
   include
     _result = readTcp((void*)_socket->_handle, _buf->_base, _buf->_len);
@@ -61,7 +59,7 @@ pub fn read(TcpSocket& socket, arr[byte] buf) int!
     return uv_err(result)
   return result
 
-pub fn write(TcpSocket& socket, arr[byte] bytes) void!
+pub fn write(mut TcpSocket socket, arr[byte] bytes) void!
   int result
   include
     _result = writeTcp((void*)_socket->_handle, _bytes->_base, _bytes->_len);
@@ -69,7 +67,7 @@ pub fn write(TcpSocket& socket, arr[byte] bytes) void!
     return uv_err(result)
   return Ok
 
-pub fn close(TcpSocket& socket)
+pub fn close(mut TcpSocket socket)
   if socket.alreadyClosed == true
     return
     
