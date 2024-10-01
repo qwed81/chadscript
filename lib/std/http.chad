@@ -1,21 +1,21 @@
 use std.net
 
 pub struct Routes
-  arr[HttpResponse!(HttpRequest)] handlers
-  arr[str] paths
+  Arr[HttpResponse!(HttpRequest)] handlers
+  Arr[str] paths
 
 pub fn routes() Routes 
   return { handlers = [], paths = [] }
 
-pub fn addRoute(mut Routes routes, str path, HttpResponse!(HttpRequest) handler) 
+pub fn addRoute(ln Routes routes, str path, HttpResponse!(HttpRequest) handler) 
   routes.handlers += handler
   routes.paths += path
 
-fn httpEntry(mut TcpSocket socket, Routes routes) void!
+fn httpEntry(ln TcpSocket socket, Routes routes) void!
   Scanner[TcpSocket] reqScanner = scanner(socket)
 
   str firstLine = try nextLine(reqScanner)
-  arr[str] splits = split(firstLine)
+  Arr[str] splits = split(firstLine)
   if splits.len < 3
     return Err("malformed request")
 
@@ -35,7 +35,7 @@ fn httpEntry(mut TcpSocket socket, Routes routes) void!
       else
         res = { status = INTERNAL_SERVER_ERROR, contentType = Html, body = "internal server error"}
 
-  strbuf responseStr = strbuf()
+  Fmt responseStr = fmt()
   if res.status is OK
     responseStr += "HTTP/1.1 200 OK\n"
   elif res.status is NOT_FOUND

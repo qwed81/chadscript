@@ -1,0 +1,61 @@
+const num E = 2.71828
+const num PI = 3.14159
+
+struct vec2
+  num x 
+  num y
+
+struct complex
+  num real
+  num i
+
+struct vec3
+  num x
+  num y
+  num z
+
+struct vec4
+  num x
+  num y
+  num z
+  num w
+
+struct Vec
+
+struct Matrix
+
+fn cos(num n) num
+  return 0.0
+
+fn sin(num n) num
+  return 0.0
+
+fn tan(num n) num
+  return 0.0
+
+fn acos(num n) num
+  return 0.0
+
+fn asin(num n) num
+  return 0.0
+
+fn atan(num n) num
+  return 0.0
+
+fn exp(num n) num
+  return 0.0
+
+fn pow(num n, num e) num
+  return 0.0
+
+fn ln(num n) num
+  return 0.0
+
+fn log(num n, num base) num
+  return 0.0
+
+fn ceil(num n) num 
+  return 0.0
+
+fn floor(num n) num
+  return 0.0

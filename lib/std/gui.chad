@@ -1,0 +1,15 @@
+##
+fn main() void!
+  window w = window(100, 100)
+  w.child = grid(0, 10)
+  w.child[0][0] = button("hello wolrd")
+  w.child[0][4] = textarea()
+  w.child = flex()
+  w.child += button("hello world", onClick)
+
+fn window() Window
+
+fn button(Container parent, str text)
+##
+
+

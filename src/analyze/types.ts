@@ -2,7 +2,7 @@ import { logError, compilerError, Position, NULL_POS } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, STR_BUF,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, FMT as STR_BUF,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
@@ -31,7 +31,7 @@ const STR: Type = {
   }
 }
 
-const STR_BUF: Type = {
+const FMT: Type = {
   tag: 'struct',
   val: {
     fields: [
@@ -40,7 +40,7 @@ const STR_BUF: Type = {
       { visibility: 'get', name: 'capacity', type: INT }
     ],
     generics: [],
-    id: 'std.core.strbuf'
+    id: 'std.core.Fmt'
   }
 }
 
@@ -93,7 +93,7 @@ function createList(genericType: Type): Type {
         { visibility: 'get', name: 'capacity', type: INT }
       ],
       generics: [genericType],
-      id: 'std.core.arr'
+      id: 'std.core.Arr'
     }
   }
 }

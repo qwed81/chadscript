@@ -1,0 +1,22 @@
+struct time  
+  get int year
+  get int month
+  get int day
+  get int min
+  get int sec
+  get int ms
+  get bool local
+
+struct duration
+  int ms
+
+fn localTime() time
+  return { year = 0, month = 0, day = 0, min = 0, sec = 0, ms = 0, local = true }
+
+fn gmTime() time
+  return { year = 0, month = 0, day = 0, min = 0, sec = 0, ms = 0, local = false }
+
+fn diff(time t1, time t2) duration
+  return { ms = 0 }
+
+fn sleep(duration amt)

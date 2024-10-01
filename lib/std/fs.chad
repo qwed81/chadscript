@@ -1,10 +1,20 @@
 fn uv_err(int code) T!
-  strbuf errMessage = strbuf(1024)
-  include
-    uv_err_name_r(*_code, _errMessage._base, 1024);
+  Fmt errMessage = fmt(1024)
+  C.uv_err_name_r(code, errMessage.base, 1024)
   T! err = Err(str(errMessage))
-
   return err
+
+pub fn mkDir(str srcPath) void!
+  return Err("not implemented")
+
+pub fn fsCp(str srcPath, str destPath) void!
+  return Err("not implemented")
+
+pub fn fsMv(str srcPath, str destPath) void!
+  return Err("not implemented")
+
+pub fn fsRm(str srcPath) void!
+  return Err("not implemented")
 
 pub enum FileFlags
   void Read
@@ -14,55 +24,48 @@ pub struct File
   int handle
   bool alreadyClosed
 
-fn drop(mut File file)
+fn drop(ln File file)
   close(file)
 
 pub fn open(str path, FileFlags flags, bool createIfMissing=false) File!
   int fileHandle = -1
   int intFlags = 0
-  int intMode
-  include
-    _intMode = S_IRUSR | S_IWUSR;
+
+  int r = C.S_IRUSR
+  int w = C.S_IWUSR
+  int intMode = or(r, w)
+  int intFlags = 0
 
   if flags is Read
-    include
-      _intFlags = UV_FS_O_RDONLY;
+    intFlags = C.UV_FS_O_RDONLY
   elif flags is ReadWrite
-    include
-      _intFlags = UV_FS_O_RDWR;
+    intFlags = C.UV_FS_O_RDWR
 
   if createIfMissing
-    include
-      _intFlags |= UV_FS_O_CREAT;
+    int create = C.UV_FS_O_CREAT
+    intFlags = or(intFlags, create)
 
   ptr[char] cPath = cstr(path)
-  include
-    _fileHandle = openFile(_cPath, _intFlags, _intMode);
+  fileHandle = C.openFile(cPath, intFlags, intMode)
   if fileHandle < 0
     return uv_err(fileHandle)
 
   return { handle = fileHandle, alreadyClosed = false }
 
-pub fn close(mut File file)
+pub fn close(ln File file)
   if file.alreadyClosed
     return
-
-  include
-    closeFile(_file->_handle);
+  C.closeFile(file.handle)
   file.alreadyClosed = false
 
-pub fn read(mut File file, arr[byte] buf, int position=-1) int! amtRead
-  int result
-  include
-    _result = readFile(_file->_handle, _buf->_base, _buf->_len, *_position);
+pub fn read(ln File file, ln Arr[byte] buf, int position=-1) int! amtRead
+  int result = C.readFile(file.handle, buf.base, buf.len, position)
   if result < 0
     return uv_err(result)
   return result
 
-pub fn write(mut File file, arr[byte] bytes, int position=-1) void!
-  int result
-  include
-    _result = writeFile(_file->_handle, _bytes->_base, _bytes->_len, *_position);
+pub fn write(ln File file, Arr[byte] bytes, int position=-1) void!
+  int result = C.writeFile(file.handle, bytes.base, bytes.len, position)
   if result < 0
     return uv_err(result)
 
@@ -77,7 +80,7 @@ pub struct DirEntry
   get DirEntryType type
   get str name
 
-pub fn readDir(str path) arr[DirEntry]!
+pub fn readDir(str path) Arr[DirEntry]!
   int numEntries = 0
   int result = 0
   include
@@ -87,7 +90,7 @@ pub fn readDir(str path) arr[DirEntry]!
   if result < 0 && result != -4095 # EOF
     return uv_err(result)
 
-  arr[DirEntry] entries = arr(numEntries) 
+  Arr[DirEntry] entries = arr(numEntries) 
   for i in 0:numEntries
     int index = i
     int strLen
@@ -95,7 +98,7 @@ pub fn readDir(str path) arr[DirEntry]!
       const char* filePath = dirResult.files[_index].name;
       _strLen = strlen(filePath);
 
-    strbuf name = strbuf(strLen)
+    Fmt name = fmt(strLen)
     DirEntryType fileType = File
     include
       // copy the path into name
@@ -115,5 +118,3 @@ pub fn readDir(str path) arr[DirEntry]!
     entries[i] = { type = fileType, name = str(name) }
 
   return Ok(entries)
-  
-  

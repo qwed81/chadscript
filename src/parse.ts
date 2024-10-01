@@ -617,7 +617,7 @@ function tryParseType(tokens: Token[]): Type | null {
     return null;
   }
 
-  if (tokens[0].val == 'mut') {
+  if (tokens[0].val == 'ln') {
     let inner = tryParseType(tokens.slice(1));
     if (inner == null) {
       return null;

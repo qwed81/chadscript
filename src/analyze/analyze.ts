@@ -133,7 +133,7 @@ interface ArrOffsetSlice {
   range: Expr
 }
 
-type Mode = 'none' | 'param' | 'iter' | 'iter_copy' | { tag: 'const', unitName: string};
+type Mode = 'C' | 'none' | 'param' | 'iter' | 'iter_copy' | { tag: 'const', unitName: string};
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'prime', val: Expr, variant: string, variantIndex: number, type: Type.Type }
@@ -1870,9 +1870,9 @@ function ensureExprValid(
   if (expr.tag == 'list_init') {
     let exprType: Type.Type | null = null;
     if (expectedReturn != null) {
-      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'std.core.arr') {
+      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'std.core.Arr') {
         if (!ignoreErrors) {
-          logError(position, 'list expected');
+          logError(position, 'std.core.Arr expected');
         }
         return null;
       }
@@ -2108,6 +2108,28 @@ function ensureExprValid(
           return null;
         }
       } 
+    }
+
+    // check if it is C namespace
+    if (expr.val.tag == 'dot' &&
+      expr.val.val.left.tag == 'left_expr'
+      && expr.val.val.left.val.tag == 'var'
+      && expr.val.val.left.val.val == 'C') {
+
+      if (expectedReturn == null) {
+        logError(expr.position, 'can not type check C value');
+        return null;
+      }
+      return { 
+        tag: 'left_expr',
+        val: {
+          tag: 'var',
+          val: 'none',
+          mode: 'C',
+          type: expectedReturn
+        },
+        type: expectedReturn
+      }
     }
 
     if (computedExpr == null) { // normal left expr parsing

@@ -557,7 +557,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
   else if (expr.tag == 'list_init') {
-    if (expr.type.tag != 'struct' || expr.type.val.id != 'std.core.arr') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'std.core.Arr') {
       return 'undefined';
     }
 
@@ -745,6 +745,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     else if (leftExpr.mode == 'none') {
       return `_${leftExpr.val}`;
     }
+    else if (leftExpr.mode == 'C') {
+      return leftExpr.val;
+    }
     else {
       // for constants
       return getConstUniqueId(leftExpr.mode.unitName, leftExpr.val);
@@ -753,7 +756,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
 }
 
 function getConstUniqueId(unitName: string, constName: string) {
-  return `_${unitName}_${constName}`;
+  return `_${unitName}_${constName}`.replace('.', '_');
 }
 
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {
