@@ -322,8 +322,8 @@ function verifyDataType(
   } 
 
   if (type.tag == 'type_union') {
-    let firstTypeValid = verifyDataType(type.val1, position, table, validGenerics);
-    let secondTypeValid = verifyDataType(type.val2, position, table, validGenerics);
+    let firstTypeValid = verifyDataType(type.val0, position, table, validGenerics);
+    let secondTypeValid = verifyDataType(type.val1, position, table, validGenerics);
     return firstTypeValid && secondTypeValid;
   }
 
@@ -2154,86 +2154,73 @@ function ensureExprValid(
       return null;
     }
 
+    // T -> T|K
+    if (!(computedExpr.type.tag == 'enum' && computedExpr.type.val.id == 'std.core.TypeUnion')
+      && (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.TypeUnion')) {
+      let isFirstVal = false;
+      isFirstVal = Type.typeApplicable(computedExpr.type, expectedReturn.val.fields[0].type, false);
+      if (isFirstVal) {
+        return {
+          tag: 'enum_init',
+          type: expectedReturn,
+          fieldExpr: computedExpr,
+          fieldName: 'val0',
+          variantIndex: 0
+        };
+      }
+      else {
+        return {
+          tag: 'enum_init',
+          type: expectedReturn,
+          fieldExpr: computedExpr,
+          fieldName: 'val1',
+          variantIndex: 1
+        }
+      }
+    }
+
+    // T|K -> T if T is only variant
+    if (computedExpr.type.tag == 'enum' && computedExpr.type.val.id == 'std.core.TypeUnion'
+      && !(expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.TypeUnion')
+      && computedExpr.tag == 'left_expr') {
+      let possible = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val)
+      if (possible.length == 0) {
+        logError(position, 'no variant possible');
+        return null;
+      }
+      else if (possible.length > 1) {
+        logError(position, `enum can be ${ JSON.stringify(possible) }`);
+        return null;
+      }
+
+      let fieldIndex = computedExpr.type.val.fields.findIndex(x => x.name == possible[0]);
+      let currentVariantType = computedExpr.type.val.fields[fieldIndex].type;
+      if (!Type.typeApplicable(currentVariantType, expectedReturn, false)) {
+        logError(position, `variant is not ${possible[0]}`);
+        return null;
+      }
+
+      return {
+        tag: 'left_expr',
+        val: {
+          tag: 'prime',
+          val: computedExpr,
+          variant: possible[0],
+          variantIndex: fieldIndex,
+          type: expectedReturn  
+        },
+        type: expectedReturn
+      }
+    }
+
     if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {
-      // determine if can autocast in the case of opt or res
-      if (computedExpr.type.tag == 'enum' && computedExpr.tag == 'left_expr') {
-        // turn Some(T) -> T
-        if (computedExpr.type.val.id == 'std.core.opt'
-          && Type.typeApplicable(computedExpr.type.val.fields[1].type, expectedReturn, false)) {
-
-          let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
-          if (possibleVariants.length != 1 || possibleVariants[0] != 'Some') {
-            if (!ignoreErrors) {
-              logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
-            }
-            return null;
-          }
-
-          return {
-            tag: 'left_expr',
-            val: {
-              tag: 'prime',
-              val: computedExpr,
-              variantIndex: 1,
-              variant: 'Some',
-              type: expectedReturn 
-            },
-            type: expectedReturn
-          };
-        }
-        // turn ok(T) -> T
-        else if (computedExpr.type.val.id == 'std.core.res'
-          && Type.typeApplicable(computedExpr.type.val.fields[0].type, expectedReturn, false)) {
-          let possibleVariants = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val);
-          if (possibleVariants.length != 1 || possibleVariants[0] != 'Ok') {
-            if (!ignoreErrors) {
-              logError(position, `can not autocast - enum can be ${ JSON.stringify(possibleVariants) }`);
-            }
-            return null;
-          }
-
-          return {
-            tag: 'left_expr',
-            val: {
-              tag: 'prime',
-              val: computedExpr,
-              variantIndex: 0,
-              variant: 'Ok',
-              type: expectedReturn 
-            },
-            type: expectedReturn
-          };
-        }
-      }
-      // turn T -> Some(T)
-      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.opt'
-        && Type.typeApplicable(expectedReturn.val.fields[1].type, computedExpr.type, false)) {
-        return {
-          tag: 'enum_init',
-          fieldExpr: computedExpr,
-          variantIndex: 1,
-          fieldName: 'Some',
-          type: expectedReturn 
-        };
-      }
-      // trun T -> ok(T)
-      else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.res'
-        && Type.typeApplicable(expectedReturn.val.fields[0].type, computedExpr.type, false)) {
-        return {
-          tag: 'enum_init',
-          fieldExpr: computedExpr,
-          variantIndex: 0,
-          fieldName: 'Ok',
-          type: expectedReturn 
-        };
-      }
-
       // can not autocast so just error
       if (!ignoreErrors) {
         logError(position, `expected ${Type.toStr(expectedReturn)} found ${Type.toStr(computedExpr.type)}`);
       }
       return null;
     }
+
   }
 
   return computedExpr;

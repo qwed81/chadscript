@@ -19,8 +19,7 @@ interface CProgram {
   entry: CFn
 }
 
-type CStruct = { tag: 'type_union', type: Type, val1: Type, val2: Type }
-  | { tag: 'fn', val: Type }
+type CStruct = { tag: 'fn', val: Type }
   | { tag: 'struct', val: CStructImpl, autoDrop: boolean }
   | { tag: 'enum', val: CStructImpl }
 
@@ -620,19 +619,7 @@ function typeTreeRecur(
   output: CStruct[],
   autoDropSet: Set<string>
 ) {
-  if (type.tag == 'type_union') {
-    typeTreeRecur(type.val1, inStack, alreadyGenned, output, autoDropSet);
-    typeTreeRecur(type.val2, inStack, alreadyGenned, output, autoDropSet);
-
-    let typeKey = JSON.stringify(type);
-    if (alreadyGenned.has(typeKey)) {
-      return;
-    }
-    alreadyGenned.add(typeKey);
-    output.push({ tag: 'type_union', val1: type.val1, val2: type.val2, type });
-    return;
-  }
-  else if (type.tag == 'fn') {
+  if (type.tag == 'fn') {
     let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
       return;

@@ -83,7 +83,7 @@ interface FnType {
 
 type Type = { tag: 'basic', val: string }
   | { tag: 'arr', val: Type }
-  | { tag: 'type_union', val1: Type, val2: Type }
+  | { tag: 'type_union', val0: Type, val1: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
@@ -634,7 +634,7 @@ function tryParseType(tokens: Token[]): Type | null {
       let first = tryParseType(splits[0]);
       let second = tryParseType(splits[1]);
       if (first != null && second != null) {
-        return { tag: 'type_union', val1: first, val2: second }
+        return { tag: 'type_union', val0: first, val1: second }
       }
     }
   }
@@ -1427,7 +1427,7 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
   // split tokens based on special characters
   let tokens: Token[] = [];
   let tokenStart = 0;
-  const splitTokens = [' ', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^'];
+  const splitTokens = [' ', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^', '|'];
   for (let i = 0; i < line.length; i++) {
     // process string as a single token
     if (line[i] == '"') {

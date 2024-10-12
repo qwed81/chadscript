@@ -59,7 +59,6 @@ interface Struct {
 type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte' }
   | { tag: 'generic', val: string }
   | { tag: 'ptr', val: Type }
-  | { tag: 'type_union', val1: Type, val2: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
@@ -98,6 +97,20 @@ function createList(genericType: Type): Type {
   }
 }
 
+function createTypeUnion(val0Type: Type, val1Type: Type): Type {
+  return {
+    tag: 'enum',
+    val: {
+      fields: [
+        { visibility: 'pub', name: 'val0', type: val0Type },
+        { visibility: 'pub', name: 'val1', type: val1Type },
+      ],
+      generics: [val0Type, val1Type],
+      id: 'std.core.TypeUnion'
+    }
+  }
+}
+
 function isComplex(type: Type): boolean {
   if (type.tag == 'generic') {
     return true;
@@ -117,11 +130,7 @@ function isComplex(type: Type): boolean {
 
 // replaces all mutablility of the type so that it can be created into a key
 function standardizeType(type: Type) {
-  if (type.tag == 'type_union') {
-    standardizeType(type.val1);
-    standardizeType(type.val2);
-  }
-  else if (type.tag == 'struct' || type.tag == 'enum') {
+  if (type.tag == 'struct' || type.tag == 'enum') {
     for (let i = 0; i < type.val.fields.length; i++) {
       standardizeType(type.val.fields[i].type);
     }
@@ -160,10 +169,6 @@ function toStr(t: Type | null): string {
     return t.val;
   }
 
-  if (t.tag == 'type_union') {
-    return `${toStr(t.val1)}|${toStr(t.val2)}`;
-  }
-  
   if (t.tag == 'generic') {
     return t.val;
   }
@@ -227,18 +232,19 @@ function typeApplicableStateful(
     return true;
   }
 
+  // T -> T|K is valid
+  if (supa.tag == 'enum' && supa.val.id == 'std.core.TypeUnion') {
+    let firstApplicable = typeApplicableStateful(sub, supa.val.fields[0].type, genericMap, fnHeader);
+    let secondApplicable = typeApplicableStateful(sub, supa.val.fields[1].type, genericMap, fnHeader);
+    return firstApplicable || secondApplicable;
+  }
+
   if (sub.tag != supa.tag) {
     return false;
   }
 
   if (sub.tag == 'primative' && supa.tag == 'primative') {
     return sub.val == supa.val;
-  }
-
-  if (sub.tag == 'type_union' && supa.tag == 'type_union') {
-    let firstApplicable = typeApplicableStateful(sub.val1, supa.val1, genericMap, fnHeader);
-    let secondApplicable = typeApplicableStateful(sub.val2, supa.val2, genericMap, fnHeader);
-    return firstApplicable && secondApplicable;
   }
 
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
@@ -310,13 +316,6 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     }
     return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
   }
-  else if (input.tag == 'type_union') {
-    return { 
-      tag: 'type_union',
-      val1: applyGenericMap(input.val1, map),
-      val2: applyGenericMap(input.val1, map) 
-    };
-  }
   else if (input.tag == 'ptr') {
     return { tag: 'ptr', val: applyGenericMap(input.val, map) };
   }
@@ -353,9 +352,6 @@ function isGeneric(a: Type): boolean {
         return false;
       }
     }
-  }
-  else if (a.tag == 'type_union') {
-    return isGeneric(a.val1) && isGeneric(a.val2);
   }
   else if (a.tag == 'fn') {
     if (isGeneric(a.val.returnType)) {
@@ -595,12 +591,12 @@ function resolveType(
     return resolveType(def.val, refTable, position);
   }
   else if (def.tag == 'type_union') {
-    let first = resolveType(def.val1, refTable, position);
-    let second = resolveType(def.val2, refTable, position);
-    if (first == null || second == null) {
+    let val1 = resolveType(def.val0, refTable, position);
+    let val2 = resolveType(def.val1, refTable, position);
+    if (val1 == null || val2 == null) {
       return null;
     }
-    return { tag: 'type_union', val1: first, val2: second };
+    return createTypeUnion(val1, val2);
   }
   else if (def.tag == 'generic') {
     let resolvedGenerics: Type[] = [];

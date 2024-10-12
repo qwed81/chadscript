@@ -106,7 +106,9 @@ if (fileNames.length > 0) {
 
     let objPath = path.join('build', fileName.slice(0, -2) + '.o');
     let cSrcPath = path.join('build', fileName);
-    execSync(`clang -c -fPIC ${cSrcPath} -o ${objPath} -I${includePath}`);
+    try {
+      execSync(`clang -c -fPIC ${cSrcPath} -o ${objPath} -I${includePath}`);
+    } catch {}
     objPaths += objPath + ' ';
   }
 
@@ -115,6 +117,8 @@ if (fileNames.length > 0) {
   let asmPath = path.join(__dirname, 'asm.o');
 
   let outputPath = path.join('build', 'output');
-  execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} -o ${outputPath}`);
+  try {
+    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} -o ${outputPath}`);
+  } catch {}
 }
 
