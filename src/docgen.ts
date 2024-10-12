@@ -43,7 +43,7 @@ function docgen(prog: Program): string {
       }
       outputStr += ') ';
       let retType = fn.type.val.returnType;
-      if (retType.tag != 'primative' && retType.val != 'void') {
+      if (retType.tag != 'primative') {
         outputStr += toStr(fn.type.val.returnType);
       }
 

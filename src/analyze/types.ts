@@ -59,7 +59,7 @@ interface Struct {
 type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte' }
   | { tag: 'generic', val: string }
   | { tag: 'ptr', val: Type }
-  | { tag: 'arr', constant: boolean, val: Type }
+  | { tag: 'type_union', val1: Type, val2: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'enum', val: Struct }
   | { tag: 'fn', val: { returnType: Type, paramTypes: Type[], linkedParams: boolean[] } }
@@ -117,9 +117,9 @@ function isComplex(type: Type): boolean {
 
 // replaces all mutablility of the type so that it can be created into a key
 function standardizeType(type: Type) {
-  if (type.tag == 'arr') {
-    type.constant = false;
-    standardizeType(type.val);
+  if (type.tag == 'type_union') {
+    standardizeType(type.val1);
+    standardizeType(type.val2);
   }
   else if (type.tag == 'struct' || type.tag == 'enum') {
     for (let i = 0; i < type.val.fields.length; i++) {
@@ -160,12 +160,8 @@ function toStr(t: Type | null): string {
     return t.val;
   }
 
-  if (t.tag == 'arr') {
-    if (t.constant) {
-      return `${toStr(t.val)}[]`;
-    } else {
-      return `${toStr(t.val)}[&]`;
-    }
+  if (t.tag == 'type_union') {
+    return `${toStr(t.val1)}|${toStr(t.val2)}`;
   }
   
   if (t.tag == 'generic') {
@@ -235,15 +231,14 @@ function typeApplicableStateful(
     return false;
   }
 
-  if (sub.tag == 'primative') {
+  if (sub.tag == 'primative' && supa.tag == 'primative') {
     return sub.val == supa.val;
   }
 
-  if (sub.tag == 'arr' && supa.tag == 'arr') {
-    if (sub.constant && !supa.constant) {
-      return false;
-    }
-    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
+  if (sub.tag == 'type_union' && supa.tag == 'type_union') {
+    let firstApplicable = typeApplicableStateful(sub.val1, supa.val1, genericMap, fnHeader);
+    let secondApplicable = typeApplicableStateful(sub.val2, supa.val2, genericMap, fnHeader);
+    return firstApplicable && secondApplicable;
   }
 
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
@@ -315,8 +310,12 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     }
     return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
   }
-  else if (input.tag == 'arr') {
-    return { tag: 'arr', constant: input.constant, val: applyGenericMap(input.val, map) };
+  else if (input.tag == 'type_union') {
+    return { 
+      tag: 'type_union',
+      val1: applyGenericMap(input.val1, map),
+      val2: applyGenericMap(input.val1, map) 
+    };
   }
   else if (input.tag == 'ptr') {
     return { tag: 'ptr', val: applyGenericMap(input.val, map) };
@@ -355,8 +354,8 @@ function isGeneric(a: Type): boolean {
       }
     }
   }
-  else if (a.tag == 'arr') {
-    return isGeneric(a.val);
+  else if (a.tag == 'type_union') {
+    return isGeneric(a.val1) && isGeneric(a.val2);
   }
   else if (a.tag == 'fn') {
     if (isGeneric(a.val.returnType)) {
@@ -367,6 +366,9 @@ function isGeneric(a: Type): boolean {
         return true;
       }
     }
+  }
+  else if (a.tag == 'ptr') {
+    return isGeneric(a.val);
   }
   return false;
 }
@@ -460,7 +462,7 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'arr' || struct.tag == 'ptr') {
+  if (struct.tag == 'ptr') {
     return { tag: 'default', returnType: struct.val };
   }
 
@@ -507,7 +509,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
 }
 
 function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'arr' || struct.tag == 'ptr') {
+  if (struct.tag == 'ptr') {
     return { tag: 'default', returnType: struct.val };
   }
 
@@ -592,19 +594,13 @@ function resolveType(
   else if (def.tag == 'link') {
     return resolveType(def.val, refTable, position);
   }
-  else if (def.tag == 'arr') {
-    let slice = resolveType(def.val, refTable, position);
-    if (slice == null) {
+  else if (def.tag == 'type_union') {
+    let first = resolveType(def.val1, refTable, position);
+    let second = resolveType(def.val2, refTable, position);
+    if (first == null || second == null) {
       return null;
     }
-    return { tag: 'arr', constant: false, val: slice };
-  }
-  else if (def.tag == 'const_arr') {
-    let slice = resolveType(def.val, refTable, position);
-    if (slice == null) {
-      return null;
-    }
-    return { tag: 'arr', constant: true, val: slice };
+    return { tag: 'type_union', val1: first, val2: second };
   }
   else if (def.tag == 'generic') {
     let resolvedGenerics: Type[] = [];
@@ -879,14 +875,7 @@ function resolveFn(
       }
       if (returnType != null) {
         let wrongType = false;
-        // TODO fix quick hack if it becomes a problem
-        if (defReturnType.tag == 'arr' && returnType.tag == 'arr') {
-          if (!typeApplicableStateful(returnType.val, defReturnType.val, genericMap, true) 
-            && !returnType.constant && defReturnType.constant) {
-
-            wrongType = true;
-          }
-        } else if (!typeApplicableStateful(returnType, defReturnType, genericMap, true)) { // backwards to allow generic returns
+        if (!typeApplicableStateful(returnType, defReturnType, genericMap, true)) {
           wrongType = true;
         }
 

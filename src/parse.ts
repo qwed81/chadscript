@@ -83,7 +83,7 @@ interface FnType {
 
 type Type = { tag: 'basic', val: string }
   | { tag: 'arr', val: Type }
-  | { tag: 'const_arr', val: Type }
+  | { tag: 'type_union', val1: Type, val2: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
@@ -626,6 +626,18 @@ function tryParseType(tokens: Token[]): Type | null {
     }
     return { tag: 'link', val: inner };
   }
+  
+  // parse it as a type union
+  if (tokens.length >= 3) {
+    let splits = balancedSplitTwo(tokens, '|');
+    if (splits.length > 1) {
+      let first = tryParseType(splits[0]);
+      let second = tryParseType(splits[1]);
+      if (first != null && second != null) {
+        return { tag: 'type_union', val1: first, val2: second }
+      }
+    }
+  }
 
   let lastToken = tokens[tokens.length - 1].val; 
   if (lastToken == '!' || lastToken == '?' || lastToken == '*') {
@@ -676,32 +688,6 @@ function tryParseType(tokens: Token[]): Type | null {
     }
 
     let inner = tokens.slice(openIndex + 1, -1);
-
-    // parse it as an array
-    if (inner.length == 0 || inner.length == 1 && inner[0].val == '&') {
-      let innerFirst: string | undefined = inner.length == 0 ? undefined : inner[0].val;
-      if (innerFirst == '[') {
-        inner = [];
-      }
-
-      let end = tokens.length - 2;
-      if (innerFirst == '&') {
-        end = tokens.length - 3;
-      }
-
-      let restOfType: Token[] = tokens.slice(0, end);
-      let t: Type | null = tryParseType(restOfType);
-      if (t == null) {
-        return null;
-      }
-
-      if (innerFirst == '&') {
-        return { tag: 'arr', val: t };
-      } 
-      else {
-        return { tag: 'const_arr', val: t };
-      }
-    }
 
     // parse it as a generic
     let splits = balancedSplit(inner, ',');

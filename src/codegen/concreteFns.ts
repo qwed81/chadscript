@@ -19,7 +19,7 @@ interface CProgram {
   entry: CFn
 }
 
-type CStruct = { tag: 'arr', val: Type }
+type CStruct = { tag: 'type_union', type: Type, val1: Type, val2: Type }
   | { tag: 'fn', val: Type }
   | { tag: 'struct', val: CStructImpl, autoDrop: boolean }
   | { tag: 'enum', val: CStructImpl }
@@ -117,10 +117,6 @@ function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
 
 function queueType(ctx: ResolveContext, type: Type) {
   standardizeType(type);
-  // all arrays need to have the same constant to work as keys
-  if (type.tag == 'arr') {
-    type.constant = false;
-  }
   let key = JSON.stringify(type);
   if (ctx.queuedTypes.has(key)) {
     return;
@@ -290,24 +286,26 @@ function resolveExpr(
   }
   else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert'
     || expr.tag == 'assert_bool' || expr.tag == 'cp' || expr.tag == 'mv') {
+
     let inner = resolveExpr(expr.val, genericMap, ctx);
+    let type = applyGenericMap(expr.type, genericMap);
     if (expr.tag == 'not') {
-      return { tag: expr.tag, val: inner, type: expr.type };
+      return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'try') {
-      return { tag: expr.tag, val: inner, type: expr.type };
+      return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'assert') {
-      return { tag: expr.tag, val: inner, type: expr.type };
+      return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'assert_bool') {
-      return { tag: expr.tag, val: inner, type: expr.type };
+      return { tag: expr.tag, val: inner, type};
     }
     else if (expr.tag == 'cp') {
-      return { tag: 'cp', val: inner, type: expr.type };
+      return { tag: 'cp', val: inner, type };
     }
     else if (expr.tag == 'mv') {
-      return { tag: 'mv', val: inner, type: expr.type }
+      return { tag: 'mv', val: inner, type }
     }
   }
   else if (expr.tag == 'fn_call') {
@@ -622,15 +620,16 @@ function typeTreeRecur(
   output: CStruct[],
   autoDropSet: Set<string>
 ) {
-  if (type.tag == 'arr') {
-    typeTreeRecur(type.val, inStack, alreadyGenned, output, autoDropSet);
+  if (type.tag == 'type_union') {
+    typeTreeRecur(type.val1, inStack, alreadyGenned, output, autoDropSet);
+    typeTreeRecur(type.val2, inStack, alreadyGenned, output, autoDropSet);
 
     let typeKey = JSON.stringify(type);
     if (alreadyGenned.has(typeKey)) {
       return;
     }
     alreadyGenned.add(typeKey);
-    output.push({ tag: 'arr', val: type });
+    output.push({ tag: 'type_union', val1: type.val1, val2: type.val2, type });
     return;
   }
   else if (type.tag == 'fn') {

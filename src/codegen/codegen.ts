@@ -57,13 +57,12 @@ function codegen(prog: Program): OutputFile[] {
 
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
-
     if (struct.tag == 'struct' || struct.tag == 'enum') {
       cstructMap.set(JSON.stringify(struct.val.name), struct);
       chadDotH += '\n' + codeGenType(struct.val.name) + ';';
     }
-    else if (struct.tag == 'arr') {
-      chadDotH += '\n' + codeGenType(struct.val) + ';';
+    else if (struct.tag == 'type_union') {
+      chadDotH += `\n  union_${codeGenType(struct.val1)}_${codeGenType(struct.val2)};`;
     }
     if (struct.tag == 'fn' && struct.val.tag == 'fn') {
       let fnType = struct.val.val;
@@ -184,7 +183,7 @@ function codeGenFn(fn: CFn, strTable: string[], cstructMap: Map<string, CStruct>
   let retType = fn.type.val.returnType;
   let bodyStr = '\n';
   if (retType.tag != 'primative' || retType.val != 'void') {
-    if (retType.tag == 'enum' || retType.tag == 'struct' || retType.tag == 'arr') {
+    if (retType.tag == 'enum' || retType.tag == 'struct' || retType.tag == 'type_union') {
       fnCode += `\n  ${codeGenType(fn.type.val.returnType)} ret = { 0 };`;
     } 
     else {
@@ -201,7 +200,7 @@ function codeGenFn(fn: CFn, strTable: string[], cstructMap: Map<string, CStruct>
     fnCode += `${ '\n  ' + codeGenType(ctx.vars[i][0]) } ${ ctx.vars[i][1] }`;
     let tag = ctx.vars[i][0].tag;
     // required to ensure the safety of the program so a non-initialized value is not freed
-    if (tag == 'struct' || tag == 'arr' || tag == 'enum') {
+    if (tag == 'struct'|| tag == 'enum' || tag == 'type_union' ) {
       fnCode += ' = { 0 }';
     }
     fnCode += ';';
@@ -265,7 +264,7 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, '&', '');
   typeStr = replaceAll(typeStr, ' ', '');
 
-  if (type.tag == 'struct' || type.tag == 'enum' || type.tag == 'arr') {
+  if (type.tag == 'struct' || type.tag == 'enum' || type.tag == 'type_union') {
     return 'struct ' + typeStr;
   }
   return typeStr;
@@ -813,9 +812,8 @@ function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string
 function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: number) {
   let typeNoSpace = codeGenType(type);
   typeNoSpace = typeNoSpace.replace(' ', '');
-  if (type.tag == 'enum' || type.tag == 'struct' || type.tag == 'arr') {
-    addToList.push('');
-    // addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
+  if (type.tag == 'enum' || type.tag == 'struct' || type.tag == 'type_union') {
+    addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
   }
 }
 
@@ -834,8 +832,8 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
     if (struct.tag == 'enum' || struct.tag == 'struct') {
       type = struct.val.name;
     }
-    else if (struct.tag == 'arr') {
-      type = struct.val;
+    else if (struct.tag == 'type_union') {
+      type = struct.type;
     }
     if (type.tag == 'primative') {
       continue;
@@ -928,16 +926,10 @@ function codeGenStructDefs(structs: CStruct[]): string {
       }
       structStr += '\n  };\n};'
     }
-    else if (struct.tag == 'arr') {
-      if (struct.val.tag != 'arr') {
-        continue;
-      }
-
-      structStr += '\n' + codeGenType(struct.val) + ' {';
-      structStr += '\n  ' + codeGenType(struct.val.val) + ' *_ptr;';
-      structStr += '\n  ' + codeGenType(struct.val.val) + ' *_start;';
-      structStr += '\n  int64_t *_refCount;';
-      structStr += '\n  int64_t _len;'
+    else if (struct.tag == 'type_union') {
+      structStr += '\n' + codeGenType(struct.type) + ' {';
+      structStr += '\n  ' + codeGenType(struct.val1) + ' val1;';
+      structStr += '\n  ' + codeGenType(struct.val2) + ' val2;';
       structStr += '\n};'
     }
 
@@ -945,8 +937,8 @@ function codeGenStructDefs(structs: CStruct[]): string {
     if (struct.tag == 'enum' || struct.tag == 'struct') {
       type = struct.val.name;
     }
-    else if (struct.tag == 'arr') {
-      type = struct.val;
+    else if (struct.tag == 'type_union') {
+      type = struct.type;
     }
     let typeStr = codeGenType(type);
     let typeStrNoSpace = typeStr.replace(' ', '');

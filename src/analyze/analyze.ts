@@ -321,8 +321,10 @@ function verifyDataType(
     return true;
   } 
 
-  if (type.tag == 'arr' || type.tag == 'const_arr') {
-    return verifyDataType(type.val, position, table, validGenerics);
+  if (type.tag == 'type_union') {
+    let firstTypeValid = verifyDataType(type.val1, position, table, validGenerics);
+    let secondTypeValid = verifyDataType(type.val2, position, table, validGenerics);
+    return firstTypeValid && secondTypeValid;
   }
 
   if (type.tag == 'generic') {
@@ -421,11 +423,6 @@ function analyzeFn(
     let paramType = fn.t.paramTypes[i];
     let mut = false;
     if (paramType.tag == 'link') {
-      if (paramType.val.tag == 'arr' || paramType.val.tag == 'const_arr') {
-        logError(fn.position, 'ref not valid for arrays');
-        return null;
-      }
-
       paramType = paramType.val;
       mut = true;
     }
@@ -668,15 +665,9 @@ function analyzeInst(
     }
 
     let iterType = returnType.val.fields[1].type;
-    let isArr = false;
-    if (iterType.tag == 'arr') {
-      isArr = true;
-      iterType = iterType.val;
-    }
-
     scope.inLoop = true;
     enterScope(scope);
-    setValToScope(scope, inst.val.varName, iterType, false, isArr ? 'iter' : 'iter_copy');
+    setValToScope(scope, inst.val.varName, iterType, false, 'iter_copy');
     let body = analyzeInstBody(inst.val.body, table, scope);
     exitScope(scope);
     if (body == null) {
@@ -944,14 +935,9 @@ function analyzeInst(
 }
 
 function canMutate(leftExpr: LeftExpr, table: Type.RefTable, scope: FnContext): boolean {
-
   if (leftExpr.tag == 'dot') {
     let left: Expr = leftExpr.val.left;
     if (left.tag != 'left_expr') {
-      return false;
-    }
-
-    if (left.type.tag == 'arr' && leftExpr.val.varName == 'len') {
       return false;
     }
 
@@ -979,21 +965,14 @@ function canMutate(leftExpr: LeftExpr, table: Type.RefTable, scope: FnContext): 
     return v.mut;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
-    if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
-      return false;
-    }
     if (leftExpr.val.var.tag == 'left_expr') {
-      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, table, scope);
+      return canMutate(leftExpr.val.var.val, table, scope);
     }
-    
     return true;
   }
   else if (leftExpr.tag == 'arr_offset_slice')  {
-    if (leftExpr.type.tag == 'arr' && leftExpr.type.constant == true) {
-      return false;
-    }
     if (leftExpr.val.var.tag == 'left_expr') {
-      return leftExpr.val.var.type.tag == 'arr' || canMutate(leftExpr.val.var.val, table, scope);
+      return canMutate(leftExpr.val.var.val, table, scope);
     }
   }
   return false;
@@ -1107,23 +1086,10 @@ function ensureLeftExprValid(
     }
 
     if (validExpr.type.tag != 'struct') {
-      if (validExpr.type.tag == 'arr' && leftExpr.val.varName == 'len') {
-        let dotOp: LeftExpr = {
-          tag: 'dot',
-          val: {
-            left: validExpr,
-            varName: 'len'
-          },
-          type: Type.INT
-        };
-        return dotOp;
+      if (!ignoreErrors) {
+        logError(position, `dot op not applicable to ${Type.toStr(validExpr.type)}`);
       }
-      else {
-        if (!ignoreErrors) {
-          logError(position, `dot op not applicable to ${Type.toStr(validExpr.type)}`);
-        }
-        return null;
-      }
+      return null;
     }
 
     let unitName = Type.getUnitNameOfStruct(validExpr.type.val);
