@@ -7,7 +7,7 @@ export {
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult, getUnitNameOfStruct, standardizeType
+  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex
 }
 
 const INT: Type = { tag: 'primative', val: 'int' };
@@ -96,6 +96,23 @@ function createList(genericType: Type): Type {
       id: 'std.core.Arr'
     }
   }
+}
+
+function isComplex(type: Type): boolean {
+  if (type.tag == 'generic') {
+    return true;
+  }
+  if (type.tag == 'struct' || type.tag == 'enum') {
+    if (type.val.id == 'std.core.Arr') {
+      return true;
+    }
+    for (let field of type.val.fields) {
+      if (isComplex(field.type)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // replaces all mutablility of the type so that it can be created into a key

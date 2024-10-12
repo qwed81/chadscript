@@ -288,7 +288,8 @@ function resolveExpr(
     let left = resolveLeftExpr(expr.left, genericMap, ctx);
     return { tag: 'is', left, variant: expr.variant, variantIndex: expr.variantIndex, type: expr.type };
   }
-  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert' || expr.tag == 'assert_bool') {
+  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert'
+    || expr.tag == 'assert_bool' || expr.tag == 'cp' || expr.tag == 'mv') {
     let inner = resolveExpr(expr.val, genericMap, ctx);
     if (expr.tag == 'not') {
       return { tag: expr.tag, val: inner, type: expr.type };
@@ -301,6 +302,12 @@ function resolveExpr(
     }
     else if (expr.tag == 'assert_bool') {
       return { tag: expr.tag, val: inner, type: expr.type };
+    }
+    else if (expr.tag == 'cp') {
+      return { tag: 'cp', val: inner, type: expr.type };
+    }
+    else if (expr.tag == 'mv') {
+      return { tag: 'mv', val: inner, type: expr.type }
     }
   }
   else if (expr.tag == 'fn_call') {

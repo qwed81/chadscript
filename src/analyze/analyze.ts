@@ -117,6 +117,8 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
   | { tag: 'ptr', val: LeftExpr, type: Type.Type }
   | { tag: 'cfn_call', fnName: string, exprs: Expr[], type: Type.Type }
+  | { tag: 'cp', val: Expr, type: Type.Type }
+  | { tag: 'mv', val: Expr, type: Type.Type }
 
 interface DotOp {
   left: Expr
@@ -922,6 +924,11 @@ function analyzeInst(
         logError(inst.position, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);
         return null;
       }
+    }
+
+    if (Type.isComplex(expr.type) && expr.tag == 'left_expr') {
+      logError(inst.position, 'assignment of complex type - mv or cp');
+      return null;
     }
 
     Enum.remove(scope.variantScope, to);
@@ -1730,6 +1737,19 @@ function ensureExprValid(
     }
   } 
 
+  if (expr.tag == 'mv' || expr.tag == 'cp') {
+    let inner = ensureExprValid(expr.val, expectedReturn, table, scope, position);
+    if (inner == null) {
+      return null;
+    }
+    if (expr.tag == 'mv') {
+      computedExpr = { tag: 'mv', val: inner, type: inner.type };
+    }
+    else if (expr.tag == 'cp') {
+      computedExpr = { tag: 'cp', val: inner, type: inner.type };
+    }
+  }
+
   if (expr.tag == 'try' || expr.tag == 'assert') {
     if (expr.tag == 'try' && Type.isRes(scope.returnType) == false) {
       if (!ignoreErrors) {
@@ -1891,6 +1911,12 @@ function ensureExprValid(
       if (e == null) {
         return null;
       }
+
+      if (Type.isComplex(e.type) && e.tag == 'left_expr') {
+        logError(expr.val[i].position, 'assignment of complex type - mv or cp');
+        return null;
+      }
+
       newExprs.push(e);
       exprType = e.type;
     }
@@ -1955,6 +1981,11 @@ function ensureExprValid(
       let fieldType = matchingFields[0].type;
       let expr = ensureExprValid(initField.expr, fieldType, table, scope, position);
       if (expr == null) {
+        return null;
+      }
+
+      if (Type.isComplex(expr.type) && expr.tag == 'left_expr') {
+        logError(initField.expr.position, 'assignment of complex type - mv or cp');
         return null;
       }
 

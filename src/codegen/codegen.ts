@@ -517,6 +517,23 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
       exprText = `${ codeGenExpr(expr.val.left, addInst, ctx, position) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst, ctx, position) }`;
     }
   } 
+  else if (expr.tag == 'mv') {
+    let exprStr = codeGenExpr(expr.val, addInst, ctx, position);
+    addInst.after.push(`${exprStr} = (${codeGenType(expr.type)}){0};`);
+    exprText = exprStr;
+  }
+  else if (expr.tag == 'cp') {
+    let cpAddInst: AddInst = { after: [], before: [] };
+    let exprStr = codeGenExpr(expr.val, cpAddInst, ctx, position);
+    let copiedStr = reserveVar(ctx, expr.type);
+
+    codeGenCp(exprStr, copiedStr, expr.type, ctx, cpAddInst);
+    addInst.before.push(`${copiedStr} = ${exprStr};`);
+    addInst.before.push(...cpAddInst.before);
+    addInst.before.push(...cpAddInst.after);
+
+    exprText = copiedStr;
+  }
   else if (expr.tag == 'not') {
     exprText = '!' + codeGenExpr(expr.val, addInst, ctx, position);
   } 
@@ -650,6 +667,36 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   return exprName;
 }
 
+// codeGenCp takes the prefix of the field (name of the variable) and then recursively
+// sets the pointer to all of the arrays to a new malloc memcpy array
+function codeGenCp(
+  srcPrefix: string,
+  destPrefix: string,
+  type: Type,
+  ctx: FnContext,
+  addInst: AddInst
+) {
+  if (type.tag != 'struct') {
+    return;
+  }
+
+  if (type.tag == 'struct' && type.val.id == 'std.core.Arr') {
+    let arrReserve = reserveVarNoStack(ctx);
+    let size = `${srcPrefix}._len * sizeof(${codeGenType(type.val.generics[0])})`;
+    addInst.after.push(`void* ${arrReserve} = malloc(${size});`);
+    addInst.after.push(`memcpy(${arrReserve}, ${srcPrefix}._base, ${size});`);
+    addInst.after.push(`${destPrefix}._base = ${arrReserve};`);
+  }
+
+  for (let i = 0; i < type.val.fields.length; i++) {
+    let fieldType = type.val.fields[i].type;
+    let fieldName = type.val.fields[i].name;
+    let fullSrcField = srcPrefix + fieldName;
+    let fullDestField = destPrefix + fieldName;
+    codeGenCp(fullSrcField, fullDestField, fieldType, ctx, addInst);
+  } 
+}
+
 function codeGenStructInit(expr: Expr, addInst: AddInst, ctx: FnContext, position: Position): string {
   if (expr.tag != 'struct_init') {
     return 'undefined';
@@ -767,7 +814,8 @@ function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: 
   let typeNoSpace = codeGenType(type);
   typeNoSpace = typeNoSpace.replace(' ', '');
   if (type.tag == 'enum' || type.tag == 'struct' || type.tag == 'arr') {
-    addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
+    addToList.push('');
+    // addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
   }
 }
 
