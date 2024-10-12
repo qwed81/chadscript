@@ -93,11 +93,11 @@ pub fn append(ln Arr[T] l, T val)
     ptr[T] newAlloc = alloc(l.capacity * 2)
 
     for i in 0:l.len
-      newAlloc[i] = l.base[i]
+      newAlloc[i] = cp l.base[i]
     l.base = newAlloc
     l.capacity = l.capacity * 2
 
-  l.base[l.len] = val
+  l.base[l.len] = cp val
   l.len += 1
 
 pub fn append(ln Arr[T] to, Arr[T] from)
@@ -289,7 +289,7 @@ pub struct Scanner[T]
   int i
 
 pub fn scanner(T stream, int!(T, Arr[byte]) r=read) Scanner[T]
-  return { buf = arr(1024), stream = stream, readBytes = r, amtInBuf = 0, i = 0 }
+  return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
 pub fn nextLine(ln Scanner[T] scanner) str!
   Fmt output = fmt()
