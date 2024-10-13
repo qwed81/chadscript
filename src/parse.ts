@@ -200,6 +200,7 @@ interface BinExpr {
 }
 
 type Expr = { tag: 'bin', val: BinExpr, position: Position }
+  | { tag: 'is', val: LeftExpr, right: Type, position: Position }
   | { tag: 'not', val: Expr, position: Position }
   | { tag: 'try', val: Expr, position: Position }
   | { tag: 'assert', val: Expr, position: Position }
@@ -1369,10 +1370,26 @@ function tryParseBinOp(tokens: Token[], op: string, position: Position): Expr | 
     return null;
   }
 
-  let left = tryParseExpr(splits[0], positionRange(splits[0]));
-  let right = tryParseExpr(splits[1], positionRange(splits[1]));
+  if (op == 'is') {
+    let left = tryParseLeftExpr(splits[0], positionRange(splits[0]));
+    if (left == null) {
+      return null;
+    }
+    let right = tryParseType(splits[1]);
+    if (right == null) {
+      return null;
+    }
 
-  if (left == null || right == null) {
+    return { tag: 'is', val: left, right, position };
+  }
+
+  let left = tryParseExpr(splits[0], positionRange(splits[0]));
+  if (left == null) {
+    return null;
+  }
+
+  let right = tryParseExpr(splits[1], positionRange(splits[1]));
+  if (right == null) {
     return null;
   }
 

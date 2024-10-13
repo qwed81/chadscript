@@ -236,7 +236,9 @@ function typeApplicableStateful(
   if (supa.tag == 'enum' && supa.val.id == 'std.core.TypeUnion') {
     let firstApplicable = typeApplicableStateful(sub, supa.val.fields[0].type, genericMap, fnHeader);
     let secondApplicable = typeApplicableStateful(sub, supa.val.fields[1].type, genericMap, fnHeader);
-    return firstApplicable || secondApplicable;
+    if (firstApplicable || secondApplicable) {
+      return true;
+    }
   }
 
   if (sub.tag != supa.tag) {

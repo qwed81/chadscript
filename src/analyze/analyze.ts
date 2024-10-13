@@ -1268,7 +1268,36 @@ function ensureLeftExprValid(
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val, table);
     if (v != null) {
-      return { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
+      let validLeftExpr: LeftExpr = { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
+      // try to turn type union in to proper type
+      if (v.type.tag == 'enum' && v.type.val.id == 'std.core.TypeUnion') {
+        let possible = Enum.getVariantPossibilities(scope.variantScope, validLeftExpr);
+        if (possible.length == 0) {
+          if (!ignoreErrors) {
+            logError(position, 'no variant possible');
+          }
+          return null;
+        }
+        else if (possible.length > 1) {
+          return validLeftExpr;
+        }
+
+        let fieldIndex = v.type.val.fields.findIndex(x => x.name == possible[0]);
+        let currentVariantType = v.type.val.fields[fieldIndex].type;
+
+        return {
+          tag: 'prime',
+          val: {
+            tag: 'left_expr',
+            val: validLeftExpr,
+            type: v.type
+          },
+          variant: possible[0],
+          variantIndex: fieldIndex,
+          type: currentVariantType  
+        };
+      }
+      return validLeftExpr;
     }
 
     if (fnTypeHint != null) {
@@ -1314,7 +1343,8 @@ function ensureFnCallValid(
   expectedReturn: Type.Type | null,
   table: Type.RefTable, 
   scope: FnContext,
-  position: Position
+  position: Position,
+  ignoreErrors: boolean = false
 ): Expr | null {
 
   // setup check the types of params for use in attempting
@@ -1348,7 +1378,9 @@ function ensureFnCallValid(
 
   // it is a function declared in the scope, ensure that fnType fits the params and return type
   if (fnType.tag != 'fn') {
-    logError(position, `${Type.toStr(fnType)} type is not a function`);
+    if (!ignoreErrors) {
+      logError(position, `${Type.toStr(fnType)} type is not a function`);
+    }
     return null;
   }
 
@@ -1388,7 +1420,9 @@ function ensureFnCallValid(
       // for fn='resolve'
       if (!overruled && namedParamExpr.tag == 'left_expr' && paramType.tag == 'fn') {
         if (namedParamExpr.val.tag != 'var') {
-          logError(position, 'function named parameter must have a name');
+          if (!ignoreErrors) {
+            logError(position, 'function named parameter must have a name');
+          }
           return null;
         }
 
@@ -1428,24 +1462,32 @@ function ensureFnCallValid(
   }
 
   if (fnType.val.paramTypes.length != paramTypes.length) {
-    logError(position, 'invalid parameter number');
+    if (!ignoreErrors) {
+      logError(position, 'invalid parameter number');
+    }
     return null;
   }
 
   for (let i = 0; i < paramTypes.length; i++) {
     if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i], true) == false) {
-      logError(position, `invalid type for parameter ${i}`);
+      if (!ignoreErrors) {
+        logError(position, `invalid type for parameter ${i}`);
+      }
       return null;
     }
   }
 
   if (expectedReturn != null && Type.typeApplicable(fnType.val.returnType, expectedReturn, true) == false) {
     if (Type.typeApplicable(expectedReturn, Type.VOID, false)) {
-      logError(position, 'return value must be handled');
+      if (!ignoreErrors) {
+        logError(position, 'return value must be handled');
+      }
       return null;
     }
 
-    logError(position, 'invalid return type');
+    if (!ignoreErrors) {
+      logError(position, 'invalid return type');
+    }
     return null;
   }
 
@@ -1506,41 +1548,6 @@ function ensureBinOpValid(
 
     computedExpr = rangeInitExpr;
   }
-  else if (expr.op == 'is') {
-    let exprLeft = ensureExprValid(expr.left, null, table, scope, position);
-    if (exprLeft == null) {
-      return null;
-    }
-
-    if (exprLeft.tag != 'left_expr') {
-      logError(position, 'is operator only valid on enums');
-      return null;
-    }
-
-    if (exprLeft.type.tag != 'enum') {
-      logError(position, 'is operator only valid on enums');
-      return null;
-    }
-
-    if (expr.right.tag != 'left_expr' || expr.right.val.tag != 'var') {
-      logError(position, 'expected enum variant in is expr');
-      return null;
-    }
-
-    let fieldName: string = expr.right.val.val;
-    if (exprLeft.type.val.fields.map(f => f.name).includes(fieldName) == false) {
-      logError(position, `${fieldName} does not exist on enum ${Type.toStr(exprLeft.type)}`);
-      return null;
-    }
-
-    computedExpr = {
-      tag: 'is',
-      left: exprLeft.val,
-      variant: fieldName,
-      variantIndex: Type.getVariantIndex(exprLeft.type, fieldName),
-      type: Type.BOOL 
-    };
-  } 
   else if (expr.op == '&&') {
     let exprLeft = ensureExprValid(expr.left, Type.BOOL, table, scope, position);
     if (exprLeft == null) {
@@ -1696,6 +1703,137 @@ function ensureExprValid(
 ): Expr | null {
   let computedExpr: Expr | null = null; 
 
+  if (expectedReturn != null && expectedReturn.tag == 'enum' 
+    && expectedReturn.val.id == 'std.core.TypeUnion') {
+
+    let fields = expectedReturn.val.fields;
+    let first = ensureExprValid(expr, fields[0].type, table, scope, position, true);
+    if (first != null) {
+      return {
+        tag: 'enum_init',
+        type: expectedReturn,
+        fieldExpr: first,
+        fieldName: 'val0',
+        variantIndex: 0
+      };
+    }
+
+    let second = ensureExprValid(expr, fields[1].type, table, scope, position, true);
+    if (second != null) {
+      return {
+        tag: 'enum_init',
+        type: expectedReturn,
+        fieldExpr: second,
+        fieldName: 'val1',
+        variantIndex: 1
+      }
+    }
+  }
+
+  if (expr.tag == 'is') {
+    let exprLeft = ensureLeftExprValid(expr.val, null, null, table, scope, position, false);
+    if (exprLeft == null) {
+      return null;
+    }
+
+    // T|K when variant is K should be able to T|K is K
+    if (exprLeft.type.tag != 'enum') {
+      let t = Type.resolveType(expr.right, table, position);
+      if (t == null) {
+        if (!ignoreErrors) {
+          logError(position, 'is operator only valid on enums');
+        }
+        return null;
+      }
+
+      if (Type.typeApplicable(t, exprLeft.type, false) 
+        && Type.typeApplicable(exprLeft.type, t, false)) {
+        computedExpr = {
+          tag: 'bool_const',
+          val: true,
+          type: Type.BOOL
+        }
+      }
+
+      if (computedExpr == null) {
+        if (!ignoreErrors) {
+          logError(position, '\'is\' will always be false');
+        }
+        return null;
+      }
+    }
+
+    if (exprLeft.type.tag == 'enum' && expr.right.tag == 'basic') {
+      let fieldName: string = expr.right.val;
+      if (exprLeft.type.val.id == 'std.core.TypeUnion') {
+        let fields = exprLeft.type.val.fields;
+        for (let i = 0; i < fields.length; i++) {
+          let t = fields[i].type;
+          // structs with 0 generics
+          if ((t.tag == 'struct' || t.tag == 'enum') && t.val.generics.length == 0 && t.val.id == fieldName
+            || t.tag == 'primative' && t.val == fieldName) {
+            computedExpr = {
+              tag: 'is',
+              left: exprLeft,
+              variant: 'val' + i,
+              variantIndex: i,
+              type: Type.BOOL
+            }
+          }
+        }
+      }
+
+      if (computedExpr == null) {
+        if (exprLeft.type.val.fields.map(f => f.name).includes(fieldName) == false) {
+          if (!ignoreErrors) {
+            logError(position, `${fieldName} does not exist on enum ${Type.toStr(exprLeft.type)}`);
+          }
+          return null;
+        }
+
+        computedExpr = {
+          tag: 'is',
+          left: exprLeft,
+          variant: fieldName,
+          variantIndex: Type.getVariantIndex(exprLeft.type, fieldName),
+          type: Type.BOOL 
+        };
+      }
+    }
+
+    if (exprLeft.type.tag == 'enum' && expr.right.tag != 'basic') {
+      if (exprLeft.type.val.id != 'std.core.TypeUnion') {
+        logError(position, 'expected enum variant');
+        return null;
+      }
+      let fields = exprLeft.type.val.fields;
+      for (let i = 0; i < fields.length; i++) {
+        let t = Type.resolveType(expr.right, table, position);
+        if (t == null) {
+          return null;
+        }
+
+        if (Type.typeApplicable(t, fields[i].type, false) 
+          && Type.typeApplicable(fields[i].type, t, false)) {
+          computedExpr = {
+            tag: 'is',
+            left: exprLeft,
+            variant: 'val' + i,
+            variantIndex: i,
+            type: Type.BOOL
+          }
+        }
+      }
+    }
+
+    if (computedExpr == null) {
+      if (!ignoreErrors) {
+        logError(position, 'is does not match variants');
+      }
+      return null;
+    }
+  } 
+
   if (expr.tag == 'bin') {
     computedExpr = ensureBinOpValid(expr.val, expectedReturn, table, scope, position);
     if (computedExpr == null) {
@@ -1766,7 +1904,9 @@ function ensureExprValid(
     // check if builtin function
     if (expr.val.fn.tag == 'var' && expr.val.fn.val == 'ptr') {
       if (expr.val.exprs.length != 1) {
-        logError(expr.position, 'ptr expects 1 argument');
+        if (!ignoreErrors) {
+          logError(expr.position, 'ptr expects 1 argument');
+        }
         return null;
       }
       let variable = ensureExprValid(expr.val.exprs[0], null, table, scope, position, false);
@@ -1802,7 +1942,9 @@ function ensureExprValid(
         }
 
         if (expectedReturn == null) {
-          logError(position, 'C fn can not disambiguate return type');
+          if (!ignoreErrors) {
+            logError(position, 'C fn can not disambiguate return type');
+          }
           return null;
         }
 
@@ -1844,7 +1986,7 @@ function ensureExprValid(
 
     // if there was no enum variant treat it as a normal function call
     if (computedExpr == null) {
-      let fnExpr = ensureFnCallValid(expr.val, expectedReturn, table, scope, position);
+      let fnExpr = ensureFnCallValid(expr.val, expectedReturn, table, scope, position, ignoreErrors);
       if (fnExpr == null) {
         return null;
       }
@@ -1854,21 +1996,19 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'list_init') {
+    // determine what should be the type of the inner values
     let exprType: Type.Type | null = null;
-    if (expectedReturn != null) {
-      if (expectedReturn.tag != 'struct' || expectedReturn.val.id != 'std.core.Arr') {
-        if (!ignoreErrors) {
-          logError(position, 'std.core.Arr expected');
-        }
-        return null;
-      }
-
+    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.id == 'std.core.Arr') {
       let ptrType = expectedReturn.val.fields[0].type;
       if (ptrType.tag != 'ptr') {
         compilerError('expected ptr field');
         return null;
       }
       exprType = ptrType.val;
+    }
+    else if (!ignoreErrors) {
+      logError(position, 'type mismatch expected array');
+      return null;
     }
 
     let newExprs: Expr[] = []
@@ -1879,7 +2019,9 @@ function ensureExprValid(
       }
 
       if (Type.isComplex(e.type) && e.tag == 'left_expr') {
-        logError(expr.val[i].position, 'assignment of complex type - mv or cp');
+        if (!ignoreErrors) {
+          logError(expr.val[i].position, 'assignment of complex type - mv or cp');
+        }
         return null;
       }
 
@@ -1951,7 +2093,9 @@ function ensureExprValid(
       }
 
       if (Type.isComplex(expr.type) && expr.tag == 'left_expr') {
-        logError(initField.expr.position, 'assignment of complex type - mv or cp');
+        if (!ignoreErrors) {
+          logError(initField.expr.position, 'assignment of complex type - mv or cp');
+        }
         return null;
       }
 
@@ -2101,7 +2245,9 @@ function ensureExprValid(
           };
         } 
         else {
-          logError(expr.position, 'enum init expects value - non-void variant');
+          if (!ignoreErrors) {
+            logError(expr.position, 'enum init expects value - non-void variant');
+          }
           return null;
         }
       } 
@@ -2114,7 +2260,9 @@ function ensureExprValid(
       && expr.val.val.left.val.val == 'C') {
 
       if (expectedReturn == null) {
-        logError(expr.position, 'can not type check C value');
+        if (!ignoreErrors) {
+          logError(expr.position, 'can not type check C value');
+        }
         return null;
       }
       return { 
@@ -2152,65 +2300,6 @@ function ensureExprValid(
         logError(position, 'ensureExprValid compiler bug');
       }
       return null;
-    }
-
-    // T -> T|K
-    if (!(computedExpr.type.tag == 'enum' && computedExpr.type.val.id == 'std.core.TypeUnion')
-      && (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.TypeUnion')) {
-      let isFirstVal = false;
-      isFirstVal = Type.typeApplicable(computedExpr.type, expectedReturn.val.fields[0].type, false);
-      if (isFirstVal) {
-        return {
-          tag: 'enum_init',
-          type: expectedReturn,
-          fieldExpr: computedExpr,
-          fieldName: 'val0',
-          variantIndex: 0
-        };
-      }
-      else {
-        return {
-          tag: 'enum_init',
-          type: expectedReturn,
-          fieldExpr: computedExpr,
-          fieldName: 'val1',
-          variantIndex: 1
-        }
-      }
-    }
-
-    // T|K -> T if T is only variant
-    if (computedExpr.type.tag == 'enum' && computedExpr.type.val.id == 'std.core.TypeUnion'
-      && !(expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.TypeUnion')
-      && computedExpr.tag == 'left_expr') {
-      let possible = Enum.getVariantPossibilities(scope.variantScope, computedExpr.val)
-      if (possible.length == 0) {
-        logError(position, 'no variant possible');
-        return null;
-      }
-      else if (possible.length > 1) {
-        logError(position, `enum can be ${ JSON.stringify(possible) }`);
-        return null;
-      }
-
-      let fieldIndex = computedExpr.type.val.fields.findIndex(x => x.name == possible[0]);
-      let currentVariantType = computedExpr.type.val.fields[fieldIndex].type;
-      if (!Type.typeApplicable(currentVariantType, expectedReturn, false)) {
-        logError(position, `variant is not ${possible[0]}`);
-        return null;
-      }
-
-      return {
-        tag: 'left_expr',
-        val: {
-          tag: 'prime',
-          val: computedExpr,
-          variant: possible[0],
-          variantIndex: fieldIndex,
-          type: expectedReturn  
-        },
-        type: expectedReturn
-      }
     }
 
     if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {

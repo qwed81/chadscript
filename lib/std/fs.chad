@@ -62,7 +62,7 @@ pub fn read(ln File file, ln Arr[byte] buf, int position=-1) int! amtRead
   int result = C.readFile(file.handle, buf.base, buf.len, position)
   if result < 0
     return uv_err(result)
-  return result
+  return Ok(result)
 
 pub fn write(ln File file, Arr[byte] bytes, int position=-1) void!
   int result = C.writeFile(file.handle, bytes.base, bytes.len, position)

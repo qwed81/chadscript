@@ -3,6 +3,10 @@ pub fn or(int a, int b) int
     return a | b;
   return a
 
+pub enum TypeUnion[T, K]
+  T val0
+  K val1
+
 pub enum opt[T]
   void None
   T Some
@@ -20,7 +24,7 @@ pub fn next(ln range r) int?
   if r.start == r.end
     return None
   r.start += 1
-  return thisIndex
+  return Some(thisIndex)
 
 pub fn rev(range r) revRange
   return { start = r.end - 1, end = r.start - 1 }
@@ -34,7 +38,7 @@ pub fn next(ln revRange r) int?
   if r.start == r.end
     return None
   r.start -= 1
-  return thisIndex
+  return Some(thisIndex)
 
 pub fn alloc(int amt) ptr[T]
   ptr[T] output
@@ -311,5 +315,5 @@ pub fn input(str output) int!
   C.printf(cstr("%s"), cstr(output))
   int val = 0
   C.scanf(cstr("%ld"), ptr(val))
-  return val
+  return Ok(val)
 
