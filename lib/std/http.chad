@@ -1,14 +1,14 @@
 use std.net
 
 ##
-pub struct Routes
+struct Routes
   Arr[HttpResponse!(HttpRequest)] handlers
   Arr[str] paths
 
-pub fn routes() Routes 
+fn routes() Routes 
   return { handlers = [], paths = [] }
 
-pub fn addRoute(ln Routes routes, str path, HttpResponse!(HttpRequest) handler) 
+fn addRoute(ln Routes routes, str path, HttpResponse!(HttpRequest) handler) 
   routes.handlers += handler
   routes.paths += path
 
@@ -51,28 +51,28 @@ fn httpEntry(ln TcpSocket socket, Routes routes) void!
 
   return Ok
 
-pub fn httpListen(str host, int port, Routes routes) void!
+fn httpListen(str host, int port, Routes routes) void!
   return listen(host, port, routes, httpEntry)
 
-pub enum HttpMethod
+enum HttpMethod
   void GET
   void POST
 
-pub enum HttpStatusCode
+enum HttpStatusCode
   void OK
   void NOT_FOUND
   void INTERNAL_SERVER_ERROR 
 
-pub enum HttpContentType
+enum HttpContentType
   void Html
   void Json
 
-pub struct HttpResponse
+struct HttpResponse
   get HttpStatusCode status
   get HttpContentType contentType
   get str body
 
-pub struct HttpRequest
+struct HttpRequest
   get str route
   get HttpMethod method
 

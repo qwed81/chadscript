@@ -1,73 +1,73 @@
-pub fn or(int a, int b) int
+fn or(int a, int b) int
   include
     return a | b;
   return a
 
-pub enum TypeUnion[T, K]
+enum TypeUnion[T, K]
   T val0
   K val1
 
-pub enum opt[T]
+enum opt[T]
   void None
   T Some
 
-pub enum res[T]
+enum res[T]
   T Ok
   str Err
 
-pub struct range
+struct range
   int start
   int end
 
-pub fn next(ln range r) int?
+fn next(ln range r) int?
   int thisIndex = r.start
   if r.start == r.end
     return None
   r.start += 1
   return Some(thisIndex)
 
-pub fn rev(range r) revRange
+fn rev(range r) revRange
   return { start = r.end - 1, end = r.start - 1 }
 
-pub struct revRange
+struct revRange
   int start
   int end
 
-pub fn next(ln revRange r) int?
+fn next(ln revRange r) int?
   int thisIndex = r.start
   if r.start == r.end
     return None
   r.start -= 1
   return Some(thisIndex)
 
-pub fn alloc(int amt) ptr[T]
+fn alloc(int amt) ptr[T]
   ptr[T] output
   include
     _output = malloc(sizeof($(T)) * *_amt);
   return output
 
-pub fn null() ptr[T]
+fn null() ptr[T]
   include
     return NULL;
   return null()
 
-pub fn ptrCast(ptr[S] input) ptr[E]
+fn ptrCast(ptr[S] input) ptr[E]
   include
     return ($(ptr[E]))(*_input);
   return ptrCast(input)
 
-pub struct Arr[T]
+struct Arr[T]
   get ptr[T] base
   get int capacity
   get int len
 
-pub fn arr() Arr[T]
+fn arr() Arr[T]
   return { base = alloc(4), capacity = 4, len = 0 }
 
-pub fn arr(int amt) Arr[T]
+fn arr(int amt) Arr[T]
   return { base = alloc(amt), capacity = amt, len = amt }
 
-pub fn str(Arr[T] l, str(T) strImpl=str) str
+fn str(Arr[T] l, str(T) strImpl=str) str
   Fmt buf = fmt()
   buf += "["
   for i in 0:l.len
@@ -77,22 +77,22 @@ pub fn str(Arr[T] l, str(T) strImpl=str) str
   buf += ']'
   return str(buf)
 
-pub fn prepareIndex(ln Arr[T] l, int index, T val) ptr[T]
+fn prepareIndex(ln Arr[T] l, int index, T val) ptr[T]
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-pub fn getIndex(ln Arr[T] l, int index) ptr[T]
+fn getIndex(ln Arr[T] l, int index) ptr[T]
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-pub fn getIndex(ln Arr[T] l, range r) ptr[Arr[T]]
+fn getIndex(ln Arr[T] l, range r) ptr[Arr[T]]
   assert r.start >= 0 && r.end <= l.len
   ptr[Arr[T]] newList = alloc(1)
   int len = r.end - r.start
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
   return newList
 
-pub fn append(ln Arr[T] l, T val)
+fn append(ln Arr[T] l, T val)
   if l.len == l.capacity
     ptr[T] newAlloc = alloc(l.capacity * 2)
 
@@ -104,18 +104,18 @@ pub fn append(ln Arr[T] l, T val)
   l.base[l.len] = cp val
   l.len += 1
 
-pub fn append(ln Arr[T] to, Arr[T] from)
+fn append(ln Arr[T] to, Arr[T] from)
   for i in 0:from.len
     to += from[i]
 
-pub struct str
+struct str
   get ptr[char] base
   get int len
 
-pub fn str(str s) str
+fn str(str s) str
   return s
 
-pub fn eq(str a, str b) bool
+fn eq(str a, str b) bool
   if a.len != b.len
     return false
   for i in 0:a.len
@@ -123,27 +123,27 @@ pub fn eq(str a, str b) bool
       return false
   return true
 
-pub fn getIndex(ln str s, int index) ptr[char]
+fn getIndex(ln str s, int index) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(ln str s, range r) ptr[str]
+fn getIndex(ln str s, range r) ptr[str]
   assert r.start >= 0 && r.end <= s.len
   ptr[str] newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), len = len }
   return newStr
 
-pub fn cstr(str s) ptr[char]
+fn cstr(str s) ptr[char]
   ptr[char] cstr = alloc(s.len + 1)
   for i in 0:s.len
     cstr[i] = s[i]
   return cstr
 
-pub fn split(str s) Arr[str]
+fn split(str s) Arr[str]
   return split(s, ' ')
 
-pub fn split(str s, char c) Arr[str]
+fn split(str s, char c) Arr[str]
   Arr[str] output = []
   int end = 0
   int start = 0
@@ -157,59 +157,59 @@ pub fn split(str s, char c) Arr[str]
   output += s[start:s.len]
   return output
 
-pub fn trim(str s) str
+fn trim(str s) str
   return ""
 
-pub fn contains(str s, str inner) bool
+fn contains(str s, str inner) bool
   return false
 
-pub fn startsWith(str s, str start) bool
+fn startsWith(str s, str start) bool
   return false
 
-pub fn endsWith(str s, str end) bool
+fn endsWith(str s, str end) bool
   return false
 
-pub fn indexOf(str s, str inner) int?
+fn indexOf(str s, str inner) int?
   return None
 
-pub fn lastIndexOf(str s, str inner) int?
+fn lastIndexOf(str s, str inner) int?
   return None
 
-pub struct Fmt
+struct Fmt
   get ptr[char] base
   get int capacity
   get int len
 
-pub fn fmt() Fmt
+fn fmt() Fmt
   return { base = alloc(8), capacity = 8, len = 0 }
 
-pub fn fmt(int size) Fmt
+fn fmt(int size) Fmt
   return { base = alloc(size), capacity = size, len = size }
 
-pub fn clone(Fmt buf) Fmt
+fn clone(Fmt buf) Fmt
   ptr[char] newBase = alloc(buf.len)
   for i in 0:buf.len
     newBase[i] = buf[i]
   return { base = newBase, capacity = buf.len, len = buf.len }
 
-pub fn fromUtf8(Arr[byte] bytes) Fmt
+fn fromUtf8(Arr[byte] bytes) Fmt
   Fmt buf = fmt(bytes.len)
   for i in 0:bytes.len
     buf[i] = char(bytes[i])
   return buf
 
-pub fn toUtf8(Fmt buf) Arr[byte]
+fn toUtf8(Fmt buf) Arr[byte]
   Arr[byte] bytes = arr(buf.len)
   for i in 0:buf.len
     bytes[i] = byte(buf[i])
   return bytes
 
-pub fn fmt(str start) Fmt
+fn fmt(str start) Fmt
   Fmt buf = fmt()
   append(buf, start)
   return buf
 
-pub fn str(Fmt buf) str
+fn str(Fmt buf) str
   return { base = buf.base, len = buf.len }
 
 fn appendOne(ln Fmt s, char c)
@@ -224,38 +224,38 @@ fn appendOne(ln Fmt s, char c)
   s.base[s.len] = c
   s.len += 1
 
-pub fn append(ln Fmt s, T val, str(T) strImpl=str)
+fn append(ln Fmt s, T val, str(T) strImpl=str)
   str valAsStr = strImpl(val)
   for i in 0:valAsStr.len
     appendOne(s, valAsStr[i])
   
-pub fn prepareIndex(Fmt s, int index, T val) ptr[char]
+fn prepareIndex(Fmt s, int index, T val) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(ln Fmt s, int index) ptr[char]
+fn getIndex(ln Fmt s, int index) ptr[char]
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-pub fn getIndex(ln Fmt s, range r) ptr[Fmt]
+fn getIndex(ln Fmt s, range r) ptr[Fmt]
   assert r.start >= 0 && r.end <= s.len
   ptr[Fmt] newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), capacity = len, len = len }
   return newStr
 
-pub struct Map[K, V]
+struct Map[K, V]
 
-pub struct Set[T]
+struct Set[T]
 
-pub struct Heap[T]
+struct Heap[T]
 
-pub struct BST[T]
+struct BST[T]
 
-pub fn rand(int start, int end) int
+fn rand(int start, int end) int
   return 0
 
-pub fn str(int val) str
+fn str(int val) str
   int len
   include
     _len = snprintf(NULL, 0, "%ld", *_val);
@@ -265,37 +265,37 @@ pub fn str(int val) str
     snprintf(_output, _len + 1, "%ld", *_val);
   return { base = output, len = len }
   
-pub fn print(T val, str(T) strImpl=str) 
+fn print(T val, str(T) strImpl=str) 
   ptr[char] printStr = cstr(strImpl(val))
   include
     printf("%s\n", _printStr);
 
-pub fn str(char val) str
+fn str(char val) str
   Fmt buf = fmt(1)
   buf[0] = val
   return str(buf)
 
-pub fn char(byte val) char
+fn char(byte val) char
   include 
     return (char)(*_val);
   return '\0'
 
-pub fn byte(char val) byte
+fn byte(char val) byte
   include
     return ($(byte))(*_val);
   return byte('\0')
 
-pub struct Scanner[T]
+struct Scanner[T]
   Arr[byte] buf
   T stream
   int!(T, Arr[byte]) readBytes
   int amtInBuf
   int i
 
-pub fn scanner(T stream, int!(T, Arr[byte]) r=read) Scanner[T]
+fn scanner(T stream, int!(T, Arr[byte]) r=read) Scanner[T]
   return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
-pub fn nextLine(ln Scanner[T] scanner) str!
+fn nextLine(ln Scanner[T] scanner) str!
   Fmt output = fmt()
 
   while true
@@ -311,7 +311,7 @@ pub fn nextLine(ln Scanner[T] scanner) str!
 
   return Ok(str(output))
 
-pub fn input(str output) int!
+fn input(str output) int!
   C.printf(cstr("%s"), cstr(output))
   int val = 0
   C.scanf(cstr("%ld"), ptr(val))

@@ -254,11 +254,11 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
       let body = getIndentedSegment(lines, i + 1, 1);
 
       // determine how to parse based on 'pub'
-      let pub = false;
+      let pub = true;
       let start = 0;
       let newLine = line;
-      if (line.tokens[0].val == 'pub') {
-        pub = true;
+      if (line.tokens[0].val == 'pri') {
+        pub = false;
         newLine = { ...line, tokens: line.tokens.slice(1) };
         start = 1;
       }
@@ -575,9 +575,16 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
     let name = line.tokens[line.tokens.length - 1].val;
     let visibility: FieldVisibility = null;
     let typeTokens = line.tokens.slice(0, -1);
-    if (line.tokens[0].val == 'get' || line.tokens[0].val == 'pub') {
+    if (line.tokens[0].val == 'get') {
       visibility = line.tokens[0].val;
       typeTokens = line.tokens.slice(1, -1);
+    }
+    else if (line.tokens[0].val == 'pri') {
+      visibility = null;
+      typeTokens = line.tokens.slice(1, -1);
+    }
+    else {
+      visibility = 'pub';
     }
 
     let t = tryParseType(typeTokens);
@@ -726,9 +733,9 @@ function parseFnHeader(
     return null;
   }
 
-  let pub: boolean = false;
-  if (tokens[0].val == 'pub') {
-    pub = true;
+  let pub: boolean = true;
+  if (tokens[0].val == 'pri') {
+    pub = false;
   }
 
   if (tokens[0].val != 'fn' && tokens[1].val != 'fn') {

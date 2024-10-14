@@ -288,7 +288,7 @@ function analyzeUnitDataTypes(units: Parse.ProgramUnit[], unitIndex: number): bo
 
   for (let en of unit.enums) {
     for (let i = 0; i < en.fields.length; i++) {
-      if (en.fields[i].visibility != null) {
+      if (en.fields[i].visibility == 'get' || en.fields[i].visibility == null) {
         logError(en.fields[i].position, 'enum fields can not have visibility modifier');
         invalidDataType = true;
       }
