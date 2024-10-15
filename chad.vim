@@ -2,8 +2,10 @@
 "    finish
 "endif
 
-syn keyword chadKeyword while pub if elif else match for in struct enum return break continue use include assert try get fn arena const mut cp mv ln parallel
-syn keyword chadType void int char bool num byte ptr str arr strbuf range opt res
+syn keyword chadKeyword while pri if elif else match for in struct enum return break continue use include assert try get fn arena const mut cp mv ln
+syn keyword chadType void int char bool num byte ptr str arr strbuf range opt res err
+
+syn keyword chadNil nil
 
 syn keyword chadBool false true
 
@@ -47,6 +49,7 @@ hi link chadComment	Comment
 hi link chadOp Operator 
 hi link chadInt Number
 hi link chadBool Number
+hi link chadNil Number
 hi link chadStr String
 hi link chadChar Number
 hi link chadFn Function

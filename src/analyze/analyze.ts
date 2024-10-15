@@ -112,6 +112,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
   | { tag: 'int_const', val: number, type: Type.Type }
+  | { tag: 'nil_const', type: Type.Type }
   | { tag: 'bool_const', val: boolean, type: Type.Type }
   | { tag: 'num_const', val: number, type: Type.Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type.Type }
@@ -240,7 +241,7 @@ function exprIsConst(expr: Expr): boolean {
   if (expr.tag == 'bin') {
     return exprIsConst(expr.val.left) && exprIsConst(expr.val.right);
   }
-  return expr.tag == 'str_const' || expr.tag == 'int_const' || expr.tag == 'char_const' || expr.tag == 'num_const';
+  return expr.tag == 'str_const' || expr.tag == 'int_const' || expr.tag == 'char_const' || expr.tag == 'num_const' || expr.tag == 'nil_const';
 }
  
 function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, consts: Const[]): Fn[] | null {
@@ -447,7 +448,7 @@ function analyzeFn(
     return null;
   }
 
-  if (!Type.typeApplicable(scope.returnType, Type.VOID, false) && allPaths(body, 'return') == false) {
+  if (!Type.typeApplicable(Type.VOID, scope.returnType, false) && allPaths(body, 'return') == false) {
     logError(fn.position, 'function does not always return');
     return null;
   }
@@ -659,37 +660,43 @@ function analyzeInst(
     }
 
     let returnType = fnResult.fnType.val.returnType;
-    if (returnType.tag != 'enum' || returnType.val.id != 'std.core.opt') {
-      logError(inst.position, 'next function does not return an option');
-      return null;
-    }
+    if (returnType.tag == 'enum' && returnType.val.id == 'std.core.TypeUnion') {
+      let field2 = returnType.val.fields[1];
+      if (field2.type.tag == 'primative' && field2.type.val != 'void') {
+        logError(inst.position, 'next function does not return an option');
+        return null;
+      }
 
-    let iterType = returnType.val.fields[1].type;
-    scope.inLoop = true;
-    enterScope(scope);
-    setValToScope(scope, inst.val.varName, iterType, false, 'iter_copy');
-    let body = analyzeInstBody(inst.val.body, table, scope);
-    exitScope(scope);
-    if (body == null) {
-      return null;
-    }
+      let iterType = returnType.val.fields[0].type;
+      scope.inLoop = true;
+      enterScope(scope);
+      setValToScope(scope, inst.val.varName, iterType, false, 'iter_copy');
+      let body = analyzeInstBody(inst.val.body, table, scope);
+      exitScope(scope);
+      if (body == null) {
+        return null;
+      }
 
-    return {
-      tag: 'for_in',
-      val: {
-        varName: inst.val.varName,
-        iter: iterExpr,
-        nextFn: {
-          tag: 'fn',
-          refTable: table,
-          fnName: fnResult.fnName,
-          unitName: fnResult.unitName,
-          type: fnResult.fnType
+      return {
+        tag: 'for_in',
+        val: {
+          varName: inst.val.varName,
+          iter: iterExpr,
+          nextFn: {
+            tag: 'fn',
+            refTable: table,
+            fnName: fnResult.fnName,
+            unitName: fnResult.unitName,
+            type: fnResult.fnType
+          },
+          body: body 
         },
-        body: body 
-      },
-      position: inst.position
-    };
+        position: inst.position
+      };
+    }
+
+    logError(inst.position, 'expected optional value');
+    return null;
   }
 
   if (inst.tag == 'arena') {
@@ -1367,7 +1374,7 @@ function ensureFnCallValid(
   }
 
   let fnTypeHint: FnTypeHint = { returnType: expectedReturn, paramTypes: initParamTypes };
-  let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, null, table, scope, position);
+  let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, null, table, scope, position, ignoreErrors);
   if (fnResult == null) {
     return null;
   } 
@@ -1855,17 +1862,24 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'try' || expr.tag == 'assert') {
-    if (expr.tag == 'try' && Type.isRes(scope.returnType) == false) {
-      if (!ignoreErrors) {
-        logError(position, `${expr.tag} operator can only be used in a function returning result`);
+    let errorType: Type.Type | null = null;
+    if (expr.tag == 'try') {
+      if (scope.returnType.tag == 'enum' && scope.returnType.val.id == 'std.core.TypeUnion') {
+        errorType = scope.returnType.val.fields[1].type;
       }
-      return null;
+      else {
+        if (!ignoreErrors) {
+          logError(position, `${expr.tag} operator can only be used in a function returning result`);
+        }
+        return null;
+      }
     }
 
     let newExpectedType = null;
-    if (expectedReturn != null) {
-      newExpectedType = Type.createRes(expectedReturn);
+    if (expectedReturn != null && errorType != null) {
+      newExpectedType = Type.createRes(expectedReturn, errorType);
     }
+
     let validExpr = ensureExprValid(expr.val, newExpectedType, table, scope, position);
     if (validExpr == null) {
       return null;
@@ -1884,7 +1898,7 @@ function ensureExprValid(
       return null;
     }
 
-    let resInnerType = validExpr.type.val.fields.filter(f => f.name == 'Ok')[0].type;
+    let resInnerType = validExpr.type.val.fields[0].type;
     if (expr.tag == 'try') {
       return { tag: 'try', val: validExpr, type: resInnerType };
     } else {
@@ -2224,6 +2238,10 @@ function ensureExprValid(
   if (expr.tag == 'int_const') {
     computedExpr = { tag: 'int_const', val: expr.val, type: Type.INT };
   } 
+
+  if (expr.tag == 'nil_const') {
+    computedExpr = { tag: 'nil_const', type: Type.VOID }
+  }
 
   if (expr.tag == 'num_const') {
     computedExpr = { tag: 'num_const', val: expr.val, type: Type.NUM };

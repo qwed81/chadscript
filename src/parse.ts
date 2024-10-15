@@ -211,6 +211,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'fmt_str', val: Expr[], position: Position }
   | { tag: 'char_const', val: string, position: Position }
   | { tag: 'int_const', val: number, position: Position }
+  | { tag: 'nil_const', position: Position }
   | { tag: 'bool_const', val: boolean, position: Position }
   | { tag: 'num_const', val: number, position: Position }
   | { tag: 'left_expr', val: LeftExpr, position: Position }
@@ -1295,6 +1296,9 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
       return { tag: 'bool_const', val: true, position };
     } else if (ident == 'false') {
       return { tag: 'bool_const', val: false, position };
+    }
+    else if (ident == 'nil') {
+      return { tag: 'nil_const', position };
     }
 
     if (ident.length >= 2 && ident[0] == '"' && ident[ident.length - 1] == '"') {

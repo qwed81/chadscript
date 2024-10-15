@@ -1,7 +1,7 @@
 import { Position, compilerError, logError, NULL_POS } from '../index';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn } from '../analyze/analyze';
-import { toStr, Type, STR, VOID, createRes } from '../analyze/types';
+import { toStr, Type, STR, VOID, ERR, createRes } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
 export {
@@ -116,9 +116,9 @@ function codegen(prog: Program): OutputFile[] {
   `
   int main() {
   initRuntime(0);
-  ${ codeGenType(createRes(VOID)) } result = ${entryName}();
+  ${ codeGenType(createRes(VOID, ERR)) } result = ${entryName}();
   if (result.tag == 1) {
-    fprintf(stderr, "%s\\n", result._Err._base);
+    fprintf(stderr, "%s\\n", result._val1._message._base);
   }
   return result.tag;
   }
@@ -536,19 +536,19 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
   else if (expr.tag == 'try') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
     changeRefCount(addInst.before, exprName, expr.val.type, 1);
-    addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._Err = ${exprName}._Err }; goto cleanup; }`);
+    addInst.before.push(`if (${exprName}.tag == 1) { ret = (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${exprName}._val1 }; goto cleanup; }`);
     changeRefCount(addInst.before, exprName, expr.val.type, -1);
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'primative' && expr.type.val == 'void') {
       return '';
     }
-    return `${exprName}._Ok`;
+    return `${exprName}._val0`;
   }
   else if (expr.tag == 'assert') {
     let exprName = codeGenExpr(expr.val, addInst, ctx, position);
-    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._Err._start);`);
+    addInst.before.push(`if (${exprName}.tag == 1) chad_panic("${position.document}", ${position.line}, ${exprName}._val1._message._base);`);
     // because this is a leftExpr, it shouldn't save the value to the stack
-    return `${exprName}._Ok`;
+    return `${exprName}._val0`;
   }
   else if (expr.tag == 'assert_bool') {
     exprText = `if (!(${codeGenExpr(expr.val, addInst, ctx, position)})) chad_panic("${position.document}", ${position.line}, "assertion failed");`;
@@ -623,6 +623,8 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = `'${expr.val}'`;
   } else if (expr.tag == 'int_const') {
     exprText = `${expr.val}`;
+  } else if (expr.tag == 'nil_const') {
+    exprText = '0';
   } else if (expr.tag == 'bool_const') {
     exprText = `${expr.val}`;
   } else if (expr.tag == 'num_const') {
@@ -780,10 +782,10 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
       return `(*_${leftExpr.val})`;
     }
     else if (leftExpr.mode == 'iter') {
-      return `(*_${leftExpr.val}__opt._Some._start)`;
+      return `(*_${leftExpr.val}__opt._val0._start)`;
     }
     else if (leftExpr.mode == 'iter_copy') {
-      return `(_${leftExpr.val}__opt._Some)`
+      return `(_${leftExpr.val}__opt._val0)`
     }
     else if (leftExpr.mode == 'none') {
       return `_${leftExpr.val}`;

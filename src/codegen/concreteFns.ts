@@ -3,7 +3,7 @@ import { logError, compilerError, NULL_POS } from '../index';
 import {
   Type, typeApplicableStateful, applyGenericMap, standardizeType,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,
-  INT
+  INT, VOID
 } from '../analyze/types';
 import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
 
@@ -306,6 +306,9 @@ function resolveExpr(
     else if (expr.tag == 'mv') {
       return { tag: 'mv', val: inner, type }
     }
+  }
+  else if (expr.tag == 'nil_const') {
+    return { tag: 'nil_const', type: VOID };
   }
   else if (expr.tag == 'fn_call') {
     let fn = resolveLeftExpr(expr.val.fn, genericMap, ctx);

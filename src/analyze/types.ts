@@ -2,7 +2,7 @@ import { logError, compilerError, Position, NULL_POS } from '../index'
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, FMT as STR_BUF,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, FMT as STR_BUF, ERR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
@@ -28,6 +28,17 @@ const STR: Type = {
     ],
     generics: [],
     id: 'std.core.str'
+  }
+}
+
+const ERR: Type = { 
+  tag: 'struct',
+  val: {
+    fields: [
+      { visibility: null, name: 'message', type: STR }
+    ],
+    generics: [],
+    id: 'std.core.err'
   }
 }
 
@@ -68,16 +79,16 @@ function getUnitNameOfStruct(struct: Struct): string {
   return struct.id.slice(0, lastDot)
 }
 
-function createRes(genericType: Type): Type {
+function createRes(genericType: Type, errorType: Type): Type {
   return {
     tag: 'enum',
     val: {
-      id: 'std.core.res',
+      id: 'std.core.TypeUnion',
       fields: [
-        { name: 'Ok', type: genericType, visibility: null },
-        { name: 'Err', type: STR, visibility: null }
+        { name: 'val0', type: genericType, visibility: null },
+        { name: 'val1', type: errorType, visibility: null }
       ],
-      generics: [genericType]
+      generics: [genericType, errorType]
     }
   }
 }
@@ -207,7 +218,7 @@ function toStr(t: Type | null): string {
 }
 
 function isRes(type: Type): boolean {
-  return type.tag == 'enum' && type.val.id == 'std.core.res';
+  return type.tag == 'enum' && type.val.id == 'std.core.TypeUnion';
 }
 
 // fnHeader field is used to calculate whether a generic should accept any type
@@ -583,6 +594,9 @@ function resolveType(
   if (def.tag == 'basic') {
     if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte') {
       return { tag: 'primative', val: def.val };
+    }
+    if (def.val == 'nil') {
+      return { tag: 'primative', val: 'void' };
     }
     if (def.val.length == 1 && def.val >= 'A' && def.val <= 'Z') {
       return { tag: 'generic', val: def.val };

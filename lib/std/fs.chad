@@ -1,20 +1,19 @@
-pri fn uv_err(int code) T!
+pri fn uv_err(int code) err
   Fmt errMessage = fmt(1024)
   C.uv_err_name_r(code, errMessage.base, 1024)
-  T! err = Err(str(errMessage))
-  return err
+  return err(str(errMessage))
 
-fn mkDir(str srcPath) void!
-  return Err("not implemented")
+fn mkDir(str srcPath) nil|err
+  return err("not implemented")
 
-fn fsCp(str srcPath, str destPath) void!
-  return Err("not implemented")
+fn fsCp(str srcPath, str destPath) nil|err
+  return err("not implemented")
 
-fn fsMv(str srcPath, str destPath) void!
-  return Err("not implemented")
+fn fsMv(str srcPath, str destPath) nil|err
+  return err("not implemented")
 
-fn fsRm(str srcPath) void!
-  return Err("not implemented")
+fn fsRm(str srcPath) nil|err
+  return err("not implemented")
 
 enum FileFlags
   void Read
@@ -27,7 +26,7 @@ struct File
 fn drop(ln File file)
   close(file)
 
-fn open(str path, FileFlags flags, bool createIfMissing=false) File!
+fn open(str path, FileFlags flags, bool createIfMissing=false) File|err
   int fileHandle = -1
   int intFlags = 0
 
@@ -58,18 +57,16 @@ fn close(ln File file)
   C.closeFile(file.handle)
   file.alreadyClosed = false
 
-fn read(ln File file, ln Arr[byte] buf, int position=-1) int! amtRead
+fn read(ln File file, ln Arr[byte] buf, int position=-1) int|err amtRead
   int result = C.readFile(file.handle, buf.base, buf.len, position)
   if result < 0
     return uv_err(result)
-  return Ok(result)
+  return result
 
-fn write(ln File file, Arr[byte] bytes, int position=-1) void!
+fn write(ln File file, Arr[byte] bytes, int position=-1) nil|err
   int result = C.writeFile(file.handle, bytes.base, bytes.len, position)
   if result < 0
     return uv_err(result)
-
-  return Ok
 
 enum DirEntryType
   void File
@@ -80,7 +77,7 @@ struct DirEntry
   get DirEntryType type
   get str name
 
-fn readDir(str path) Arr[DirEntry]!
+fn readDir(str path) Arr[DirEntry]|err
   int numEntries = 0
   int result = 0
   include
@@ -117,4 +114,4 @@ fn readDir(str path) Arr[DirEntry]!
 
     entries[i] = { type = fileType, name = str(name) }
 
-  return Ok(entries)
+  return entries

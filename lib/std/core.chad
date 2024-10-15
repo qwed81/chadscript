@@ -3,28 +3,26 @@ fn or(int a, int b) int
     return a | b;
   return a
 
+struct err
+  str message
+
+fn err(str message) err
+  return { message = message }
+
 enum TypeUnion[T, K]
   T val0
   K val1
-
-enum opt[T]
-  void None
-  T Some
-
-enum res[T]
-  T Ok
-  str Err
 
 struct range
   int start
   int end
 
-fn next(ln range r) int?
+fn next(ln range r) int|nil
   int thisIndex = r.start
   if r.start == r.end
-    return None
+    return nil
   r.start += 1
-  return Some(thisIndex)
+  return thisIndex
 
 fn rev(range r) revRange
   return { start = r.end - 1, end = r.start - 1 }
@@ -33,12 +31,12 @@ struct revRange
   int start
   int end
 
-fn next(ln revRange r) int?
+fn next(ln revRange r) int|nil
   int thisIndex = r.start
   if r.start == r.end
-    return None
+    return nil
   r.start -= 1
-  return Some(thisIndex)
+  return thisIndex
 
 fn alloc(int amt) ptr[T]
   ptr[T] output
@@ -169,11 +167,11 @@ fn startsWith(str s, str start) bool
 fn endsWith(str s, str end) bool
   return false
 
-fn indexOf(str s, str inner) int?
-  return None
+fn indexOf(str s, str inner) int|nil
+  return nil
 
-fn lastIndexOf(str s, str inner) int?
-  return None
+fn lastIndexOf(str s, str inner) int|nil
+  return nil
 
 struct Fmt
   get ptr[char] base
@@ -288,14 +286,14 @@ fn byte(char val) byte
 struct Scanner[T]
   Arr[byte] buf
   T stream
-  int!(T, Arr[byte]) readBytes
+  TypeUnion[int, err](T, Arr[byte]) readBytes
   int amtInBuf
   int i
 
-fn scanner(T stream, int!(T, Arr[byte]) r=read) Scanner[T]
+fn scanner(T stream, TypeUnion[int, err](T, Arr[byte]) r=read) Scanner[T]
   return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
-fn nextLine(ln Scanner[T] scanner) str!
+fn nextLine(ln Scanner[T] scanner) str|err
   Fmt output = fmt()
 
   while true
@@ -303,17 +301,17 @@ fn nextLine(ln Scanner[T] scanner) str!
       scanner.amtInBuf = try scanner.readBytes(scanner.stream, scanner.buf)
       scanner.i = 0
     if scanner.amtInBuf == 0
-      return Err("no next element")
+      return err("no next element")
     output += char(scanner.buf[scanner.i])
     scanner.i += 1
     if scanner.buf[scanner.i] == byte('\n')
       break
 
-  return Ok(str(output))
+  return str(output)
 
-fn input(str output) int!
+fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))
   int val = 0
   C.scanf(cstr("%ld"), ptr(val))
-  return Ok(val)
+  return val
 
