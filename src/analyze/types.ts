@@ -1,4 +1,5 @@
 import { logError, compilerError, Position, NULL_POS } from '../util'
+import { HeaderInclude, parseHeaderFile } from '../header';
 import * as Parse from '../parse';
 
 export {
@@ -564,10 +565,14 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
   return null;
 }
 
+// all headers that have been parsed already
+let parsedHeaders: Map<string, HeaderInclude> = new Map();
+
 interface RefTable {
   units: Parse.ProgramUnit[]
   thisUnit: Parse.ProgramUnit
   allUnits: Parse.ProgramUnit[]
+  includes: HeaderInclude[]
 }
 
 function getUnitReferences(
@@ -575,14 +580,34 @@ function getUnitReferences(
   allUnits: Parse.ProgramUnit[]
 ): RefTable {
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
+  let includes: HeaderInclude[] = [];
   for (let i = 0; i < allUnits.length; i++) {
     let addCore = allUnits[i].fullName == 'std.core' && thisUnit.fullName != 'std.core';
     if (thisUnit.uses.includes(allUnits[i].fullName) || addCore) {
       newUnits.push(allUnits[i]);
     }
+
+    for (let use of thisUnit.uses) {
+      if (use[0] == '"' && use[use.length - 1] == '"') {
+        let headerFileName = use.slice(1, use.length - 1);
+        // cache the value so header files don't need to be parsed every time
+        let include: HeaderInclude | null = null;
+        if (parsedHeaders.has(headerFileName)) {
+          include = parsedHeaders.get(headerFileName)!;
+        }
+        else {
+          include = parseHeaderFile(headerFileName);
+        }
+
+        if (include != null) {
+          parsedHeaders.set(headerFileName, include);
+          includes.push(include)
+        }
+      }
+    }
   }
 
-  return { units: newUnits, allUnits, thisUnit };
+  return { units: newUnits, allUnits, thisUnit, includes };
 }
 
 function resolveType(
