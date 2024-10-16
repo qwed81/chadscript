@@ -1,5 +1,5 @@
 import { LeftExpr,  Expr } from './analyze';
-import { compilerError } from '../index';
+import { compilerError } from '../util';
 import { getVariantIndex } from './types';
 
 export {

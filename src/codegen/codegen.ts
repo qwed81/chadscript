@@ -1,4 +1,4 @@
-import { Position, compilerError, logError, NULL_POS } from '../index';
+import { Position, compilerError, logError, NULL_POS } from '../util';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn } from '../analyze/analyze';
 import { toStr, Type, STR, VOID, ERR, createRes } from '../analyze/types';

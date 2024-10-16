@@ -1,4 +1,4 @@
-import { logError, compilerError, Position, NULL_POS } from '../index'
+import { logError, compilerError, Position, NULL_POS } from '../util'
 import * as Parse from '../parse';
 
 export {

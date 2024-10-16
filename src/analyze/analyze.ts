@@ -1,5 +1,5 @@
 import * as Parse from '../parse';
-import { logError, compilerError, Position } from '../index'
+import { logError, compilerError, Position } from '../util'
 import * as Type from './types'
 import * as Enum from './enum';
 

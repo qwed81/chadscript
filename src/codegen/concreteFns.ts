@@ -1,5 +1,5 @@
 import { Program, Fn, Inst, Expr, LeftExpr, Const } from '../analyze/analyze';
-import { logError, compilerError, NULL_POS } from '../index';
+import { logError, compilerError, NULL_POS } from '../util';
 import {
   Type, typeApplicableStateful, applyGenericMap, standardizeType,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,

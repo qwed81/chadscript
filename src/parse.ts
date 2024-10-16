@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError, compilerError, NULL_POS, Position } from './index';
+import { logError, compilerError, NULL_POS, Position } from './util';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
