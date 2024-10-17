@@ -1555,6 +1555,10 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
 function getLines(data: string, documentName: string): SourceLine[] {
   let lines = data.split('\n');
   let sourceLines: SourceLine[] = [];
+
+  // the last line can be merged if the parens are not closed
+  let merge: Token[] = [];
+
   // split lines based on spaces
   for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
     let line = lines[lineNumber];
@@ -1626,8 +1630,42 @@ function getLines(data: string, documentName: string): SourceLine[] {
     }
 
     let tokens: Token[] = splitTokens(line, documentName, lineNumber + 1);
-    sourceLines.push({ indent, tokens, position: linePosition });
+    merge.push(...tokens)
+    if (!bracketIsOpen(merge)) {
+      sourceLines.push({ indent, tokens: merge, position: linePosition });
+      merge = [];
+    }
   }
 
   return sourceLines;
 }
+
+function bracketIsOpen(tokens: Token[]): boolean {
+  let parenOpen = 0;
+  let squareOpen = 0;
+  let curlyOpen = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].val == '(') {
+      parenOpen += 1;
+    }
+    else if (tokens[i].val == ')') {
+      parenOpen -= 1;
+    }
+    else if (tokens[i].val == '[') {
+      squareOpen += 1;
+    }
+    else if (tokens[i].val == ']') {
+      squareOpen -= 1;
+    }
+    else if (tokens[i].val == '{') {
+      curlyOpen += 1;
+    }
+    else if (tokens[i].val == '}') {
+      curlyOpen -= 1;
+    }
+  }
+
+  return parenOpen != 0 || squareOpen != 0 || curlyOpen != 0;
+}
+
