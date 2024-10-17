@@ -23,7 +23,7 @@ struct File
   int handle
   bool alreadyClosed
 
-fn drop(ln File file)
+fn drop(&File file)
   close(file)
 
 fn open(str path, FileFlags flags, bool createIfMissing=false) File|err
@@ -51,19 +51,19 @@ fn open(str path, FileFlags flags, bool createIfMissing=false) File|err
 
   return { handle = fileHandle, alreadyClosed = false }
 
-fn close(ln File file)
+fn close(&File file)
   if file.alreadyClosed
     return
   C.closeFile(file.handle)
   file.alreadyClosed = false
 
-fn read(ln File file, ln Arr[byte] buf, int position=-1) int|err amtRead
+fn read(&File file, &Arr[byte] buf, int position=-1) int|err amtRead
   int result = C.readFile(file.handle, buf.base, buf.len, position)
   if result < 0
     return uv_err(result)
   return result
 
-fn write(ln File file, Arr[byte] bytes, int position=-1) nil|err
+fn write(&File file, Arr[byte] bytes, int position=-1) nil|err
   int result = C.writeFile(file.handle, bytes.base, bytes.len, position)
   if result < 0
     return uv_err(result)

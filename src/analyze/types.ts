@@ -628,6 +628,9 @@ function resolveType(
     }
     return resolveStruct(def.val, [],  refTable, position);
   } 
+  else if (def.tag == 'ptr') {
+    return resolveType(def.val, refTable, position);
+  }
   else if (def.tag == 'link') {
     return resolveType(def.val, refTable, position);
   }
@@ -654,13 +657,6 @@ function resolveType(
         return null;
       }
       resolvedGenerics.push(resolvedGeneric);
-    }
-
-    if (def.val.name == 'ptr') {
-      if (resolvedGenerics.length != 1 && position != null) {
-        logError(position, 'pointer expected 1 generic');
-      }
-      return { tag: 'ptr', val: resolvedGenerics[0] }
     }
 
     return resolveStruct(def.val.name, resolvedGenerics, refTable, position);

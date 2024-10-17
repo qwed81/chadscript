@@ -82,7 +82,7 @@ interface FnType {
 }
 
 type Type = { tag: 'basic', val: string }
-  | { tag: 'arr', val: Type }
+  | { tag: 'ptr', val: Type }
   | { tag: 'type_union', val0: Type, val1: Type }
   | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
@@ -628,12 +628,20 @@ function tryParseType(tokens: Token[]): Type | null {
     return null;
   }
 
-  if (tokens[0].val == 'ln') {
+  if (tokens[0].val == '&') {
     let inner = tryParseType(tokens.slice(1));
     if (inner == null) {
       return null;
     }
     return { tag: 'link', val: inner };
+  }
+
+  if (tokens[0].val == '*') {
+    let inner = tryParseType(tokens.slice(1));
+    if (inner == null) {
+      return null;
+    }
+    return { tag: 'ptr', val: inner };
   }
   
   // parse it as a type union
@@ -653,9 +661,6 @@ function tryParseType(tokens: Token[]): Type | null {
     let innerType = tryParseType(tokens.slice(0, -1));
     if (innerType == null) {
       return null;
-    }
-    if (lastToken == '*') {
-      return { tag: 'arr', val: innerType };
     }
     if (lastToken == '!') {
       return { tag: 'generic', val: { name: 'res', generics: [innerType] } };

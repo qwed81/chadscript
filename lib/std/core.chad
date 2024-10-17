@@ -17,7 +17,7 @@ struct range
   int start
   int end
 
-fn next(ln range r) int|nil
+fn next(&range r) int|nil
   int thisIndex = r.start
   if r.start == r.end
     return nil
@@ -31,31 +31,31 @@ struct revRange
   int start
   int end
 
-fn next(ln revRange r) int|nil
+fn next(&revRange r) int|nil
   int thisIndex = r.start
   if r.start == r.end
     return nil
   r.start -= 1
   return thisIndex
 
-fn alloc(int amt) ptr[T]
-  ptr[T] output
+fn alloc(int amt) *T
+  *T output
   include
     _output = malloc(sizeof($(T)) * *_amt);
   return output
 
-fn null() ptr[T]
+fn null() *T
   include
     return NULL;
   return null()
 
-fn ptrCast(ptr[S] input) ptr[E]
+fn ptrCast(*S input) *E
   include
-    return ($(ptr[E]))(*_input);
+    return ($(*E))(*_input);
   return ptrCast(input)
 
 struct Arr[T]
-  get ptr[T] base
+  get *T base
   get int capacity
   get int len
 
@@ -75,24 +75,24 @@ fn str(Arr[T] l, str(T) strImpl=str) str
   buf += ']'
   return str(buf)
 
-fn prepareIndex(ln Arr[T] l, int index, T val) ptr[T]
+fn prepareIndex(&Arr[T] l, int index, T val) *T
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-fn getIndex(ln Arr[T] l, int index) ptr[T]
+fn getIndex(&Arr[T] l, int index) *T
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
-fn getIndex(ln Arr[T] l, range r) ptr[Arr[T]]
+fn getIndex(&Arr[T] l, range r) *Arr[T]
   assert r.start >= 0 && r.end <= l.len
-  ptr[Arr[T]] newList = alloc(1)
+  *Arr[T] newList = alloc(1)
   int len = r.end - r.start
   newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
   return newList
 
-fn append(ln Arr[T] l, T val)
+fn append(&Arr[T] l, T val)
   if l.len == l.capacity
-    ptr[T] newAlloc = alloc(l.capacity * 2)
+    *T newAlloc = alloc(l.capacity * 2)
 
     for i in 0:l.len
       newAlloc[i] = cp l.base[i]
@@ -102,12 +102,12 @@ fn append(ln Arr[T] l, T val)
   l.base[l.len] = cp val
   l.len += 1
 
-fn append(ln Arr[T] to, Arr[T] from)
+fn append(&Arr[T] to, Arr[T] from)
   for i in 0:from.len
     to += from[i]
 
 struct str
-  get ptr[char] base
+  get *char base
   get int len
 
 fn str(str s) str
@@ -121,19 +121,19 @@ fn eq(str a, str b) bool
       return false
   return true
 
-fn getIndex(ln str s, int index) ptr[char]
+fn getIndex(&str s, int index) *char
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-fn getIndex(ln str s, range r) ptr[str]
+fn getIndex(&str s, range r) *str
   assert r.start >= 0 && r.end <= s.len
-  ptr[str] newStr = alloc(1)
+  *str newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), len = len }
   return newStr
 
-fn cstr(str s) ptr[char]
-  ptr[char] cstr = alloc(s.len + 1)
+fn cstr(str s) *char
+  *char cstr = alloc(s.len + 1)
   for i in 0:s.len
     cstr[i] = s[i]
   return cstr
@@ -174,7 +174,7 @@ fn lastIndexOf(str s, str inner) int|nil
   return nil
 
 struct Fmt
-  get ptr[char] base
+  get *char base
   get int capacity
   get int len
 
@@ -185,7 +185,7 @@ fn fmt(int size) Fmt
   return { base = alloc(size), capacity = size, len = size }
 
 fn clone(Fmt buf) Fmt
-  ptr[char] newBase = alloc(buf.len)
+  *char newBase = alloc(buf.len)
   for i in 0:buf.len
     newBase[i] = buf[i]
   return { base = newBase, capacity = buf.len, len = buf.len }
@@ -210,9 +210,9 @@ fn fmt(str start) Fmt
 fn str(Fmt buf) str
   return { base = buf.base, len = buf.len }
 
-fn appendOne(ln Fmt s, char c)
+fn appendOne(&Fmt s, char c)
   if s.len == s.capacity
-    ptr[char] newAlloc = alloc(s.capacity * 2)
+    *char newAlloc = alloc(s.capacity * 2)
 
     for i in 0:s.len
       newAlloc[i] = s.base[i]
@@ -222,22 +222,22 @@ fn appendOne(ln Fmt s, char c)
   s.base[s.len] = c
   s.len += 1
 
-fn append(ln Fmt s, T val, str(T) strImpl=str)
+fn append(&Fmt s, T val, str(T) strImpl=str)
   str valAsStr = strImpl(val)
   for i in 0:valAsStr.len
     appendOne(s, valAsStr[i])
   
-fn prepareIndex(Fmt s, int index, T val) ptr[char]
+fn prepareIndex(Fmt s, int index, T val) *char
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-fn getIndex(ln Fmt s, int index) ptr[char]
+fn getIndex(&Fmt s, int index) *char
   assert index >= 0 && index < s.len
   return ptr(s.base[index])
 
-fn getIndex(ln Fmt s, range r) ptr[Fmt]
+fn getIndex(&Fmt s, range r) *Fmt
   assert r.start >= 0 && r.end <= s.len
-  ptr[Fmt] newStr = alloc(1)
+  *Fmt newStr = alloc(1)
   int len = r.end - r.start
   newStr[0] = { base = ptr(s.base[r.start]), capacity = len, len = len }
   return newStr
@@ -258,13 +258,13 @@ fn str(int val) str
   include
     _len = snprintf(NULL, 0, "%ld", *_val);
 
-  ptr[char] output = alloc(len + 1)
+  *char output = alloc(len + 1)
   include
     snprintf(_output, _len + 1, "%ld", *_val);
   return { base = output, len = len }
   
 fn print(T val, str(T) strImpl=str) 
-  ptr[char] printStr = cstr(strImpl(val))
+  *char printStr = cstr(strImpl(val))
   include
     printf("%s\n", _printStr);
 
@@ -293,7 +293,7 @@ struct Scanner[T]
 fn scanner(T stream, TypeUnion[int, err](T, Arr[byte]) r=read) Scanner[T]
   return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
-fn nextLine(ln Scanner[T] scanner) str|err
+fn nextLine(&Scanner[T] scanner) str|err
   Fmt output = fmt()
 
   while true

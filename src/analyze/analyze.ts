@@ -391,7 +391,11 @@ function addGenerics(paramType: Parse.Type, generics: Set<string>) {
     generics.add(paramType.val);
   }
 
-  if (paramType.tag == 'arr' || paramType.tag == 'link') {
+  if (paramType.tag == 'ptr') {
+    addGenerics(paramType.val, generics);
+  }
+
+  if (paramType.tag == 'link') {
     addGenerics(paramType.val, generics);
   }
 
