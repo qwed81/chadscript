@@ -143,7 +143,7 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type.Type }
   | { tag: 'arr_offset_int', val: ArrOffsetInt, type: Type.Type }
   | { tag: 'arr_offset_slice', val: ArrOffsetSlice, type: Type.Type }
   | { tag: 'var', val: string, mode: Mode, type: Type.Type }
-  | { tag: 'fn', unitName: string, refTable: Type.RefTable, fnName: string, type: Type.Type }
+  | { tag: 'fn', unitName: string, refTable: Type.RefTable, fnName: string, extern: boolean, type: Type.Type }
 
 export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, StructInitField, FnCall, Expr, LeftExpr, Mode, Const }
 
@@ -687,7 +687,8 @@ function analyzeInst(
             refTable: table,
             fnName: fnResult.fnName,
             unitName: fnResult.unitName,
-            type: fnResult.fnType
+            type: fnResult.fnType,
+            extern: false
           },
           body: body 
         },
@@ -828,6 +829,7 @@ function analyzeInst(
           unitName: strImpl.unitName,
           fnName: strImpl.fnName,
           refTable: table,
+          extern: false,
           type: strImpl.fnType
         },
         type: strImpl.fnType
@@ -858,6 +860,7 @@ function analyzeInst(
               unitName: appendFn.unitName,
               fnName: appendFn.fnName,
               type: appendFn.fnType,
+              extern: false,
               refTable: table
             }
           },
@@ -897,7 +900,8 @@ function analyzeInst(
               unitName: appendFn.unitName,
               fnName: appendFn.fnName,
               type: appendFn.fnType,
-              refTable: table
+              refTable: table,
+              extern: false
             }
           },
           type: Type.VOID
@@ -1204,6 +1208,7 @@ function ensureLeftExprValid(
             refTable: table,
             unitName: operation.unitName,
             type: operation.fnType,
+            extern: false
           },
           exprs: [recalcArr, recalcIndex]
         },
@@ -1246,6 +1251,7 @@ function ensureLeftExprValid(
             refTable: table,
             fnName: operation.fnName,
             unitName: operation.unitName,
+            extern: false,
             type: operation.fnType,
           },
           exprs: [recalcArr, recalcIndex, directAssign]
@@ -1320,7 +1326,14 @@ function ensureLeftExprValid(
         return null;
       }
 
-      return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType, refTable: table };
+      return { 
+        tag: 'fn',
+        fnName: fn.fnName,
+        unitName: fn.unitName,
+        type: fn.fnType,
+        refTable: table,
+        extern: fn.extern
+      };
     } 
 
     let fn = Type.resolveFn(
@@ -1334,7 +1347,14 @@ function ensureLeftExprValid(
       return null;
     }
 
-    return { tag: 'fn', fnName: fn.fnName, unitName: fn.unitName, type: fn.fnType, refTable: table };
+    return {
+      tag: 'fn',
+      fnName: fn.fnName,
+      unitName: fn.unitName,
+      type: fn.fnType,
+      refTable: table,
+      extern: fn.extern
+    };
   }
   else if (leftExpr.tag == 'prime') {
     compilerError('prime not supported anymore')
@@ -1450,7 +1470,8 @@ function ensureFnCallValid(
             refTable: table,
             type: paramType,
             fnName: fnResult.fnName,
-            unitName: fnResult.unitName
+            unitName: fnResult.unitName,
+            extern: false
           },
           type: paramType,
         };
@@ -1656,6 +1677,7 @@ function ensureBinOpValid(
             refTable: table,
             unitName: operation.unitName,
             type: operation.fnType,
+            extern: false
           },
           exprs
         },
@@ -1666,7 +1688,7 @@ function ensureBinOpValid(
         computedExpr = {
           tag: 'not',
           val: computedExpr,
-          type: Type.BOOL
+          type: Type.BOOL,
         }
       }
 
@@ -2213,7 +2235,8 @@ function ensureExprValid(
           unitName: fn.unitName,
           fnName: fn.fnName,
           type: fn.fnType,
-          refTable: table
+          refTable: table,
+          extern: false
         };
 
         let fnCall: Expr = {

@@ -1,5 +1,5 @@
 import { logError, compilerError, Position, NULL_POS } from '../util'
-import { HeaderInclude, parseHeaderFile } from '../header';
+import { HeaderInclude, parseHeaderFile, ExternFn } from '../header';
 import * as Parse from '../parse';
 
 export {
@@ -586,23 +586,23 @@ function getUnitReferences(
     if (thisUnit.uses.includes(allUnits[i].fullName) || addCore) {
       newUnits.push(allUnits[i]);
     }
+  }
 
-    for (let use of thisUnit.uses) {
-      if (use[0] == '"' && use[use.length - 1] == '"') {
-        let headerFileName = use.slice(1, use.length - 1);
-        // cache the value so header files don't need to be parsed every time
-        let include: HeaderInclude | null = null;
-        if (parsedHeaders.has(headerFileName)) {
-          include = parsedHeaders.get(headerFileName)!;
-        }
-        else {
-          include = parseHeaderFile(headerFileName);
-        }
+  for (let use of thisUnit.uses) {
+    if (use[0] == '"' && use[use.length - 1] == '"') {
+      let headerFileName = use.slice(1, use.length - 1);
+      // cache the value so header files don't need to be parsed every time
+      let include: HeaderInclude | null = null;
+      if (parsedHeaders.has(headerFileName)) {
+        include = parsedHeaders.get(headerFileName)!;
+      }
+      else {
+        include = parseHeaderFile(headerFileName);
+      }
 
-        if (include != null) {
-          parsedHeaders.set(headerFileName, include);
-          includes.push(include)
-        }
+      if (include != null) {
+        parsedHeaders.set(headerFileName, include);
+        includes.push(include)
       }
     }
   }
@@ -835,7 +835,10 @@ interface FnResult {
   unitName: string
   fnName: string,
   paramNames: string[]
+  extern: boolean
 }
+
+type WrongTypeFn = { tag: 'chad', val: Parse.Fn } | { tag: 'c', val: ExternFn } 
 
 function resolveFn(
   name: string,
@@ -845,9 +848,10 @@ function resolveFn(
   // if calleePosition is null then do not display errors
   calleePosition: Position | null
 ): FnResult | null {
-
   let possibleFns: FnResult[] = [];
-  let wrongTypeFns: Parse.Fn[] = [];
+  let wrongTypeFns: WrongTypeFn[] = [];
+
+  // go through the chadscript functions
   for (let unit of refTable.units) {
     let unitRefTable = getUnitReferences(unit, refTable.allUnits);
     for (let fnDef of unit.fns) {
@@ -867,7 +871,7 @@ function resolveFn(
         }
       }
       if (paramTypes != null && fnDef.t.paramTypes.length - namedParamCount != paramTypes.length) {
-        wrongTypeFns.push(fnDef);
+        wrongTypeFns.push({ tag: 'chad', val: fnDef });
         continue;
       }
 
@@ -895,7 +899,7 @@ function resolveFn(
         if (paramTypes != null) {
           let paramType = paramTypes[i];
           if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap, true)) {
-            wrongTypeFns.push(fnDef);
+            wrongTypeFns.push({ tag: 'chad', val: fnDef });
             allParamsOk = false;
             break;
           }
@@ -917,7 +921,7 @@ function resolveFn(
         }
 
         if (wrongType) {
-          wrongTypeFns.push(fnDef);
+          wrongTypeFns.push({ tag: 'chad', val: fnDef });
           continue;
         }
       }
@@ -936,6 +940,59 @@ function resolveFn(
         unitName: unit.fullName,
         fnName: fnDef.name,
         fnType,
+        extern: false
+      });
+    }
+  }
+
+  // go through the imported C functions
+  for (let include of refTable.includes) {
+    for (let fn of include.fns) {
+      if (fn.name != name || fn.type.tag != 'fn') {
+        continue;
+      }
+
+      if (returnType != null) {
+        if (!typeApplicable(fn.type.val.returnType, returnType, true)) {
+          wrongTypeFns.push({
+            tag: 'c',
+            val: fn
+          });
+          continue;
+        }
+      }
+
+      if (paramTypes != null) {
+        if (paramTypes.length != fn.type.val.paramTypes.length) {
+          wrongTypeFns.push({
+            tag: 'c',
+            val: fn
+          });
+          continue;
+        }
+
+        for (let i = 0; i < paramTypes.length; i++) {
+          let paramType = paramTypes[i];
+          if (paramType == null) {
+            continue;
+          }
+
+          if (!typeApplicable(fn.type.val.paramTypes[i], paramType, false)) {
+            wrongTypeFns.push({
+              tag: 'c',
+              val: fn
+            });
+            break;
+          }
+        }
+      }
+
+      possibleFns.push({
+        fnType: fn.type,
+        unitName: include.unitName,
+        paramNames: [],
+        fnName: fn.name,
+        extern: true
       });
     }
   }

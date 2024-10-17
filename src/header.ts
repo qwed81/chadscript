@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { compilerError } from './util';
 
 export {
-  HeaderInclude, parseHeaderFile
+  HeaderInclude, parseHeaderFile, ExternFn
 }
 
 interface ExternFn {
@@ -33,6 +33,7 @@ interface HeaderInclude {
   vars: ExternVar[]
   defs: ExternDefine[]
   typeDefs: TypeDef[]
+  unitName: string
 }
 
 interface ASTType {
@@ -59,15 +60,18 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     fns: [],
     defs: [],
     vars: [],
-    typeDefs: []
+    typeDefs: [],
+    unitName: headerPath
   };
   if (ast.inner == undefined) {
     return null;
   }
 
+  // to prevent duplicate symbols
+  let alreadyAdded: Set<string> = new Set();
   // parse AST for fns, structs, ect.
   for (let child of ast.inner) {
-    if (child.name == undefined) {
+    if (child.name == undefined || alreadyAdded.has(child.name)) {
       continue;
     }
 
@@ -77,6 +81,7 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
         type: varType,
         name: child.name
       });
+      alreadyAdded.add(child.name);
     }
     else if (child.kind == 'FunctionDecl') {
       let fnType = parseCType(child.type.qualType, structTypeMap);
@@ -84,6 +89,7 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
         type: fnType,
         name: child.name,
       });
+      alreadyAdded.add(child.name);
     }
     else if (child.kind == 'RecordDecl') {
       let recordType = parseCRecord(child, structTypeMap);
@@ -92,13 +98,15 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
         name: child.name,
         type: recordType
       });
+      alreadyAdded.add(child.name);
     }
     else if (child.kind == 'TypedefDecl') {
       let typeDefType = parseCType(child.type.qualType, structTypeMap);
       symbols.typeDefs.push({
         name: child.name,
         type: typeDefType
-      })
+      });
+      alreadyAdded.add(child.name);
     }
   }
 
@@ -263,7 +271,7 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
     return { tag: 'ptr', val: innerType };
   }
 
-  if (type == 'int') {
+  if (type == 'int' || type == 'long') {
     return INT;
   }
   else if (type == 'double') {

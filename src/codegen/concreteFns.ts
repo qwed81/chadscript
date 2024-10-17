@@ -256,7 +256,14 @@ function addFnToResolve(ctx: ResolveContext, fnName: string, unitName: string, f
   }
 
   // set a blank refTable to create proper key
-  let newLeftExpr: LeftExpr = { tag: 'fn', fnName, unitName, type: fnType, refTable: undefined! };
+  let newLeftExpr: LeftExpr = {
+    tag: 'fn',
+    fnName,
+    unitName,
+    type: fnType,
+    refTable: undefined!, 
+    extern: false
+  };
   let key = JSON.stringify(newLeftExpr);
   // set the refTable back so its valid
   newLeftExpr.refTable = refTable;
@@ -427,7 +434,8 @@ function resolveLeftExpr(
       type: depType,
       fnName: leftExpr.fnName,
       unitName: leftExpr.unitName,
-      refTable: leftExpr.refTable 
+      refTable: leftExpr.refTable ,
+      extern: leftExpr.extern
     };
 
     return newLeftExpr;
@@ -532,7 +540,8 @@ function createDefaultFn(
             type: paramType,
             refTable: fnDep.fnRefTable,
             fnName: fnResult.fnName,
-            unitName: fnResult.unitName
+            unitName: fnResult.unitName,
+            extern: false
           },
           type: paramType,
         };
@@ -556,7 +565,8 @@ function createDefaultFn(
     unitName: template.unitName,
     refTable: fnDep.fnRefTable,
     fnName: template.fnName,
-    type: template.fnType
+    type: template.fnType,
+    extern: false
   };
 
   let callExpr: Expr = {

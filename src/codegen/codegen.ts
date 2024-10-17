@@ -443,7 +443,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let itemType = inst.val.nextFn.type.val.returnType;
     let nextFnName = getFnUniqueId(inst.val.nextFn.unitName, inst.val.nextFn.fnName, inst.val.nextFn.type);
 
-    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag != 0; ${varName} = ${nextFnName}(&${iterName})) {`;
+    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag == 0; ${varName} = ${nextFnName}(&${iterName})) {`;
     instText += codeGenBody(inst.val.body, indent + 1, false, false, ctx);
     let addToList: string[] = [];
     changeRefCount(addToList, varName, itemType, -1);
@@ -732,6 +732,10 @@ function codeGenFnCall(fnCall: FnCall, addInst: AddInst, ctx: FnContext, positio
     if (fnCall.exprs[i].type.tag == 'fn') {
       ref = false;
     }
+    if (fnCall.fn.tag == 'fn' && fnCall.fn.extern == true) {
+      ref = false;
+    }
+
     output += `${ref ? '&' : ''}${ codeGenExpr(fnCall.exprs[i], addInst, ctx, position) }`;
     if (i != fnCall.exprs.length - 1) {
       output += ', ';
@@ -775,7 +779,12 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     return `${ codeGenExpr(leftExpr.val, addInst, ctx, position) }._${leftExpr.variant}`;
   }
   else if (leftExpr.tag == 'fn') {
-    return getFnUniqueId(leftExpr.unitName, leftExpr.fnName, leftExpr.type);
+    if (leftExpr.extern == true) {
+      return leftExpr.fnName;
+    }
+    else {
+      return getFnUniqueId(leftExpr.unitName, leftExpr.fnName, leftExpr.type);
+    }
   }
   else {
     if (leftExpr.mode == 'param') {
