@@ -575,7 +575,11 @@ function resolveType(
     return resolveStruct(def.val, [],  refTable, position);
   } 
   else if (def.tag == 'ptr') {
-    return resolveType(def.val, refTable, position);
+    let innerType = resolveType(def.val, refTable, position);
+    if (innerType == null) {
+      return null;
+    }
+    return { tag: 'ptr', val: innerType };
   }
   else if (def.tag == 'link') {
     return resolveType(def.val, refTable, position);

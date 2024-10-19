@@ -25,7 +25,8 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
       if (p.endsWith('.chad') == false) {
         continue;
       }
-      let u = parseFile(filePath);
+      let fileName = modName + path.basename(p).slice(0, -5);
+      let u = parseFile(filePath, fileName);
       if (u == null) {
         return null;
       }
@@ -231,7 +232,7 @@ function positionRange(tokens: Token[]): Position {
   return { ...tokens[0].position, end: tokens[tokens.length - 1].position.end, start: tokens[0].position.start };
 }
 
-function parseFile(filePath: string): ProgramUnit | null {
+function parseFile(filePath: string, progName: string): ProgramUnit | null {
   let unitText;
   try {
     unitText = fs.readFileSync(filePath, 'utf8');
@@ -240,7 +241,7 @@ function parseFile(filePath: string): ProgramUnit | null {
     return null;
   }
   
-  return parse(unitText, unitText);
+  return parse(unitText, progName);
 }
 
 // returns the program, null if invalid syntax, and logs all errors to the console

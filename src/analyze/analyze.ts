@@ -157,6 +157,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
     }
   }
 
+  console.log(validProgram);
   for (let i = 0; i < units.length; i++) {
     let unitConsts: Const[] | null = analyzeUnitConsts(units, i); 
     if (unitConsts == null) {
@@ -328,6 +329,10 @@ function verifyDataType(
     return firstTypeValid && secondTypeValid;
   }
 
+  if (type.tag == 'ptr') {
+    return verifyDataType(type.val, position, table, validGenerics);
+  }
+
   if (type.tag == 'generic') {
     let dataType = Type.resolveType(type, table, position);
     for (let g of type.val.generics) {
@@ -358,6 +363,7 @@ function verifyDataType(
     return true;
   }
 
+  logError(position, 'unknown datatype');
   return false;
 }
 

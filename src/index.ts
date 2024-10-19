@@ -1,4 +1,3 @@
-import arg from 'arg';
 import { parseFile, ProgramUnit } from './parse';
 import { analyze } from './analyze/analyze';
 import { codegen, OutputFile } from './codegen/codegen';
@@ -7,13 +6,8 @@ import { execSync } from 'node:child_process'
 
 import fs, { readdirSync } from 'node:fs';
 
-const args = arg({
-	'-o': String, 
-  '-v': Boolean
-});
-
 // gets all of the parse units according to the file structure
-function parseUnits(basePath: string, moduleName: string, outParseUnits: ProgramUnit[]) {
+function parseUnitsRecur(basePath: string, moduleName: string, outParseUnits: ProgramUnit[]) {
   let subPaths = readdirSync(basePath);
   for (let subPath of subPaths) {
     let fullPath = path.join(basePath, subPath);
@@ -22,7 +16,7 @@ function parseUnits(basePath: string, moduleName: string, outParseUnits: Program
     if (stats.isDirectory()) {
       let modBaseName = path.basename(fullPath);
       let nextModName = `${moduleName}.${modBaseName}`;
-      parseUnits(fullPath, nextModName, outParseUnits);
+      parseUnitsRecur(fullPath, nextModName, outParseUnits);
     }
     else if (subPath.endsWith('.chad')) {
       let unitBaseName = path.basename(fullPath).slice(0, -5);
@@ -40,20 +34,22 @@ function parseUnits(basePath: string, moduleName: string, outParseUnits: Program
 }
 
 let programUnits: ProgramUnit[] = [];
-
-// compile the library files
-let libNames: string[] = readdirSync('lib');
-for (let libName of libNames) {
-  let libPath = path.join('lib', libName);
-  let stats = fs.statSync(libPath);
-  if (!stats.isDirectory()) {
+for (let i = 2; i < process.argv.length; i++) {
+  let filePath = process.argv[i];
+  let fileName: string = '';
+  if (filePath.endsWith('.chad')) {
+    fileName = filePath.slice(0, -5);
+  }
+  else {
     continue;
   }
-  parseUnits(libPath, libName, programUnits);
-}
 
-// compile the program files
-parseUnits('src', '', programUnits);
+  let progUnit = parseFile(filePath, fileName);
+  if (progUnit == null) {
+    continue;
+  }
+  programUnits.push(progUnit);
+}
 
 let program = analyze(programUnits);
 let fileNames: string[] = []
