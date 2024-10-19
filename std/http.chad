@@ -1,4 +1,4 @@
-use std.net
+use "std/net"
 
 ##
 struct Routes

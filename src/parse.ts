@@ -25,8 +25,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
       if (p.endsWith('.chad') == false) {
         continue;
       }
-      let fileName = modName + path.basename(p).slice(0, -5);
-      let u = parseFile(filePath, fileName);
+      let u = parseFile(filePath);
       if (u == null) {
         return null;
       }
@@ -232,7 +231,7 @@ function positionRange(tokens: Token[]): Position {
   return { ...tokens[0].position, end: tokens[tokens.length - 1].position.end, start: tokens[0].position.start };
 }
 
-function parseFile(filePath: string, progName: string): ProgramUnit | null {
+function parseFile(filePath: string): ProgramUnit | null {
   let unitText;
   try {
     unitText = fs.readFileSync(filePath, 'utf8');
@@ -241,7 +240,7 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
     return null;
   }
   
-  return parse(unitText, progName);
+  return parse(unitText, unitText);
 }
 
 // returns the program, null if invalid syntax, and logs all errors to the console
@@ -498,14 +497,21 @@ function parseUses(header: SourceLine): string[] | null {
     return null;
   }
 
-  let uses = [];
+  let uses: string[] = [];
   let splits: Token[][] = balancedSplit(header.tokens.slice(1), ',');
   for (let modName of splits) {
-    if (modName.length == 0) {
+    if (modName.length != 1) {
+      logError(header.position, 'unexpected token');
       return null;
     }
 
-    uses.push(modName.map(x => x.val).join(''));
+    let modNameStr = modName[0].val;
+    if (modName.length < 2 || modNameStr[0] != '"' || modNameStr[modNameStr.length - 1] != '"') {
+      logError(header.position, 'expected module path');
+      return null;
+    }
+
+    uses.push(modNameStr.slice(1, -1));
   }
 
   return uses;

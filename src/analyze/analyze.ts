@@ -664,7 +664,7 @@ function analyzeInst(
     }
 
     let returnType = fnResult.fnType.val.returnType;
-    if (returnType.tag == 'enum' && returnType.val.id == 'std.core.TypeUnion') {
+    if (returnType.tag == 'enum' && returnType.val.id == 'std/core.TypeUnion') {
       let field2 = returnType.val.fields[1];
       if (field2.type.tag == 'primative' && field2.type.val != 'void') {
         logError(inst.position, 'next function does not return an option');
@@ -1042,44 +1042,7 @@ function ensureLeftExprValid(
           return null;
         }
 
-        // set the validExpr so that it can implicitly use 'Some' and calculate
-        // the dot operator on the occuring struct. note this does not happen recursively
-        // only 1 level deep
-        let fallThrough: boolean = false;
-        if (!hasField && validExpr.type.val.id == 'std.core.opt'
-          && possibleVariants[0] == 'Some') {
-          validExpr = {
-            tag: 'left_expr',
-            val: {
-              tag: 'dot',
-              val: {
-                varName: 'Some',
-                left: validExpr
-              },
-              type: validExpr.type.val.fields[1].type
-            },
-            type: validExpr.type.val.fields[1].type
-          };
-          fallThrough = true;
-        }
-        else if (!hasField && validExpr.type.val.id == 'std.core.res'
-          && possibleVariants[0] == 'Ok') {
-          validExpr = {
-            tag: 'left_expr',
-            val: {
-              tag: 'dot',
-              val: {
-                varName: 'Ok',
-                left: validExpr
-              },
-              type: validExpr.type.val.fields[0].type
-            },
-            type: validExpr.type.val.fields[0].type
-          };
-          fallThrough = true;
-        }
-
-        if (!fallThrough && validExpr.type.tag == 'enum') {
+        if (validExpr.type.tag == 'enum') {
           let innerType = validExpr.type.val.fields.filter(x => x.name == possibleVariants[0])[0].type;
           return {
             tag: 'prime',
@@ -1088,15 +1051,12 @@ function ensureLeftExprValid(
             variant: possibleVariants[0],
             type: innerType 
           };
-
         }
 
-        if (!fallThrough) {
-          if (!ignoreErrors) {
-            logError(position, 'enum variant does not exist');
-          }
-          return null;
+        if (!ignoreErrors) {
+          logError(position, 'enum variant does not exist');
         }
+        return null;
       }
     }
 
@@ -1287,7 +1247,7 @@ function ensureLeftExprValid(
     if (v != null) {
       let validLeftExpr: LeftExpr = { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
       // try to turn type union in to proper type
-      if (v.type.tag == 'enum' && v.type.val.id == 'std.core.TypeUnion') {
+      if (v.type.tag == 'enum' && v.type.val.id == 'std/core.TypeUnion') {
         let possible = Enum.getVariantPossibilities(scope.variantScope, validLeftExpr);
         if (possible.length == 0) {
           if (!ignoreErrors) {
@@ -1737,7 +1697,7 @@ function ensureExprValid(
   let computedExpr: Expr | null = null; 
 
   if (expectedReturn != null && expectedReturn.tag == 'enum' 
-    && expectedReturn.val.id == 'std.core.TypeUnion') {
+    && expectedReturn.val.id == 'std/core.TypeUnion') {
 
     let fields = expectedReturn.val.fields;
     let first = ensureExprValid(expr, fields[0].type, table, scope, position, true);
@@ -1798,7 +1758,7 @@ function ensureExprValid(
 
     if (exprLeft.type.tag == 'enum' && expr.right.tag == 'basic') {
       let fieldName: string = expr.right.val;
-      if (exprLeft.type.val.id == 'std.core.TypeUnion') {
+      if (exprLeft.type.val.id == 'std/core.TypeUnion') {
         let fields = exprLeft.type.val.fields;
         for (let i = 0; i < fields.length; i++) {
           let t = fields[i].type;
@@ -1835,7 +1795,7 @@ function ensureExprValid(
     }
 
     if (exprLeft.type.tag == 'enum' && expr.right.tag != 'basic') {
-      if (exprLeft.type.val.id != 'std.core.TypeUnion') {
+      if (exprLeft.type.val.id != 'std/core.TypeUnion') {
         logError(position, 'expected enum variant');
         return null;
       }
@@ -1890,7 +1850,7 @@ function ensureExprValid(
   if (expr.tag == 'try' || expr.tag == 'assert') {
     let errorType: Type.Type | null = null;
     if (expr.tag == 'try') {
-      if (scope.returnType.tag == 'enum' && scope.returnType.val.id == 'std.core.TypeUnion') {
+      if (scope.returnType.tag == 'enum' && scope.returnType.val.id == 'std/core.TypeUnion') {
         errorType = scope.returnType.val.fields[1].type;
       }
       else {
@@ -2038,7 +1998,7 @@ function ensureExprValid(
   if (expr.tag == 'list_init') {
     // determine what should be the type of the inner values
     let exprType: Type.Type | null = null;
-    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.id == 'std.core.Arr') {
+    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.id == 'std/core.Arr') {
       let ptrType = expectedReturn.val.fields[0].type;
       if (ptrType.tag != 'ptr') {
         compilerError('expected ptr field');
@@ -2088,8 +2048,7 @@ function ensureExprValid(
       return null;
     }
 
-    if (expectedReturn.tag != 'struct'
-      && !(expectedReturn.tag == 'enum' && (expectedReturn.val.id == 'std.core.opt' || expectedReturn.val.id == 'std.core.res'))) {
+    if (expectedReturn.tag != 'struct' && !(expectedReturn.tag == 'enum')) {
       if (!ignoreErrors) {
         logError(position, `expected ${Type.toStr(expectedReturn)}`);
       }
@@ -2097,17 +2056,6 @@ function ensureExprValid(
     }
 
     let retType: Type.Type = expectedReturn;
-    let castType: 'opt' | 'res' | 'none' = 'none';
-    // determine the resulting struct type
-    if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.opt') {
-      retType = expectedReturn.val.fields[1].type;
-      castType = 'opt';
-    }
-    else if (expectedReturn.tag == 'enum' && expectedReturn.val.id == 'std.core.res') {
-      retType = expectedReturn.val.fields[0].type;
-      castType = 'res';
-    }
-
     if (retType.tag != 'struct') {
       if (!ignoreErrors) {
         logError(position, `expected ${Type.toStr(retType)}`);
@@ -2180,27 +2128,7 @@ function ensureExprValid(
       fieldInits.push({ name: fName, expr: fieldExpr });
     }
 
-    let newExpr: Expr = { tag: 'struct_init', val: fieldInits, type: retType };
-    if (castType == 'opt') {
-      newExpr = {
-        tag: 'enum_init',
-        type: expectedReturn,
-        fieldExpr: newExpr,
-        fieldName: 'Some',
-        variantIndex: 1
-      };
-    }
-    else if (castType == 'res') {
-      newExpr = {
-        tag: 'enum_init',
-        type: expectedReturn,
-        fieldExpr: newExpr,
-        fieldName: 'Ok',
-        variantIndex: 0
-      };
-    }
-
-    computedExpr = newExpr; 
+    computedExpr = { tag: 'struct_init', val: fieldInits, type: retType };
   } 
 
   if (expr.tag == 'bool_const') {

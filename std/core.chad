@@ -17,7 +17,7 @@ struct range
   int start
   int end
 
-fn next(&range r) int|nil
+fn next(range r) int|nil
   int thisIndex = r.start
   if r.start == r.end
     return nil
@@ -143,6 +143,7 @@ fn split(str s) Arr[str]
 
 fn split(str s, char c) Arr[str]
   Arr[str] output = []
+
   int end = 0
   int start = 0
   while true

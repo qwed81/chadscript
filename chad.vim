@@ -2,7 +2,7 @@
 "    finish
 "endif
 
-syn keyword chadKeyword while pri if elif else match for in struct enum return break continue use include assert try get fn arena const mut cp mv ln
+syn keyword chadKeyword while pri if elif else match for in struct enum return break continue use as include assert try get fn arena const cp mv trait
 syn keyword chadType void int char bool num byte ptr str arr strbuf range opt res err
 
 syn keyword chadNil nil

@@ -13,7 +13,7 @@ export {
 
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
-const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std.core.range' } };
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
@@ -28,7 +28,7 @@ const STR: Type = {
       { visibility: 'get', name: 'len', type: INT }
     ],
     generics: [],
-    id: 'std.core.str'
+    id: 'std/core.str'
   }
 }
 
@@ -39,7 +39,7 @@ const ERR: Type = {
       { visibility: null, name: 'message', type: STR }
     ],
     generics: [],
-    id: 'std.core.err'
+    id: 'std/core.err'
   }
 }
 
@@ -52,7 +52,7 @@ const FMT: Type = {
       { visibility: 'get', name: 'capacity', type: INT }
     ],
     generics: [],
-    id: 'std.core.Fmt'
+    id: 'std/core.Fmt'
   }
 }
 
@@ -84,7 +84,7 @@ function createRes(genericType: Type, errorType: Type): Type {
   return {
     tag: 'enum',
     val: {
-      id: 'std.core.TypeUnion',
+      id: 'std/core.TypeUnion',
       fields: [
         { name: 'val0', type: genericType, visibility: null },
         { name: 'val1', type: errorType, visibility: null }
@@ -104,7 +104,7 @@ function createList(genericType: Type): Type {
         { visibility: 'get', name: 'capacity', type: INT }
       ],
       generics: [genericType],
-      id: 'std.core.Arr'
+      id: 'std/core.Arr'
     }
   }
 }
@@ -118,7 +118,7 @@ function createTypeUnion(val0Type: Type, val1Type: Type): Type {
         { visibility: 'pub', name: 'val1', type: val1Type },
       ],
       generics: [val0Type, val1Type],
-      id: 'std.core.TypeUnion'
+      id: 'std/core.TypeUnion'
     }
   }
 }
@@ -128,7 +128,7 @@ function isComplex(type: Type): boolean {
     return true;
   }
   if (type.tag == 'struct' || type.tag == 'enum') {
-    if (type.val.id == 'std.core.Arr') {
+    if (type.val.id == 'std/core.Arr') {
       return true;
     }
     for (let field of type.val.fields) {
@@ -219,7 +219,7 @@ function toStr(t: Type | null): string {
 }
 
 function isRes(type: Type): boolean {
-  return type.tag == 'enum' && type.val.id == 'std.core.TypeUnion';
+  return type.tag == 'enum' && type.val.id == 'std/core.TypeUnion';
 }
 
 // fnHeader field is used to calculate whether a generic should accept any type
@@ -245,7 +245,7 @@ function typeApplicableStateful(
   }
 
   // T -> T|K is valid
-  if (supa.tag == 'enum' && supa.val.id == 'std.core.TypeUnion') {
+  if (supa.tag == 'enum' && supa.val.id == 'std/core.TypeUnion') {
     let firstApplicable = typeApplicableStateful(sub, supa.val.fields[0].type, genericMap, fnHeader);
     let secondApplicable = typeApplicableStateful(sub, supa.val.fields[1].type, genericMap, fnHeader);
     if (firstApplicable || secondApplicable) {
@@ -487,34 +487,6 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
     };
   }
 
-  // try to index with options
-  if (index.tag == 'enum' && index.val.id == 'std.core.opt') {
-    let retry = canGetIndex(struct, index.val.fields[1].type, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-  if (struct.tag == 'enum' && struct.val.id == 'std.core.opt') {
-    let retry = canGetIndex(struct.val.fields[1].type, index, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-
-  // try to index with results
-  if (index.tag == 'enum' && index.val.id == 'std.core.res') {
-    let retry = canGetIndex(struct, index.val.fields[0].type, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-  if (struct.tag == 'enum' && struct.val.id == 'std.core.res') {
-    let retry = canGetIndex(struct.val.fields[0].type, index, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-
   return null;
 }
 
@@ -532,34 +504,6 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
       fnType: fnResult.fnType,
       unitName: fnResult.unitName
     };
-  }
-
-  // try to index with options
-  if (index.tag == 'enum' && index.val.id == 'std.core.opt') {
-    let retry = canSetIndex(struct, index.val.fields[1].type, exprType, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-  if (struct.tag == 'enum' && struct.val.id == 'std.core.opt') {
-    let retry = canSetIndex(struct.val.fields[1].type, index, exprType, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-
-  // try to index with results
-  if (index.tag == 'enum' && index.val.id == 'std.core.res') {
-    let retry = canSetIndex(struct, index.val.fields[0].type, exprType, refTable);
-    if (retry != null) {
-      return retry;
-    }
-  }
-  if (struct.tag == 'enum' && struct.val.id == 'std.core.res') {
-    let retry = canSetIndex(struct.val.fields[0].type, index, exprType, refTable);
-    if (retry != null) {
-      return retry;
-    }
   }
 
   return null;
@@ -582,28 +526,30 @@ function getUnitReferences(
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
   let includes: HeaderInclude[] = [];
   for (let i = 0; i < allUnits.length; i++) {
-    let addCore = allUnits[i].fullName == 'std.core' && thisUnit.fullName != 'std.core';
+    let addCore = allUnits[i].fullName == 'std/core' && thisUnit.fullName != 'std/core';
     if (thisUnit.uses.includes(allUnits[i].fullName) || addCore) {
       newUnits.push(allUnits[i]);
     }
   }
 
+  // parse the C header files
   for (let use of thisUnit.uses) {
-    if (use[0] == '"' && use[use.length - 1] == '"') {
-      let headerFileName = use.slice(1, use.length - 1);
-      // cache the value so header files don't need to be parsed every time
-      let include: HeaderInclude | null = null;
-      if (parsedHeaders.has(headerFileName)) {
-        include = parsedHeaders.get(headerFileName)!;
-      }
-      else {
-        include = parseHeaderFile(headerFileName);
-      }
+    if (!use.endsWith('.h')) {
+      continue;
+    }
 
-      if (include != null) {
-        parsedHeaders.set(headerFileName, include);
-        includes.push(include)
-      }
+    // cache the value so header files don't need to be parsed every time
+    let include: HeaderInclude | null = null;
+    if (parsedHeaders.has(use)) {
+      include = parsedHeaders.get(use)!;
+    }
+    else {
+      include = parseHeaderFile(use);
+    }
+
+    if (include != null) {
+      parsedHeaders.set(use, include);
+      includes.push(include)
     }
   }
 

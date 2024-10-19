@@ -570,7 +570,7 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
   else if (expr.tag == 'list_init') {
-    if (expr.type.tag != 'struct' || expr.type.val.id != 'std.core.Arr') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'std/core.Arr') {
       return 'undefined';
     }
 
@@ -678,7 +678,7 @@ function codeGenCp(
     return;
   }
 
-  if (type.tag == 'struct' && type.val.id == 'std.core.Arr') {
+  if (type.tag == 'struct' && type.val.id == 'std/core.Arr') {
     let arrReserve = reserveVarNoStack(ctx);
     let size = `${srcPrefix}._len * sizeof(${codeGenType(type.val.generics[0])})`;
     addInst.after.push(`void* ${arrReserve} = malloc(${size});`);
