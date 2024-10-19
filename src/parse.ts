@@ -62,9 +62,14 @@ interface Const {
   expr: Expr
 }
 
+interface Use {
+  unitName: string,
+  as: string | null
+}
+
 interface ProgramUnit {
   fullName: string
-  uses: string[]
+  uses: Use[]
   fns: Fn[]
   consts: Const[]
   structs: Struct[]
@@ -493,26 +498,47 @@ function balancedSplit(tokens: Token[], op: string): Token[][] {
   return splits;
 }
 
-function parseUses(header: SourceLine): string[] | null {
+function parseUses(header: SourceLine): Use[] | null {
   if (header.tokens[0].val != 'use') {
     return null;
   }
 
-  let uses: string[] = [];
+  let uses: Use[] = [];
   let splits: Token[][] = balancedSplit(header.tokens.slice(1), ',');
   for (let modName of splits) {
-    if (modName.length != 1) {
+    if (modName.length < 1) {
       logError(header.position, 'unexpected token');
       return null;
     }
 
     let modNameStr = modName[0].val;
-    if (modName.length < 2 || modNameStr[0] != '"' || modNameStr[modNameStr.length - 1] != '"') {
+    if (modNameStr.length < 2 || modNameStr[0] != '"' || modNameStr[modNameStr.length - 1] != '"') {
       logError(header.position, 'expected module path');
       return null;
     }
 
-    uses.push(modNameStr.slice(1, -1));
+    if (modName.length > 2) {
+      if (modName[1].val != 'as') {
+        logError(header.position, 'expected as');
+        return null;
+      }
+
+      if (!isAlphaNumeric(modName[2].val)) {
+        logError(header.position, 'expected valid module name');
+        return null;
+      }
+
+      uses.push({
+        unitName: modNameStr.slice(1, -1),
+        as: modName[2].val
+      });
+    }
+    else {
+      uses.push({
+        unitName: modNameStr.slice(1, -1),
+        as: null
+      });
+    }
   }
 
   return uses;

@@ -86,27 +86,14 @@ function codegen(prog: Program): OutputFile[] {
     chadDotH += codeGenFnHeader(fn) + ';';
   }
 
-  // maps the unit name to its output string
-  let unitMap: Map<string, string> = new Map();
-
   // generate all constants
   for (let c of newProg.consts) {
-    let unitData: string | undefined = unitMap.get(c.unitName);
-    if (unitData == undefined) {
-      unitData = defaultUnitData();
-    }
-    unitData += `\n${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)} = ${codeGenConst(c.expr)};`;
-    unitMap.set(c.unitName, unitData);
+    chadDotC += `\n${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)} = ${codeGenConst(c.expr)};`;
   }
 
   // generate all of the functions
   for (let fn of newProg.fns) {
-    let unitData: string | undefined = unitMap.get(fn.unitName);
-    if (unitData == undefined) {
-      unitData = defaultUnitData();
-    }
-    unitData += codeGenFn(fn, prog.strTable, cstructMap);
-    unitMap.set(fn.unitName, unitData);
+    chadDotC += codeGenFn(fn, prog.strTable, cstructMap);
   }
 
   let entry = newProg.entry;
@@ -124,15 +111,10 @@ function codegen(prog: Program): OutputFile[] {
   }
   `;
 
-  let outputFiles: OutputFile[] = [
+  return [
     { name: 'chad.h', data: chadDotH },
-    { name: 'chad.c', data: chadDotC } 
+    { name: 'chad.c', data: chadDotC },
   ];
-  for (let [unitName, unitData] of unitMap.entries()) {
-    let fileName = unitName.replace('.', '_') + '.c';
-    outputFiles.push({ name: fileName, data: unitData });
-  }
-  return outputFiles;
 }
 
 function codeGenConst(expr: Expr): string {
@@ -257,6 +239,7 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, ']', '_cs');
   typeStr = replaceAll(typeStr, ',', '_c');
   typeStr = replaceAll(typeStr, '.', '_');
+  typeStr = replaceAll(typeStr, '/', '_');
   typeStr = replaceAll(typeStr, '*', '_op_cp');
   typeStr = replaceAll(typeStr, '&', '');
   typeStr = replaceAll(typeStr, ' ', '');
@@ -810,11 +793,11 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
 }
 
 function getConstUniqueId(unitName: string, constName: string) {
-  return `_${unitName}_${constName}`.replace('.', '_');
+  return `_${unitName}_${constName}`.replace('.', '_').replace('/', '_');
 }
 
 function getFnUniqueId(fnUnitName: string, fnName: string, fnType: Type): string {
-  return ('_' + fnUnitName.replace('.', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_arr');
+  return ('_' + fnUnitName.replace('.', '_').replace('/', '_') + '_' + fnName + '_' + codeGenType(fnType)).replace(' ', '').replace('*', '_arr');
 }
 
 function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: number) {

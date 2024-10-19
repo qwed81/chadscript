@@ -459,7 +459,7 @@ function createDefaultFn(
 
   let returnType: Type = fnDep.fnType.val.returnType;
   let paramTypes: Type[] = fnDep.fnType.val.paramTypes;
-  let template = typeResolveFn(fnDep.fnName, returnType, paramTypes, refTable, NULL_POS);
+  let template = typeResolveFn(fnDep.fnName, null, returnType, paramTypes, refTable, NULL_POS);
   if (template == null) {
     return null;
   }
@@ -528,7 +528,7 @@ function createDefaultFn(
 
         let returnType = paramType.val.returnType;
         let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = typeResolveFn(defaultExpr, returnType, thisParamTypes, refTable, NULL_POS);
+        let fnResult = typeResolveFn(defaultExpr, null, returnType, thisParamTypes, refTable, NULL_POS);
         if (fnResult == null) {
           return null;
         }

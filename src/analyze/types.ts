@@ -430,7 +430,7 @@ function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
     return { tag: 'default', returnType: BOOL };
   }
 
-  let fnResult = resolveFn('compare', null, [a, b], refTable, null);
+  let fnResult = resolveFn('compare', null, null, [a, b], refTable, null);
   if (fnResult == null || fnResult.fnType.tag != 'fn') {
     return null;
   }
@@ -458,7 +458,7 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
     return { tag: 'default', returnType: BOOL };
   }
 
-  let fnResult = resolveFn('eq', BOOL, [a, b], refTable, null);
+  let fnResult = resolveFn('eq', null, BOOL, [a, b], refTable, null);
   if (fnResult == null) {
     return null;
   }
@@ -476,7 +476,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
     return { tag: 'default', returnType: struct.val };
   }
 
-  let fnResult = resolveFn('getIndex', null, [struct, index], refTable, null);
+  let fnResult = resolveFn('getIndex', null, null, [struct, index], refTable, null);
   if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'ptr') {
     return {
       tag: 'fn',
@@ -495,7 +495,7 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
     return { tag: 'default', returnType: struct.val };
   }
 
-  let fnResult = resolveFn('prepareIndex', null, [struct, index, exprType], refTable, null);
+  let fnResult = resolveFn('prepareIndex', null, null, [struct, index, exprType], refTable, null);
   if (fnResult != null && fnResult.fnType.tag == 'fn' && fnResult.fnType.val.returnType.tag == 'ptr') {
     return {
       tag: 'fn',
@@ -514,6 +514,7 @@ let parsedHeaders: Map<string, HeaderInclude> = new Map();
 
 interface RefTable {
   units: Parse.ProgramUnit[]
+  globalUnits: boolean[] // determines which units are 'non global'
   thisUnit: Parse.ProgramUnit
   allUnits: Parse.ProgramUnit[]
   includes: HeaderInclude[]
@@ -524,36 +525,54 @@ function getUnitReferences(
   allUnits: Parse.ProgramUnit[]
 ): RefTable {
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
+  let globalUnits: boolean[] = [true];
   let includes: HeaderInclude[] = [];
+
   for (let i = 0; i < allUnits.length; i++) {
     let addCore = allUnits[i].fullName == 'std/core' && thisUnit.fullName != 'std/core';
-    if (thisUnit.uses.includes(allUnits[i].fullName) || addCore) {
+    if (addCore) {
       newUnits.push(allUnits[i]);
+      globalUnits.push(true)
+      continue;
+    }
+
+    for (let use of thisUnit.uses) {
+      if (use.unitName == allUnits[i].fullName) {
+        newUnits.push(allUnits[i]);
+        globalUnits.push(use.as == null);
+        break;
+      }
     }
   }
 
   // parse the C header files
   for (let use of thisUnit.uses) {
-    if (!use.endsWith('.h')) {
+    if (!use.unitName.endsWith('.h')) {
       continue;
     }
 
     // cache the value so header files don't need to be parsed every time
     let include: HeaderInclude | null = null;
-    if (parsedHeaders.has(use)) {
-      include = parsedHeaders.get(use)!;
+    if (parsedHeaders.has(use.unitName)) {
+      include = parsedHeaders.get(use.unitName)!;
     }
     else {
-      include = parseHeaderFile(use);
+      include = parseHeaderFile(use.unitName);
     }
 
     if (include != null) {
-      parsedHeaders.set(use, include);
+      parsedHeaders.set(use.unitName, include);
       includes.push(include)
     }
   }
 
-  return { units: newUnits, allUnits, thisUnit, includes };
+  return {
+    units: newUnits,
+    globalUnits: globalUnits,
+    allUnits,
+    thisUnit,
+    includes 
+  };
 }
 
 function resolveType(
@@ -788,6 +807,7 @@ type WrongTypeFn = { tag: 'chad', val: Parse.Fn } | { tag: 'c', val: ExternFn }
 
 function resolveFn(
   name: string,
+  inUnit: string | null,
   returnType: Type | null,
   paramTypes: (Type | null)[] | null,
   refTable: RefTable,
@@ -798,7 +818,18 @@ function resolveFn(
   let wrongTypeFns: WrongTypeFn[] = [];
 
   // go through the chadscript functions
-  for (let unit of refTable.units) {
+  for (let i = 0; i < refTable.units.length; i++) {
+    let unit = refTable.units[i];
+
+    if (inUnit != null && inUnit != unit.fullName) {
+      continue;
+    }
+
+    // can not be used as global variable
+    if (inUnit == null && refTable.globalUnits[i] == false) {
+      continue;
+    }
+
     let unitRefTable = getUnitReferences(unit, refTable.allUnits);
     for (let fnDef of unit.fns) {
       if (fnDef.name != name) {

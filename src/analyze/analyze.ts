@@ -157,7 +157,6 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
     }
   }
 
-  console.log(validProgram);
   for (let i = 0; i < units.length; i++) {
     let unitConsts: Const[] | null = analyzeUnitConsts(units, i); 
     if (unitConsts == null) {
@@ -663,7 +662,7 @@ function analyzeInst(
       return null;
     }
 
-    let fnResult =  Type.resolveFn('next', null, [iterExpr.type], table, inst.position);
+    let fnResult =  Type.resolveFn('next', null, null, [iterExpr.type], table, inst.position);
     if (fnResult == null || fnResult.fnType.tag != 'fn') {
       logError(inst.position, 'value can not be used as an iterator');
       return null;
@@ -827,7 +826,7 @@ function analyzeInst(
         return null;
       }
 
-      let strImpl = Type.resolveFn('str', Type.STR, [expr.type], table, inst.position);
+      let strImpl = Type.resolveFn('str', null, Type.STR, [expr.type], table, inst.position);
       if (strImpl == null) {
         return null;
       }
@@ -845,7 +844,7 @@ function analyzeInst(
         type: strImpl.fnType
       }
 
-      let appendFn = Type.resolveFn('append', Type.VOID, [Type.STR_BUF, expr.type], table, inst.position);
+      let appendFn = Type.resolveFn('append', null, Type.VOID, [Type.STR_BUF, expr.type], table, inst.position);
       if (appendFn == null) {
         logError(inst.position, "could not find 'append'");
         return null;
@@ -885,7 +884,7 @@ function analyzeInst(
         return null;
       }
 
-      let appendFn = Type.resolveFn('append', Type.VOID, [to.type, expr.type], table, inst.position);
+      let appendFn = Type.resolveFn('append', null, Type.VOID, [to.type, expr.type], table, inst.position);
       if (appendFn == null) {
         logError(inst.position, "'append' does not exist");
         return null;
@@ -1018,7 +1017,104 @@ function ensureLeftExprValid(
   ignoreErrors: boolean = false
 ): LeftExpr | null {
 
+  let modName: string | null = null;
+  let modVarName: string | null = null;
   if (leftExpr.tag == 'dot') {
+    modName = isModule(scope, leftExpr.val.left, table)
+    modVarName = leftExpr.val.varName;
+  }
+
+  if (leftExpr.tag == 'var') {
+    let v = getVar(scope, leftExpr.val, table);
+    if (v != null) {
+      let validLeftExpr: LeftExpr = { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
+      // try to turn type union in to proper type
+      if (v.type.tag == 'enum' && v.type.val.id == 'std/core.TypeUnion') {
+        let possible = Enum.getVariantPossibilities(scope.variantScope, validLeftExpr);
+        if (possible.length == 0) {
+          if (!ignoreErrors) {
+            logError(position, 'no variant possible');
+          }
+          return null;
+        }
+        else if (possible.length > 1) {
+          return validLeftExpr;
+        }
+
+        let fieldIndex = v.type.val.fields.findIndex(x => x.name == possible[0]);
+        let currentVariantType = v.type.val.fields[fieldIndex].type;
+
+        return {
+          tag: 'prime',
+          val: {
+            tag: 'left_expr',
+            val: validLeftExpr,
+            type: v.type
+          },
+          variant: possible[0],
+          variantIndex: fieldIndex,
+          type: currentVariantType  
+        };
+      }
+      return validLeftExpr;
+    }
+  }
+
+  if (leftExpr.tag == 'var' || modName != null) {
+    let varName: string = '';
+    if (modVarName != null) {
+      varName = modVarName;
+    }
+    else if (leftExpr.tag == 'var') {
+      varName = leftExpr.val;
+    }
+
+    if (fnTypeHint != null) {
+      let fn = Type.resolveFn(
+        varName,
+        modName,
+        fnTypeHint.returnType,
+        fnTypeHint.paramTypes,
+        table,
+        ignoreErrors ? null : position
+      );
+
+      if (fn == null) {
+        return null;
+      }
+
+      return { 
+        tag: 'fn',
+        fnName: fn.fnName,
+        unitName: fn.unitName,
+        type: fn.fnType,
+        refTable: table,
+        extern: fn.extern
+      };
+    } 
+
+    let fn = Type.resolveFn(
+      varName,
+      modName,
+      null,
+      null,
+      table,
+      ignoreErrors ? null : position
+    );
+    if (fn == null) {
+      return null;
+    }
+
+    return {
+      tag: 'fn',
+      fnName: fn.fnName,
+      unitName: fn.unitName,
+      type: fn.fnType,
+      refTable: table,
+      extern: fn.extern
+    };
+  }
+  else if (leftExpr.tag == 'dot') {
     let validExpr = ensureExprValid(leftExpr.val.left, null, table, scope, position);
     if (validExpr == null) {
       return null;
@@ -1248,84 +1344,6 @@ function ensureLeftExprValid(
     }
     return null;
   } 
-  else if (leftExpr.tag == 'var') {
-    let v = getVar(scope, leftExpr.val, table);
-    if (v != null) {
-      let validLeftExpr: LeftExpr = { tag: 'var', val: leftExpr.val, mode: v.mode, type: v.type };
-      // try to turn type union in to proper type
-      if (v.type.tag == 'enum' && v.type.val.id == 'std/core.TypeUnion') {
-        let possible = Enum.getVariantPossibilities(scope.variantScope, validLeftExpr);
-        if (possible.length == 0) {
-          if (!ignoreErrors) {
-            logError(position, 'no variant possible');
-          }
-          return null;
-        }
-        else if (possible.length > 1) {
-          return validLeftExpr;
-        }
-
-        let fieldIndex = v.type.val.fields.findIndex(x => x.name == possible[0]);
-        let currentVariantType = v.type.val.fields[fieldIndex].type;
-
-        return {
-          tag: 'prime',
-          val: {
-            tag: 'left_expr',
-            val: validLeftExpr,
-            type: v.type
-          },
-          variant: possible[0],
-          variantIndex: fieldIndex,
-          type: currentVariantType  
-        };
-      }
-      return validLeftExpr;
-    }
-
-    if (fnTypeHint != null) {
-      let fn = Type.resolveFn(
-        leftExpr.val,
-        fnTypeHint.returnType,
-        fnTypeHint.paramTypes,
-        table,
-        ignoreErrors ? null : position
-      );
-
-      if (fn == null) {
-        return null;
-      }
-
-      return { 
-        tag: 'fn',
-        fnName: fn.fnName,
-        unitName: fn.unitName,
-        type: fn.fnType,
-        refTable: table,
-        extern: fn.extern
-      };
-    } 
-
-    let fn = Type.resolveFn(
-      leftExpr.val,
-      null,
-      null,
-      table,
-      ignoreErrors ? null : position
-    );
-    if (fn == null) {
-      return null;
-    }
-
-    return {
-      tag: 'fn',
-      fnName: fn.fnName,
-      unitName: fn.unitName,
-      type: fn.fnType,
-      refTable: table,
-      extern: fn.extern
-    };
-  }
   else if (leftExpr.tag == 'prime') {
     compilerError('prime not supported anymore')
     return null;
@@ -1428,7 +1446,7 @@ function ensureFnCallValid(
 
         let returnType = paramType.val.returnType;
         let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = Type.resolveFn(resolveName, returnType, thisParamTypes, table, position);
+        let fnResult = Type.resolveFn(resolveName, null, returnType, thisParamTypes, table, position);
         if (fnResult == null) {
           return null;
         }
@@ -2157,7 +2175,7 @@ function ensureExprValid(
       // if the type is not a string, look of the implementation of str and use
       // that instead
       if (!Type.typeApplicable(e.type, Type.STR, false)) {
-        let fn = Type.resolveFn('str', Type.STR, [e.type], table, position);
+        let fn = Type.resolveFn('str', null, Type.STR, [e.type], table, position);
         if (fn == null) {
           if (e.type.tag == 'generic' && !ignoreErrors) {
             logError(position, `hint: no implementation of toStr(${Type.toStr(e.type)}). generic may not have toStr`)
@@ -2345,12 +2363,40 @@ function getVar(scope: FnContext, name: string, table: Type.RefTable): Var | nul
       continue;
     }
 
-    if (c.unitName == table.thisUnit.fullName || table.thisUnit.uses.includes(c.unitName)) {
+    let constInScope = c.unitName == table.thisUnit.fullName;
+    for (let use of table.thisUnit.uses) {
+      if (use.unitName == c.unitName) {
+        constInScope = true;
+        break;
+      }
+    }
+
+    if (constInScope) {
       return {
         type: c.type,
         mut: false,
         mode: { tag: 'const', unitName: c.unitName }
       }
+    }
+  }
+
+  return null;
+}
+
+function isModule(scope: FnContext, expr: Parse.Expr, table: Type.RefTable): string | null {
+  if (expr.tag != 'left_expr' || expr.val.tag != 'var') {
+    return null;
+  }
+
+  let modName = expr.val.val;
+  if (getVar(scope, modName, table) != null) {
+    return null;
+  }
+
+  let uses = table.thisUnit.uses;
+  for (let i = 0; i < uses.length; i++) {
+    if (uses[i].as == modName) {
+      return uses[i].unitName;
     }
   }
 

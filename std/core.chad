@@ -17,7 +17,7 @@ struct range
   int start
   int end
 
-fn next(range r) int|nil
+fn next(&range r) int|nil
   int thisIndex = r.start
   if r.start == r.end
     return nil
