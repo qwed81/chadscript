@@ -94,7 +94,7 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     else if (child.kind == 'RecordDecl') {
       let recordType = parseCRecord(child, structTypeMap);
       structTypeMap.set(child.name, recordType);
-      symbols.fns.push({
+      symbols.typeDefs.push({
         name: child.name,
         type: recordType
       });
@@ -143,7 +143,7 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type {
 
     let fieldType = parseCType(cField.type.qualType, structTypeMap);
     fields.push({
-      visibility: null,
+      visibility: 'pub',
       name: cField.name,
       type: fieldType
     })

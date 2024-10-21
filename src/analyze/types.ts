@@ -748,6 +748,16 @@ function resolveStruct(
     }
   }
 
+  // resolve C types
+  for (let include of refTable.includes) {
+    for (let typeDef of include.typeDefs) {
+      if (typeDef.name != name) {
+        continue;
+      }
+      possibleStructs.push(typeDef.type);
+    }
+  }
+
   if (possibleStructs.length > 1) {
     if (position != null) {
       logError(position, 'ambiguous struct');
