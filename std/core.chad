@@ -83,6 +83,16 @@ fn getIndex(&Arr[T] l, int index) *T
   assert index >= 0 && index < l.len
   return ptr(l.base[index])
 
+fn prepareIndex(&Arr[T] l, i32 index, T val) *T
+  int intIndex = int(index)
+  assert intIndex >= 0 && intIndex < l.len
+  return ptr(l.base[intIndex])
+
+fn getIndex(&Arr[T] l, i32 index) *T
+  int intIndex = int(index)
+  assert intIndex >= 0 && intIndex < l.len
+  return ptr(l.base[intIndex])
+
 fn getIndex(&Arr[T] l, range r) *Arr[T]
   assert r.start >= 0 && r.end <= l.len
   *Arr[T] newList = alloc(1)
@@ -309,6 +319,14 @@ fn nextLine(&Scanner[T] scanner) str|err
       break
 
   return str(output)
+
+fn str(i32 val) str
+  return str(int(val))
+
+fn int(i32 val) int
+  include
+    return ($(int))*_val;
+  return 0
 
 fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))

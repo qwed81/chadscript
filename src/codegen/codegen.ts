@@ -217,15 +217,17 @@ function replaceAll(s: string, find: string, replace: string) {
 
 function codeGenType(type: Type): string {
   if (type.tag == 'primative') {
-    if (type.val == 'num') {
-      return 'double';
-    }
-    else if (type.val == 'byte') {
-      return 'unsigned char';
-    }
-    else if (type.val == 'int') {
-      return 'int64_t';
-    }
+    if (type.val == 'int' || type.val == 'i64') return 'int64_t';
+    else if (type.val == 'i32') return 'int32_t';
+    else if (type.val == 'i16') return 'int16_t';
+    else if (type.val == 'i8') return 'int8_t';
+    else if (type.val == 'u64') return 'uint16_t';
+    else if (type.val == 'u32') return 'uint32_t';
+    else if (type.val == 'u16') return 'uint16_t';
+    else if (type.val == 'u8') return 'uint8_t';
+    else if (type.val == 'num' || type.val == 'f64') return 'double';
+    else if (type.val == 'f32') return 'float';
+    else if (type.val == 'byte') return 'unsigned char';
     return type.val;
   }
   if (type.tag == 'ptr') {

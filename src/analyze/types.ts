@@ -68,7 +68,12 @@ interface Struct {
   id: string
 }
 
-type Type = { tag: 'primative', val: 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte' }
+type Primatives = 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte'
+  | 'i8' | 'i16' | 'i32' | 'i64'
+  | 'u8' | 'u16' | 'u32' | 'u64'
+  | 'f32' | 'f64';
+
+type Type = { tag: 'primative', val: Primatives  }
   | { tag: 'generic', val: string }
   | { tag: 'ptr', val: Type }
   | { tag: 'struct', val: Struct }
@@ -388,6 +393,20 @@ type OperatorResult = { tag: 'default', returnType: Type }
   | null
 
 function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
+  if (a.tag != 'primative' || b.tag != 'primative') {
+    return null;
+  }
+
+  if (a.tag != b.tag) {
+    return null;
+  }
+
+  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+    || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
+    || a.val == 'f64' || a.val == 'f32') {
+    return { tag: 'default', returnType: a };
+  }
+
   if (typeApplicable(a, INT, false)) {
     if (typeApplicable(b, INT, false)) {
       return { tag: 'default', returnType: INT };
@@ -423,6 +442,12 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
+  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+    || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
+    || a.val == 'f64' || a.val == 'f32') {
+    return { tag: 'default', returnType: a };
+  }
+
   if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
     return { tag: 'default', returnType: BOOL };
   }
@@ -582,7 +607,11 @@ function resolveType(
   position: Position | null
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte') {
+    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte' 
+      || def.val == 'i64' || def.val == 'i32' || def.val == 'i16' || def.val == 'i8'
+      || def.val == 'u64' || def.val == 'u32' || def.val == 'u16' || def.val == 'u8'
+      || def.val == 'f64' || def.val == 'f32'
+      ) {
       return { tag: 'primative', val: def.val };
     }
     if (def.val == 'nil') {

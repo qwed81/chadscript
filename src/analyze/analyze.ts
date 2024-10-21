@@ -2215,7 +2215,16 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'int_const') {
-    computedExpr = { tag: 'int_const', val: expr.val, type: Type.INT };
+    if (expectedReturn != null && expectedReturn.tag == 'primative') {
+      let t = expectedReturn.val;
+      if (t == 'i64' || t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32' || t == 'u16' || t == 'u8') {
+        computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
+      }
+    }
+
+    if (computedExpr == null) {
+      computedExpr = { tag: 'int_const', val: expr.val, type: Type.INT };
+    }
   } 
 
   if (expr.tag == 'nil_const') {
