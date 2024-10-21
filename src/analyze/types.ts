@@ -8,7 +8,7 @@ export {
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex
+  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise
 }
 
 const INT: Type = { tag: 'primative', val: 'int' };
@@ -391,6 +391,24 @@ function isGeneric(a: Type): boolean {
 type OperatorResult = { tag: 'default', returnType: Type }
   | { tag: 'fn', returnType: Type, fnType: Type, unitName: string, fnName: string }
   | null
+
+function canBitwise(a: Type, b: Type, refTable: RefTable): OperatorResult {
+  if (a.tag != 'primative' || b.tag != 'primative') {
+    return null;
+  }
+
+  if (a.tag != b.tag) {
+    return null;
+  }
+
+  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+    || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
+    || a.val == 'int' || a.val == 'byte' || a.val == 'char') {
+    return { tag: 'default', returnType: a };
+  }
+
+  return null;
+}
 
 function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (a.tag != 'primative' || b.tag != 'primative') {

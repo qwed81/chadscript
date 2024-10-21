@@ -1636,6 +1636,9 @@ function ensureBinOpValid(
     else if (op == '==' || op == '!=') {
       testFn = Type.canEq;
     }
+    else if (op == '|' || op == '&' || op == '^') {
+      testFn = Type.canBitwise
+    }
 
     let operation = testFn(exprLeft.type, exprRight.type, table);
     if (operation == null) {

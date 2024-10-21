@@ -225,9 +225,14 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
 
 const MAPPING: [string, number][] = [
   [':', 0],
-  ['+',  4], ['-', 4], ['*', 5], ['&&', 2], ['||', 1],
-  ['/', 5], ['%', 5], ['==', 3], ['!=', 3], ['<', 3],
-  ['>', 3], ['>=', 3], ['<=', 3], ['is', 3]
+  ['||', 1],
+  ['&&', 2], 
+  ['|', 3],
+  ['^', 4],
+  ['&', 5],
+  ['==', 6], ['!=', 6], ['<', 6], ['>', 6], ['>=', 6], ['<=', 6], ['is', 6],
+  ['+',  7], ['-', 7],
+  ['/', 8], ['%', 8], ['*', 8]
 ]; 
 
 function positionRange(tokens: Token[]): Position {
@@ -1273,7 +1278,7 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
   }
 
   // parse all bin expr
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 9; i++) {
     for (let props of MAPPING) {
       if (props[1] != i) {
         continue;
