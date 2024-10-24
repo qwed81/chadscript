@@ -105,6 +105,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'try', val: Expr, type: Type.Type }
   | { tag: 'assert', val: Expr, type: Type.Type }
   | { tag: 'assert_bool', val: Expr, type: Type.Type }
+  | { tag: 'resolve', val: Expr, type: Type.Type }
   | { tag: 'fn_call', val: FnCall, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'list_init', val: Expr[], type: Type.Type }
@@ -204,7 +205,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
 
 function analyzeUnitConsts(units: Parse.ProgramUnit[], unitIndex: number): Const[] | null {
   let unit = units[unitIndex];
-  let table = Type.getUnitReferences(units[unitIndex], units);
+  let table = Type.getUnitReferences(units[unitIndex]);
 
   // scope outside of a fn
   let scope: FnContext = {
@@ -261,7 +262,7 @@ function exprIsConst(expr: Expr): boolean {
  
 function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, consts: Const[]): Fn[] | null {
   let unit = units[unitIndex];
-  let lookupTable = Type.getUnitReferences(units[unitIndex], units);
+  let lookupTable = Type.getUnitReferences(units[unitIndex]);
 
   let fns: Fn[] | null = [];
   for (let fn of unit.fns) {
@@ -293,7 +294,7 @@ function analyzeUnitFns(units: Parse.ProgramUnit[], unitIndex: number, consts: C
 
 function analyzeUnitDataTypes(units: Parse.ProgramUnit[], unitIndex: number): boolean {
   let unit = units[unitIndex];
-  let lookupTable = Type.getUnitReferences(units[unitIndex], units);
+  let lookupTable = Type.getUnitReferences(units[unitIndex]);
 
   let invalidDataType = false;
   for (let struct of unit.structs) {
@@ -1016,6 +1017,7 @@ function canMutate(leftExpr: LeftExpr, table: Type.RefTable, scope: FnContext): 
 interface FnTypeHint {
   paramTypes: (Type.Type | null)[]
   returnType: Type.Type | null
+  resolve: boolean
 }
 
 function ensureLeftExprValid(
@@ -1090,7 +1092,7 @@ function ensureLeftExprValid(
         modName,
         fnTypeHint.returnType,
         fnTypeHint.paramTypes,
-        table,
+        fnTypeHint.resolve ? null : table,
         ignoreErrors ? null : position
       );
 
@@ -1380,6 +1382,7 @@ function ensureFnCallValid(
   // setup check the types of params for use in attempting
   // to determine which function will be called
   let initParamTypes: (Type.Type | null)[] = [];
+  let resolve = false;
   for (let i = 0; i < fnCall.exprs.length; i++) {
     // skip named params to resolve later
     if (fnCall.names[i] != '') {
@@ -1392,11 +1395,17 @@ function ensureFnCallValid(
       initParamTypes.push(null);
     }
     else {
-      initParamTypes.push(validExpr.type);
+      if (validExpr.tag == 'resolve') {
+        initParamTypes.push(null);
+        resolve = true;
+      }
+      else {
+        initParamTypes.push(validExpr.type);
+      }
     }
   }
 
-  let fnTypeHint: FnTypeHint = { returnType: expectedReturn, paramTypes: initParamTypes };
+  let fnTypeHint: FnTypeHint = { returnType: expectedReturn, paramTypes: initParamTypes, resolve };
   let fnResult = ensureLeftExprValid(fnCall.fn, fnTypeHint, null, table, scope, position, ignoreErrors);
   if (fnResult == null) {
     return null;
@@ -1499,6 +1508,7 @@ function ensureFnCallValid(
     return null;
   }
 
+  /*
   for (let i = 0; i < paramTypes.length; i++) {
     if (Type.typeApplicable(paramTypes[i], fnType.val.paramTypes[i], true) == false) {
       if (!ignoreErrors) {
@@ -1507,6 +1517,7 @@ function ensureFnCallValid(
       return null;
     }
   }
+  */
 
   if (expectedReturn != null && Type.typeApplicable(fnType.val.returnType, expectedReturn, true) == false) {
     if (Type.typeApplicable(expectedReturn, Type.VOID, false)) {
@@ -1763,6 +1774,24 @@ function ensureExprValid(
         variantIndex: 1
       }
     }
+  }
+
+  if (expr.tag == 'resolve') {
+    let inner = ensureExprValid(expr.val, null, table, scope, position, false);
+    if (inner == null) {
+      return null;
+    }
+
+    if (inner.type.tag != 'generic') {
+      logError(position, 'expected generic on resolve');
+      return null;
+    }
+
+    computedExpr = {
+      tag: 'resolve',
+      val: inner,
+      type: inner.type
+    };
   }
 
   if (expr.tag == 'is') {
@@ -2312,7 +2341,8 @@ function ensureExprValid(
       if (expectedReturn != null && expectedReturn.tag == 'fn') {
         fnTypeHint = {
           paramTypes: expectedReturn.val.paramTypes,
-          returnType: expectedReturn.val.returnType
+          returnType: expectedReturn.val.returnType,
+          resolve: false
         };
       }
 
@@ -2330,6 +2360,9 @@ function ensureExprValid(
         logError(position, 'ensureExprValid compiler bug');
       }
       return null;
+    }
+    else if (computedExpr.tag == 'resolve') {
+      return computedExpr;
     }
 
     if (Type.typeApplicable(computedExpr.type, expectedReturn, false) == false) {

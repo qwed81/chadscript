@@ -160,7 +160,7 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
         fields: [],
         id: node.name,
         generics: [],
-        extern: true
+        unit: 'extern'
       }
     }
   }
@@ -184,7 +184,7 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
       fields,
       generics: [],
       id: node.name,
-      extern: true
+      unit: 'extern'
     }
   }
 };

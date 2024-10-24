@@ -1,9 +1,10 @@
 import { Program, Fn, Inst, Expr, LeftExpr, Const } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../util';
+import { ProgramUnit } from '../parse';
 import {
   Type, typeApplicableStateful, applyGenericMap, standardizeType,
   getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,
-  INT, VOID
+  INT, VOID, getUnitReferences
 } from '../analyze/types';
 import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
 
@@ -54,6 +55,7 @@ interface ResolveContext {
   queuedTypes: Set<string>,
   // tells if the type with a key string has a manual reference count impl
   autoDropSet: Set<string>
+  allUnits: ProgramUnit[]
 }
 
 function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
@@ -63,7 +65,8 @@ function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
     fnResolveQueue: [],
     queuedFns: new Set(),
     typeResolveQueue: [],
-    queuedTypes: new Set()
+    queuedTypes: new Set(),
+    allUnits: prog.fns[0].refTable.allUnits
   };
 
   let entry: CFn = resolveFn(mainFn, new Map(), ctx);
@@ -288,7 +291,10 @@ function resolveExpr(
   genericMap: Map<string, Type>,
   ctx: ResolveContext
 ): Expr {
-  if (expr.tag == 'bin') {
+  if (expr.tag == 'resolve') {
+    return resolveExpr(expr.val, genericMap, ctx);
+  }
+  else if (expr.tag == 'bin') {
     let left = resolveExpr(expr.val.left, genericMap, ctx);
     let right = resolveExpr(expr.val.right, genericMap, ctx);
     let type = applyGenericMap(expr.type, genericMap);
@@ -327,11 +333,33 @@ function resolveExpr(
   }
   else if (expr.tag == 'fn_call') {
     let fn = resolveLeftExpr(expr.val.fn, genericMap, ctx);
+
     let exprs: Expr[] = [];
+    let lookupRequired = false;
     for (let param of expr.val.exprs) {
+      if (param.tag == 'resolve') {
+        lookupRequired = true;
+      }
       exprs.push(resolveExpr(param, genericMap, ctx));
     }
+
     let returnType = applyGenericMap(expr.type, genericMap);
+    if (lookupRequired && fn.tag == 'fn') {
+      let paramTypes = exprs.map(x => x.type);
+      let resolvedFn = typeResolveFn(
+        fn.fnName,
+        null,
+        returnType,
+        paramTypes,
+        null,
+        null
+      );
+
+      if (resolvedFn == null) {
+        logError(NULL_POS, 'could not find function with resolved type');
+      }
+    }
+
     return { tag: 'fn_call', val: { fn, exprs }, type: returnType };
   }
   else if (expr.tag == 'list_init') {

@@ -1,5 +1,12 @@
+import { ProgramUnit } from './parse';
+
 export {
-  logError, compilerError, NULL_POS, Position
+  logError, compilerError, NULL_POS, Position, allUnits, setAllUnits
+}
+
+let allUnits: ProgramUnit[] = []
+function setAllUnits(units: ProgramUnit[]) {
+  allUnits = units;
 }
 
 interface Position {

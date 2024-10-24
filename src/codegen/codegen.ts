@@ -63,7 +63,7 @@ function codegen(prog: Program): OutputFile[] {
   for (let struct of newProg.orderedStructs) {
     if (struct.tag == 'struct' || struct.tag == 'enum') {
       cstructMap.set(JSON.stringify(struct.val.name), struct);
-      if (struct.val.name.tag != 'struct' || !struct.val.name.val.extern) {
+      if (struct.val.name.tag != 'struct' || struct.val.name.val.unit != 'extern') {
         chadDotH += '\n' + codeGenType(struct.val.name) + ';';
       }
 
@@ -242,7 +242,7 @@ function codeGenType(type: Type): string {
   }
 
   let typeStr = toStr(type);
-  if (type.tag != 'struct' || !type.val.extern) {
+  if (type.tag != 'struct' || type.val.unit != 'extern') {
     typeStr = '_' + typeStr;
   }
 
@@ -398,7 +398,6 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let bodyText = '';
     let condName = codeGenExpr(inst.val.cond, addInst, ctx, inst.position);
     bodyText += `if (!${condName}) break;\n`
-    bodyText += codeGenBody(inst.val.body, indent + 1, false, false, ctx);
     instText = bodyText + `${tabs}}`;
   }
   else if (inst.tag == 'expr') {
@@ -702,7 +701,7 @@ function codeGenStructInit(expr: Expr, addInst: AddInst, ctx: FnContext, positio
     let initField = structInit[i];
     let exprText = codeGenExpr(initField.expr, addInst, ctx, position);
 
-    if (expr.type.tag == 'struct' && expr.type.val.extern) {
+    if (expr.type.tag == 'struct' && expr.type.val.unit == 'extern') {
       output += `.${initField.name} = ${exprText}`;
     }
     else {
@@ -750,7 +749,7 @@ function codeGenFnCall(fnCall: FnCall, addInst: AddInst, ctx: FnContext, positio
 function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, position: Position): string {
   if (leftExpr.tag == 'dot') {
     let assignType = leftExpr.val.left.type;
-    if (assignType.tag == 'struct' && assignType.val.extern) {
+    if (assignType.tag == 'struct' && assignType.val.unit == 'extern') {
       return `${codeGenExpr(leftExpr.val.left, addInst, ctx, position)}.${leftExpr.val.varName}`;
     }
     return `${codeGenExpr(leftExpr.val.left, addInst, ctx, position)}._${leftExpr.val.varName}`;
@@ -915,7 +914,7 @@ function codeGenStructDefs(structs: CStruct[]): string {
     }
 
     if (struct.tag == 'struct') {
-      if (struct.val.name.tag == 'struct' && struct.val.name.val.extern) {
+      if (struct.val.name.tag == 'struct' && struct.val.name.val.unit == 'extern') {
         continue;
       }
 

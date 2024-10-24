@@ -4,6 +4,8 @@ import { codegen, OutputFile } from './codegen/codegen';
 import path from 'node:path';
 import { execSync } from 'node:child_process'
 
+import * as Util from './util';
+
 import fs, { readdirSync } from 'node:fs';
 
 // gets all of the parse units according to the file structure
@@ -50,6 +52,7 @@ for (let i = 2; i < process.argv.length; i++) {
   }
   programUnits.push(progUnit);
 }
+Util.setAllUnits(programUnits);
 
 let program = analyze(programUnits);
 let fileNames: string[] = []

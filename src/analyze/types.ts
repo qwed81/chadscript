@@ -1,4 +1,4 @@
-import { logError, compilerError, Position, NULL_POS } from '../util'
+import { logError, compilerError, Position, NULL_POS, allUnits } from '../util'
 import { HeaderInclude, parseHeaderFile, ExternFn } from '../header';
 import * as Parse from '../parse';
 
@@ -8,12 +8,12 @@ export {
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise
+  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise,
 }
 
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
-const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range', extern: false } };
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range', unit: 'std/core' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
@@ -29,7 +29,7 @@ const STR: Type = {
     ],
     generics: [],
     id: 'std/core.str',
-    extern: false
+    unit: 'std/core'
   },
 }
 
@@ -41,7 +41,7 @@ const ERR: Type = {
     ],
     generics: [],
     id: 'std/core.err',
-    extern: false
+    unit: 'std/core'
   }
 }
 
@@ -55,7 +55,7 @@ const FMT: Type = {
     ],
     generics: [],
     id: 'std/core.Fmt',
-    extern: false
+    unit: 'std/core'
   }
 }
 
@@ -69,7 +69,7 @@ interface Struct {
   fields: Field[]
   generics: Type[]
   id: string,
-  extern: boolean
+  unit: string
 }
 
 type Primatives = 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte'
@@ -99,7 +99,7 @@ function createRes(genericType: Type, errorType: Type): Type {
         { name: 'val1', type: errorType, visibility: null }
       ],
       generics: [genericType, errorType],
-      extern: false
+      unit: 'std/core'
     }
   }
 }
@@ -115,7 +115,7 @@ function createList(genericType: Type): Type {
       ],
       generics: [genericType],
       id: 'std/core.Arr',
-      extern: false
+      unit: 'std/core'
     }
   }
 }
@@ -130,7 +130,7 @@ function createTypeUnion(val0Type: Type, val1Type: Type): Type {
       ],
       generics: [val0Type, val1Type],
       id: 'std/core.TypeUnion',
-      extern: false
+      unit: 'std/core'
     }
   }
 }
@@ -340,7 +340,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     for (let generic of input.val.generics) {
       newGenerics.push(applyGenericMap(generic, map));
     }
-    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id, extern: input.val.extern }};
+    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id, unit: input.val.unit }};
   }
   else if (input.tag == 'ptr') {
     return { tag: 'ptr', val: applyGenericMap(input.val, map) };
@@ -570,9 +570,19 @@ interface RefTable {
   includes: HeaderInclude[]
 }
 
+function getUnitReferencesFromName(name: string): RefTable | null {
+  let thisUnit: Parse.ProgramUnit | null = null;
+  for (let i = 0; i < allUnits.length; i++) {
+    if (allUnits[i].fullName == name) {
+      thisUnit = allUnits[i];
+      return getUnitReferences(thisUnit);
+    }
+  }
+  return null;
+}
+
 function getUnitReferences(
   thisUnit: Parse.ProgramUnit,
-  allUnits: Parse.ProgramUnit[]
 ): RefTable {
   let newUnits: Parse.ProgramUnit[] = [thisUnit];
   let globalUnits: boolean[] = [true];
@@ -713,7 +723,7 @@ function resolveStruct(
 ): Type | null {
   let possibleStructs: Type[] = [];
   for (let unit of refTable.units) {
-    let unitRefTable = getUnitReferences(unit, refTable.allUnits);
+    let unitRefTable = getUnitReferences(unit);
 
     let items: ['struct' | 'enum', Parse.Struct][] = Array.from(unit.structs).map(x => ['struct', x]);
     items.push(...Array.from(unit.enums).map(x => ['enum', x]) as ['enum', Parse.Struct][]);
@@ -750,7 +760,15 @@ function resolveStruct(
       }
 
       let thisStructId = unit.fullName + '.' + structDef.header.name;
-      let thisStruct: Type = { tag: item[0], val: { fields, generics, id: thisStructId, extern: false } };
+      let thisStruct: Type = {
+        tag: item[0],
+        val: {
+          fields,
+          generics,
+          id: thisStructId,
+          unit: unit.fullName
+        } 
+      };
       possibleStructs.push(thisStruct);
     }
   }
@@ -804,9 +822,10 @@ function getFnNamedParams(
   }
 
   for (let i = 0; i < refTable.units.length; i++) {
-    if (refTable.units[i].fullName != unitName) {
+    if (unitName != refTable.units[i].fullName) {
       continue;
     }
+
     for (let fn of refTable.units[i].fns) {
       if (fn.name != fnName) {
         continue;
@@ -861,6 +880,7 @@ function getFnNamedParams(
 
 interface FnResult {
   fnType: Type,
+  isGeneric: boolean
   unitName: string
   fnName: string,
   paramNames: string[]
@@ -874,167 +894,140 @@ function resolveFn(
   inUnit: string | null,
   returnType: Type | null,
   paramTypes: (Type | null)[] | null,
-  refTable: RefTable,
+  // if refTable is null, it can be found in any unit
+  refTable: RefTable | null,
   // if calleePosition is null then do not display errors
   calleePosition: Position | null
 ): FnResult | null {
   let possibleFns: FnResult[] = [];
   let wrongTypeFns: WrongTypeFn[] = [];
 
-  // go through the chadscript functions
-  for (let i = 0; i < refTable.units.length; i++) {
-    let unit = refTable.units[i];
+    // go through the chadscript functions in scope
+  if (refTable != null) {
+    for (let i = 0; i < refTable.units.length; i++) {
+      let unit = refTable.units[i];
 
-    if (inUnit != null && inUnit != unit.fullName) {
-      continue;
-    }
-
-    // can not be used as global variable
-    if (inUnit == null && refTable.globalUnits[i] == false) {
-      continue;
-    }
-
-    let unitRefTable = getUnitReferences(unit, refTable.allUnits);
-    for (let fnDef of unit.fns) {
-      if (fnDef.name != name) {
+      if (inUnit != null && inUnit != unit.fullName) {
         continue;
       }
 
-      if (fnDef.pub == false && unit.fullName != refTable.thisUnit.fullName) {
-        continue;
-      }
-      
-      let genericMap = new Map<string, Type>();
-      let namedParamCount = 0;
-      for (let i = 0; i < fnDef.defaultExprs.length; i++) {
-        if (fnDef.defaultExprs[i] != null) {
-          namedParamCount += 1;
-        }
-      }
-      if (paramTypes != null && fnDef.t.paramTypes.length - namedParamCount != paramTypes.length) {
-        wrongTypeFns.push({ tag: 'chad', val: fnDef });
+      // can not be used as global variable
+      if (inUnit == null && refTable.globalUnits[i] == false) {
         continue;
       }
 
-      let linkedParams: boolean[] = [];
-      let concreteParamTypes: Type[] = [];
-      let paramNames: string[] = [];
-      let allParamsOk = true;
-      for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
-        if (fnDef.t.paramTypes[i].tag == 'link') {
-          linkedParams.push(true);
-        } else {
-          linkedParams.push(false);
-        }
-
-        paramNames.push(fnDef.paramNames[i]);
-
-        let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleePosition);
-        if (defParamType == null) {
-          compilerError('param type invalid (checked before)');
-          return null;
-        }
-
-        // named parameters influence the type of the function but can not
-        // be used in generics
-        if (paramTypes != null) {
-          let paramType = paramTypes[i];
-          if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap, true)) {
-            wrongTypeFns.push({ tag: 'chad', val: fnDef });
-            allParamsOk = false;
-            break;
-          }
-        }
-        concreteParamTypes.push(applyGenericMap(defParamType, genericMap));
-      }
-      if (!allParamsOk) {
-        continue;
-      }
-      let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleePosition);
-      if (defReturnType == null) {
-        compilerError('return type invalid (checked before)');
-        return null;
-      }
-      if (returnType != null) {
-        let wrongType = false;
-        if (!typeApplicableStateful(returnType, defReturnType, genericMap, true)) {
-          wrongType = true;
-        }
-
-        if (wrongType) {
-          wrongTypeFns.push({ tag: 'chad', val: fnDef });
-          continue;
-        }
-      }
-      let concreteReturnType: Type = applyGenericMap(defReturnType, genericMap);
-      let fnType: Type = {
-        tag: 'fn',
-        val: {
-          returnType: concreteReturnType,
-          paramTypes: concreteParamTypes, 
-          linkedParams 
-        }
-      };
-
-      possibleFns.push({
-        paramNames,
-        unitName: unit.fullName,
-        fnName: fnDef.name,
-        fnType,
-        extern: false
-      });
+      // tests the fn against 
+      testFnType(
+        unit,
+        name,
+        returnType,
+        paramTypes,
+        false,
+        refTable,
+        calleePosition,
+        wrongTypeFns,
+        possibleFns
+      );
     }
   }
 
-  // go through the imported C functions
-  for (let include of refTable.includes) {
-    for (let fn of include.fns) {
-      if (fn.name != name || fn.type.tag != 'fn') {
-        continue;
-      }
-
-      if (returnType != null) {
-        if (!typeApplicable(fn.type.val.returnType, returnType, true)) {
-          wrongTypeFns.push({
-            tag: 'c',
-            val: fn
-          });
-          continue;
+  // determine if the function can be found with a trait
+  let firstParamUnit: Parse.ProgramUnit | null = null;
+  if (paramTypes != null && paramTypes.length > 0) {
+    let param = paramTypes[0]; 
+    if (param != null && param.tag == 'struct') {
+      firstParamUnit = null;
+      for (let i = 0; i < allUnits.length; i++) {
+        if (allUnits[i].fullName != param.val.unit) {
+          firstParamUnit = allUnits[i];
+          break;
         }
       }
+    }
+  }
 
-      if (paramTypes != null) {
-        if (paramTypes.length != fn.type.val.paramTypes.length) {
-          wrongTypeFns.push({
-            tag: 'c',
-            val: fn
-          });
+  if (firstParamUnit != null) {
+    testFnType(
+      firstParamUnit,
+      name,
+      returnType,
+      paramTypes,
+      true,
+      refTable,
+      calleePosition,
+      wrongTypeFns,
+      possibleFns
+    )
+  }
+
+  if (refTable == null) {
+    for (let i = 0; i < allUnits.length; i++) {
+      testFnType(
+        allUnits[i],
+        name,
+        returnType,
+        paramTypes,
+        false,
+        refTable,
+        calleePosition,
+        wrongTypeFns,
+        possibleFns
+      )
+    }
+  }
+
+  if (refTable != null) {
+    // go through the imported C functions
+    for (let include of refTable.includes) {
+      for (let fn of include.fns) {
+        if (fn.name != name || fn.type.tag != 'fn') {
           continue;
         }
 
-        for (let i = 0; i < paramTypes.length; i++) {
-          let paramType = paramTypes[i];
-          if (paramType == null) {
-            continue;
-          }
-
-          if (!typeApplicable(fn.type.val.paramTypes[i], paramType, false)) {
+        if (returnType != null) {
+          if (!typeApplicable(fn.type.val.returnType, returnType, true)) {
             wrongTypeFns.push({
               tag: 'c',
               val: fn
             });
-            break;
+            continue;
           }
         }
-      }
 
-      possibleFns.push({
-        fnType: fn.type,
-        unitName: include.unitName,
-        paramNames: [],
-        fnName: fn.name,
-        extern: true
-      });
+        if (paramTypes != null) {
+          if (paramTypes.length != fn.type.val.paramTypes.length) {
+            wrongTypeFns.push({
+              tag: 'c',
+              val: fn
+            });
+            continue;
+          }
+
+          for (let i = 0; i < paramTypes.length; i++) {
+            let paramType = paramTypes[i];
+            if (paramType == null) {
+              continue;
+            }
+
+            if (!typeApplicable(fn.type.val.paramTypes[i], paramType, false)) {
+              wrongTypeFns.push({
+                tag: 'c',
+                val: fn
+              });
+              break;
+            }
+          }
+        }
+
+        possibleFns.push({
+          fnType: fn.type,
+          unitName: include.unitName,
+          paramNames: [],
+          isGeneric: false,
+          fnName: fn.name,
+          extern: true
+        });
+      }
     }
   }
 
@@ -1044,6 +1037,18 @@ function resolveFn(
 
   // give a useful error about why it can't resolve the function
   if (possibleFns.length > 1) {
+    if (refTable == null) {
+      return possibleFns[0];
+    }
+
+    let nonGeneric = [];
+    for (let i = 0; i < possibleFns.length; i++) {
+      if (possibleFns[i].isGeneric) nonGeneric.push(possibleFns[i])
+    }
+    if (nonGeneric.length == 1) {
+      return nonGeneric[0];
+    }
+
     if (calleePosition != null) {
       logError(calleePosition, 'function call is ambiguous');
     }
@@ -1061,5 +1066,128 @@ function resolveFn(
     logError(calleePosition, `could not find ${name}`);
   }
   return null;
+}
+
+function testFnType(
+  unit: Parse.ProgramUnit,
+  name: string,
+  returnType: Type | null,
+  paramTypes: (Type | null)[] | null,
+  requiresTrait: boolean,
+  refTable: RefTable | null,
+  calleePosition: Position | null,
+  outWrongTypeFns: WrongTypeFn[],
+  outPossibleFns: FnResult[]
+) {
+
+  if (refTable == null) {
+    refTable = getUnitReferences(unit);
+  }
+
+  let unitRefTable = getUnitReferences(unit);
+  for (let fnDef of unit.fns) {
+    if (fnDef.name != name) {
+      continue;
+    }
+
+    if (fnDef.pub == false && unit.fullName != refTable.thisUnit.fullName) {
+      continue;
+    }
+    
+    let genericMap = new Map<string, Type>();
+    let namedParamCount = 0;
+    for (let i = 0; i < fnDef.defaultExprs.length; i++) {
+      if (fnDef.defaultExprs[i] != null) {
+        namedParamCount += 1;
+      }
+    }
+    if (paramTypes != null && fnDef.t.paramTypes.length - namedParamCount != paramTypes.length) {
+      outWrongTypeFns.push({ tag: 'chad', val: fnDef });
+      continue;
+    }
+
+    let linkedParams: boolean[] = [];
+    let concreteParamTypes: Type[] = [];
+    let paramNames: string[] = [];
+    let allParamsOk = true;
+    let fnIsGeneric = false;
+    for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
+      if (fnDef.t.paramTypes[i].tag == 'link') {
+        linkedParams.push(true);
+      } else {
+        linkedParams.push(false);
+      }
+
+      paramNames.push(fnDef.paramNames[i]);
+
+      let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleePosition);
+      if (defParamType == null) {
+        compilerError('param type invalid (checked before)');
+        return null;
+      }
+      if (isGeneric(defParamType)) {
+        fnIsGeneric = true;
+      }
+
+      // named parameters influence the type of the function but can not
+      // be used in generics
+      if (paramTypes != null) {
+        let paramType = paramTypes[i];
+        if (fnDef.defaultExprs[i] == null && paramType != null && !typeApplicableStateful(paramType, defParamType, genericMap, true)) {
+          outWrongTypeFns.push({ tag: 'chad', val: fnDef });
+          allParamsOk = false;
+          break;
+        }
+      }
+      concreteParamTypes.push(applyGenericMap(defParamType, genericMap));
+    }
+    if (!allParamsOk) {
+      continue;
+    }
+    let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleePosition);
+    if (defReturnType == null) {
+      compilerError('return type invalid (checked before)');
+      return null;
+    }
+
+    if (returnType != null) {
+      let wrongType = false;
+      if (!typeApplicableStateful(returnType, defReturnType, genericMap, true)) {
+        wrongType = true;
+      }
+
+      if (wrongType) {
+        outWrongTypeFns.push({ tag: 'chad', val: fnDef });
+        continue;
+      }
+    }
+
+    if (isGeneric(defReturnType)) {
+      fnIsGeneric = true;
+    }
+    let concreteReturnType: Type = applyGenericMap(defReturnType, genericMap);
+    let fnType: Type = {
+      tag: 'fn',
+      val: {
+        returnType: concreteReturnType,
+        paramTypes: concreteParamTypes, 
+        linkedParams 
+      }
+    };
+
+    if (requiresTrait && fnDef.mode != 'trait') {
+      continue;
+    }
+
+    outPossibleFns.push({
+      paramNames,
+      unitName: unit.fullName,
+      fnName: fnDef.name,
+      isGeneric: fnIsGeneric,
+      fnType,
+      extern: false
+    });
+  }
+
 }
 

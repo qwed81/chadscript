@@ -101,6 +101,7 @@ interface Fn {
   name: string
   body: Inst[]
   position: Position
+  mode: 'fn' | 'trait'
 }
 
 type FieldVisibility = 'pub' | 'get' | null 
@@ -208,6 +209,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'is', val: LeftExpr, right: Type, position: Position }
   | { tag: 'not', val: Expr, position: Position }
   | { tag: 'try', val: Expr, position: Position }
+  | { tag: 'resolve', val: Expr , position: Position }
   | { tag: 'assert', val: Expr, position: Position }
   | { tag: 'fn_call', val: FnCall, position: Position }
   | { tag: 'struct_init', val: StructInitField[], position: Position }
@@ -296,7 +298,7 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
           return null;
         }
         program.uses = uses;
-      } else if (line.tokens[start].val == 'fn') {
+      } else if (line.tokens[start].val == 'fn' || line.tokens[start].val == 'trait') {
         let fn = parseFn(line, body);
         if (fn == null) {
           return null;
@@ -644,7 +646,7 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     return null;
   }
 
-  let { paramNames, name, t, pub, defaultExprs } = fnHeader;
+  let { paramNames, name, t, pub, defaultExprs, mode } = fnHeader;
   let fnBody = parseInstBody(body);
   if (fnBody == null) {
     return null;
@@ -655,6 +657,7 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
     paramNames,
     t,
     pub,
+    mode: mode,
     body: fnBody,
     position: header.position,
     defaultExprs 
@@ -770,6 +773,8 @@ function parseFnHeader(
   defaultExprs: (Expr | null)[]
   t: FnType 
   pub: boolean
+  mode: 'fn' | 'trait'
+
 } | null 
 {
   let tokens = header.tokens;
@@ -782,10 +787,9 @@ function parseFnHeader(
     pub = false;
   }
 
-  if (tokens[0].val != 'fn' && tokens[1].val != 'fn') {
-    logError(header.position, 'fn keyword required');
-    return null;
-  }
+  let fnMode: 'fn' | 'trait' = 'fn' 
+  if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
+  else if (tokens[0].val == 'trait' || tokens[1].val == 'trait') fnMode = 'trait'
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
@@ -864,7 +868,8 @@ function parseFnHeader(
     paramNames,
     pub,
     t: { returnType, paramTypes },
-    defaultExprs
+    defaultExprs,
+    mode: fnMode,
   };
 }
 
@@ -1257,7 +1262,9 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     return null;
   }
 
-  if (tokens[0].val == 'try' || tokens[0].val == 'assert' || tokens[0].val == 'cp' || tokens[0].val == 'mv') {
+  if (tokens[0].val == 'try' || tokens[0].val == 'assert' 
+    || tokens[0].val == 'cp' || tokens[0].val == 'mv'
+    || tokens[0].val == 'resolve' ) {
     let parsed = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (parsed == null) {
       return null;
@@ -1271,6 +1278,9 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     }
     else if (tokens[0].val == 'mv') {
       return { tag: 'mv', val: parsed, position };
+    }
+    else if (tokens[0].val == 'resolve') {
+      return { tag: 'resolve', val: parsed, position };
     }
     else {
       return { tag: 'assert', val: parsed, position };
