@@ -1776,6 +1776,22 @@ function ensureExprValid(
     }
   }
 
+  if (expr.tag == 'ptr') {
+    if (expr.val.tag != 'left_expr') {
+      logError(expr.position, 'pointer on valid on left expr');
+      return null;
+    }
+    let inner = ensureLeftExprValid(expr.val.val, null, null, table, scope, position, false);
+    if (inner == null) {
+      return null;
+    }
+    computedExpr = {
+      tag: 'ptr',
+      val: inner,
+      type: { tag: 'ptr', val: inner.type }
+    };
+  }
+
   if (expr.tag == 'resolve') {
     let inner = ensureExprValid(expr.val, null, table, scope, position, false);
     if (inner == null) {

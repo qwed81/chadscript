@@ -224,6 +224,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'left_expr', val: LeftExpr, position: Position }
   | { tag: 'cp', val: Expr, position: Position }
   | { tag: 'mv', val: Expr,  position: Position }
+  | { tag: 'ptr', val: Expr, position: Position }
 
 const MAPPING: [string, number][] = [
   [':', 0],
@@ -1264,7 +1265,8 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
 
   if (tokens[0].val == 'try' || tokens[0].val == 'assert' 
     || tokens[0].val == 'cp' || tokens[0].val == 'mv'
-    || tokens[0].val == 'resolve' ) {
+    || tokens[0].val == 'resolve'
+    || tokens[0].val == '&') {
     let parsed = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (parsed == null) {
       return null;
@@ -1278,6 +1280,9 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     }
     else if (tokens[0].val == 'mv') {
       return { tag: 'mv', val: parsed, position };
+    }
+    else if (tokens[0].val == '&') {
+      return { tag: 'ptr', val: parsed, position }
     }
     else if (tokens[0].val == 'resolve') {
       return { tag: 'resolve', val: parsed, position };
