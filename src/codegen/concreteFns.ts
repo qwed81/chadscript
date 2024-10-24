@@ -12,6 +12,7 @@ export {
 }
 
 interface CProgram {
+  includes: string[]
   fns: CFn[]
   consts: Const[]
   strTable: string[]
@@ -111,7 +112,14 @@ function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
   }
 
   let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.autoDropSet);
-  return { orderedStructs, consts: prog.consts, fns: resolved, strTable: prog.strTable, entry };
+  return {
+    orderedStructs,
+    includes: prog.includes,
+    consts: prog.consts,
+    fns: resolved,
+    strTable: prog.strTable,
+    entry 
+  };
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
@@ -643,6 +651,14 @@ function typeTreeRecur(
     }
     alreadyGenned.add(typeKey);
     output.push({ tag: 'fn', val: type });
+  }
+
+  if (type.tag == 'ptr') {
+    let typeKey = JSON.stringify(type.val);
+    if (alreadyGenned.has(typeKey)) {
+      return;
+    }
+    typeTreeRecur(type.val, inStack, alreadyGenned, output, autoDropSet);
   }
 
   if (type.tag != 'struct' && type.tag != 'enum') {

@@ -4,6 +4,7 @@ import * as Type from './types'
 import * as Enum from './enum';
 
 interface Program {
+  includes: string[]
   fns: Fn[]
   consts: Const[]
   strTable: string[]
@@ -149,7 +150,21 @@ export { analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst, Struc
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let strTable: string[] = [];
-  let validProgram: Program | null = { fns: [], consts: [], strTable };
+  let includes: Set<string> = new Set();
+  for (let unit of units) {
+    for (let include of unit.uses) {
+      if (include.unitName.endsWith('.h')) {
+        includes.add(include.unitName);
+      }
+    }
+  }
+
+  let validProgram: Program | null = {
+    includes: [...includes],
+    fns: [],
+    consts: [],
+    strTable 
+  };
 
   for (let i = 0; i < units.length; i++) {
     if (analyzeUnitDataTypes(units, i) == false) {
@@ -2220,7 +2235,8 @@ function ensureExprValid(
   if (expr.tag == 'int_const') {
     if (expectedReturn != null && expectedReturn.tag == 'primative') {
       let t = expectedReturn.val;
-      if (t == 'i64' || t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32' || t == 'u16' || t == 'u8') {
+      if (t == 'i64' || t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32' || t == 'u16' || t == 'u8'
+        || t == 'f32' || t == 'f64' || t == 'num') {
         computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
       }
     }
@@ -2235,7 +2251,12 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'num_const') {
-    computedExpr = { tag: 'num_const', val: expr.val, type: Type.NUM };
+    if (expectedReturn != null && expectedReturn.tag == 'primative' && expectedReturn.val == 'f32') {
+      computedExpr = { tag: 'num_const', val: expr.val, type: { tag: 'primative', val: 'f32' } };
+    }
+    else {
+      computedExpr = { tag: 'num_const', val: expr.val, type: Type.NUM };
+    }
   }
 
   if (expr.tag == 'left_expr') {
@@ -2392,6 +2413,11 @@ function getVar(scope: FnContext, name: string, table: Type.RefTable): Var | nul
     }
   }
 
+  for (let include of table.includes) {
+    if (include.enumConsts.includes(name)) {
+      return { type: Type.INT, mut: false, mode: 'C' }
+    }
+  }
   return null;
 }
 

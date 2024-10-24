@@ -79,13 +79,21 @@ if (fileNames.length > 0) {
     objPaths += objPath + ' ';
   }
 
+  let libPaths = '';
+  for (let i = 2; i < process.argv.length; i++) {
+    let input = process.argv[i];
+    if (input.endsWith('.so') || input.endsWith('.a')) {
+      libPaths += process.argv[i] + ' ';
+    }
+  }
+
   let libuvPath = path.join(__dirname, 'libuv.so');
   let asyncPath = path.join(__dirname, 'async.o');
   let asmPath = path.join(__dirname, 'asm.o');
 
   let outputPath = path.join('build', 'output');
   try {
-    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} -o ${outputPath}`);
+    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} ${libPaths} -O3 -lm -o ${outputPath}`);
   } catch {}
 }
 

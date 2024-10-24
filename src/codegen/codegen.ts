@@ -18,7 +18,7 @@ interface FnContext {
 }
 
 const includes = [
-  'stdio.h', 'stdlib.h', 'string.h', 'stdbool.h'
+  'stdio.h', 'stdlib.h', 'string.h', 'stdbool.h', 'stdint.h'
 ]
 
 interface OutputFile {
@@ -47,6 +47,10 @@ function codegen(prog: Program): OutputFile[] {
     chadDotC += '\n#include <' + include + '>';
   }
 
+  for (let i = 0; i < prog.includes.length; i++) {
+    chadDotC += '\n#include "../' + prog.includes[i] + '"';
+  }
+
   chadDotH += '\nvoid chad_panic(const char* file, int64_t line, const char* message);'
   chadDotC += '\n#include "chad.h"';
   chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
@@ -59,7 +63,10 @@ function codegen(prog: Program): OutputFile[] {
   for (let struct of newProg.orderedStructs) {
     if (struct.tag == 'struct' || struct.tag == 'enum') {
       cstructMap.set(JSON.stringify(struct.val.name), struct);
-      chadDotH += '\n' + codeGenType(struct.val.name) + ';';
+      if (struct.val.name.tag != 'struct' || !struct.val.name.val.extern) {
+        chadDotH += '\n' + codeGenType(struct.val.name) + ';';
+      }
+
     }
     if (struct.tag == 'fn' && struct.val.tag == 'fn') {
       let fnType = struct.val.val;
@@ -234,7 +241,11 @@ function codeGenType(type: Type): string {
     return codeGenType(type.val) + '*';
   }
 
-  let typeStr = '_' + toStr(type);
+  let typeStr = toStr(type);
+  if (type.tag != 'struct' || !type.val.extern) {
+    typeStr = '_' + typeStr;
+  }
+
   typeStr = replaceAll(typeStr, '(', '_op');
   typeStr = replaceAll(typeStr, ')', '_cp');
   typeStr = replaceAll(typeStr, '[', '_os');
@@ -690,7 +701,13 @@ function codeGenStructInit(expr: Expr, addInst: AddInst, ctx: FnContext, positio
   for (let i = 0; i < structInit.length; i++) {
     let initField = structInit[i];
     let exprText = codeGenExpr(initField.expr, addInst, ctx, position);
-    output += `._${initField.name} = ${exprText}`;
+
+    if (expr.type.tag == 'struct' && expr.type.val.extern) {
+      output += `.${initField.name} = ${exprText}`;
+    }
+    else {
+      output += `._${initField.name} = ${exprText}`;
+    }
 
     // because the initExpr is stored on the stack, we need to inc the ref count here as well
     changeRefCount(addInst.after, exprText, initField.expr.type, 1);
@@ -732,6 +749,10 @@ function codeGenFnCall(fnCall: FnCall, addInst: AddInst, ctx: FnContext, positio
 
 function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, position: Position): string {
   if (leftExpr.tag == 'dot') {
+    let assignType = leftExpr.val.left.type;
+    if (assignType.tag == 'struct' && assignType.val.extern) {
+      return `${codeGenExpr(leftExpr.val.left, addInst, ctx, position)}.${leftExpr.val.varName}`;
+    }
     return `${codeGenExpr(leftExpr.val.left, addInst, ctx, position)}._${leftExpr.val.varName}`;
   } 
   else if (leftExpr.tag == 'arr_offset_int') {
@@ -806,7 +827,8 @@ function changeRefCount(addToList: string[], leftExpr: string, type: Type, amt: 
   let typeNoSpace = codeGenType(type);
   typeNoSpace = typeNoSpace.replace(' ', '');
   if (type.tag == 'enum' || type.tag == 'struct') {
-    addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
+    // addToList.push(`changeRefCount_${typeNoSpace}(&${leftExpr}, ${amt});`);
+    addToList.push('');
   }
 }
 
@@ -859,7 +881,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
 
         let typeStrNoSpace = codeGenType(type.val.fields[i].type);
         typeStrNoSpace = typeStrNoSpace.replace(' ', '');
-        refCountStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
+        // refCountStr += `\n  changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
       }
     }
     else if (struct.tag == 'enum') {
@@ -875,7 +897,7 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
 
         let typeStrNoSpace = codeGenType(type.val.fields[i].type);
         typeStrNoSpace = typeStrNoSpace.replace(' ', '');
-        refCountStr += `\n  if (s->tag == ${i}) changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
+        // refCountStr += `\n  if (s->tag == ${i}) changeRefCount_${typeStrNoSpace}(&s->_${type.val.fields[i].name}, amt);`;
       }
     }
     refCountStr += '\n}';
@@ -893,6 +915,10 @@ function codeGenStructDefs(structs: CStruct[]): string {
     }
 
     if (struct.tag == 'struct') {
+      if (struct.val.name.tag == 'struct' && struct.val.name.val.extern) {
+        continue;
+      }
+
       structStr += '\n' + codeGenType(struct.val.name) + ' {';
       for (let i = 0; i < struct.val.fieldTypes.length; i++) {
         structStr += '\n  ' + codeGenType(struct.val.fieldTypes[i]) + ' _' + struct.val.fieldNames[i] + ';';

@@ -29,6 +29,7 @@ interface TypeDef {
 }
 
 interface HeaderInclude {
+  enumConsts: string[]
   fns: ExternFn[]
   vars: ExternVar[]
   defs: ExternDefine[]
@@ -50,13 +51,14 @@ interface ASTNode {
 function parseHeaderFile(headerPath: string): HeaderInclude | null {
   let astCommand = 'clang -Xclang -ast-dump=json -fsyntax-only ' + headerPath;
   let defCommand = 'clang -E -dM ' + headerPath;
-  let astJson = execSync(astCommand, { encoding: 'utf8' });
-  let defTexts = execSync(defCommand, { encoding: 'utf8'} );
+  let astJson = execSync(astCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 10 });
+  let defTexts = execSync(defCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 10 });
   let ast: ASTNode = JSON.parse(astJson);
   let defs: string[] = defTexts.split('\n');
 
   let structTypeMap: Map<string, Type> = new Map();
   let symbols: HeaderInclude = {
+    enumConsts: [],
     fns: [],
     defs: [],
     vars: [],
@@ -71,6 +73,18 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
   let alreadyAdded: Set<string> = new Set();
   // parse AST for fns, structs, ect.
   for (let child of ast.inner) {
+    if (child.kind == 'EnumDecl') {
+      if (child.inner == undefined) {
+        continue;
+      }
+      for (let variant of child.inner) {
+        if (variant.name == undefined) {
+          continue;
+        }
+        symbols.enumConsts.push(variant.name);
+      }
+    }
+
     if (child.name == undefined || alreadyAdded.has(child.name)) {
       continue;
     }
@@ -93,6 +107,9 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     }
     else if (child.kind == 'RecordDecl') {
       let recordType = parseCRecord(child, structTypeMap);
+      if (recordType == null) {
+        continue;
+      }
       structTypeMap.set(child.name, recordType);
       symbols.typeDefs.push({
         name: child.name,
@@ -129,11 +146,23 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
   return symbols;
 }
 
-function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type {
+function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | null {
   let fields: Field[] = [];
-  if (node.inner == undefined || node.name == undefined) {
-    compilerError('malformed C type');
+  if (node.name == undefined) {
+    compilerError('malformed c type');
     return undefined!;
+  }
+
+  if (node.inner == undefined) {
+    return {
+      tag: 'struct',
+      val: {
+        fields: [],
+        id: node.name,
+        generics: [],
+        extern: true
+      }
+    }
   }
 
   for (let cField of node.inner) {
@@ -154,7 +183,8 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type {
     val: {
       fields,
       generics: [],
-      id: node.name
+      id: node.name,
+      extern: true
     }
   }
 };
@@ -243,6 +273,10 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
       paramTypes.push(paramType);
     }
 
+    if (paramTypes.length == 1 && paramTypes[0].tag == 'primative' && paramTypes[0].val == 'void') {
+      paramTypes = [];
+    } 
+
     let linkedParams: boolean[] = [];
     for (let i = 0; i < paramTypes.length; i++) {
       linkedParams.push(false)
@@ -274,6 +308,15 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
   if (type == 'int' || type == 'long') {
     return INT;
   }
+  else if (type == 'unsigned char') {
+    return { tag: 'primative', val: 'u8' };
+  }
+  else if (type == '_Bool') {
+    return BOOL;
+  }
+  else if (type == 'float') {
+    return { tag: 'primative', val: 'f32' };
+  }
   else if (type == 'double') {
     return NUM;
   }
@@ -291,6 +334,8 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
   if (thisStruct != undefined) {
     return thisStruct;
   }
+
+  // console.log(type);
 
   return VOID;
 }

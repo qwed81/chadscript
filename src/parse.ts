@@ -1590,6 +1590,11 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
       tokens[i - 1].val = '&&';
       tokens[i - 1].position.end += 1;
     }
+    else if (tokens[i - 1].val == '|' && tokens[i].val == '|') {
+      tokens.splice(i, 1);
+      tokens[i - 1].val = '||';
+      tokens[i - 1].position.end += 1;
+    }
   }
 
   return tokens;

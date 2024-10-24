@@ -13,7 +13,7 @@ export {
 
 const INT: Type = { tag: 'primative', val: 'int' };
 const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
-const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range' } };
+const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range', extern: false } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
@@ -28,8 +28,9 @@ const STR: Type = {
       { visibility: 'get', name: 'len', type: INT }
     ],
     generics: [],
-    id: 'std/core.str'
-  }
+    id: 'std/core.str',
+    extern: false
+  },
 }
 
 const ERR: Type = { 
@@ -39,7 +40,8 @@ const ERR: Type = {
       { visibility: null, name: 'message', type: STR }
     ],
     generics: [],
-    id: 'std/core.err'
+    id: 'std/core.err',
+    extern: false
   }
 }
 
@@ -52,7 +54,8 @@ const FMT: Type = {
       { visibility: 'get', name: 'capacity', type: INT }
     ],
     generics: [],
-    id: 'std/core.Fmt'
+    id: 'std/core.Fmt',
+    extern: false
   }
 }
 
@@ -65,7 +68,8 @@ interface Field {
 interface Struct {
   fields: Field[]
   generics: Type[]
-  id: string
+  id: string,
+  extern: boolean
 }
 
 type Primatives = 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte'
@@ -94,7 +98,8 @@ function createRes(genericType: Type, errorType: Type): Type {
         { name: 'val0', type: genericType, visibility: null },
         { name: 'val1', type: errorType, visibility: null }
       ],
-      generics: [genericType, errorType]
+      generics: [genericType, errorType],
+      extern: false
     }
   }
 }
@@ -109,7 +114,8 @@ function createList(genericType: Type): Type {
         { visibility: 'get', name: 'capacity', type: INT }
       ],
       generics: [genericType],
-      id: 'std/core.Arr'
+      id: 'std/core.Arr',
+      extern: false
     }
   }
 }
@@ -123,7 +129,8 @@ function createTypeUnion(val0Type: Type, val1Type: Type): Type {
         { visibility: 'pub', name: 'val1', type: val1Type },
       ],
       generics: [val0Type, val1Type],
-      id: 'std/core.TypeUnion'
+      id: 'std/core.TypeUnion',
+      extern: false
     }
   }
 }
@@ -333,7 +340,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
     for (let generic of input.val.generics) {
       newGenerics.push(applyGenericMap(generic, map));
     }
-    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id }};
+    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id, extern: input.val.extern }};
   }
   else if (input.tag == 'ptr') {
     return { tag: 'ptr', val: applyGenericMap(input.val, map) };
@@ -463,7 +470,7 @@ function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
   if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
     || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
     || a.val == 'f64' || a.val == 'f32') {
-    return { tag: 'default', returnType: a };
+    return { tag: 'default', returnType: BOOL };
   }
 
   if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
@@ -743,7 +750,7 @@ function resolveStruct(
       }
 
       let thisStructId = unit.fullName + '.' + structDef.header.name;
-      let thisStruct: Type = { tag: item[0], val: { fields, generics, id: thisStructId } };
+      let thisStruct: Type = { tag: item[0], val: { fields, generics, id: thisStructId, extern: false } };
       possibleStructs.push(thisStruct);
     }
   }
