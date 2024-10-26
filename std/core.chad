@@ -74,31 +74,6 @@ fn str(Arr[T] l, str(T) strImpl=str) str
   buf += ']'
   return str(buf)
 
-fn prepareIndex(&Arr[T] l, int index, T val) *T
-  assert index >= 0 && index < l.len
-  return ptr(l.base[index])
-
-fn getIndex(&Arr[T] l, int index) *T
-  assert index >= 0 && index < l.len
-  return ptr(l.base[index])
-
-fn prepareIndex(&Arr[T] l, i32 index, T val) *T
-  int intIndex = int(index)
-  assert intIndex >= 0 && intIndex < l.len
-  return ptr(l.base[intIndex])
-
-fn getIndex(&Arr[T] l, i32 index) *T
-  int intIndex = int(index)
-  assert intIndex >= 0 && intIndex < l.len
-  return ptr(l.base[intIndex])
-
-fn getIndex(&Arr[T] l, range r) *Arr[T]
-  assert r.start >= 0 && r.end <= l.len
-  *Arr[T] newList = alloc(1)
-  int len = r.end - r.start
-  newList[0] = { base = ptr(l.base[r.start]), capacity = len, len = len }
-  return newList
-
 fn append(&Arr[T] l, T val)
   if l.len == l.capacity
     *T newAlloc = alloc(l.capacity * 2)
@@ -129,17 +104,6 @@ fn eq(str a, str b) bool
     if a[i] != b[i]
       return false
   return true
-
-fn getIndex(&str s, int index) *char
-  assert index >= 0 && index < s.len
-  return ptr(s.base[index])
-
-fn getIndex(&str s, range r) *str
-  assert r.start >= 0 && r.end <= s.len
-  *str newStr = alloc(1)
-  int len = r.end - r.start
-  newStr[0] = { base = ptr(s.base[r.start]), len = len }
-  return newStr
 
 fn cstr(str s) *char
   *char cstr = alloc(s.len + 1)
@@ -201,16 +165,16 @@ fn clone(Fmt buf) Fmt
     newBase[i] = buf[i]
   return { base = newBase, capacity = buf.len, len = buf.len }
 
-fn fromUtf8(Arr[byte] bytes) Fmt
+fn fromUtf8(Arr[u8] bytes) Fmt
   Fmt buf = fmt(bytes.len)
   for i in 0:bytes.len
     buf[i] = char(bytes[i])
   return buf
 
-fn toUtf8(Fmt buf) Arr[byte]
-  Arr[byte] bytes = arr(buf.len)
+fn toUtf8(Fmt buf) Arr[u8]
+  Arr[u8] bytes = arr(buf.len)
   for i in 0:buf.len
-    bytes[i] = byte(buf[i])
+    bytes[i] = u8(buf[i])
   return bytes
 
 fn fmt(str start) Fmt
@@ -237,21 +201,6 @@ fn append(&Fmt s, T val, str(T) strImpl=str)
   str valAsStr = strImpl(val)
   for i in 0:valAsStr.len
     appendOne(s, valAsStr[i])
-  
-fn prepareIndex(Fmt s, int index, T val) *char
-  assert index >= 0 && index < s.len
-  return ptr(s.base[index])
-
-fn getIndex(&Fmt s, int index) *char
-  assert index >= 0 && index < s.len
-  return ptr(s.base[index])
-
-fn getIndex(&Fmt s, range r) *Fmt
-  assert r.start >= 0 && r.end <= s.len
-  *Fmt newStr = alloc(1)
-  int len = r.end - r.start
-  newStr[0] = { base = ptr(s.base[r.start]), capacity = len, len = len }
-  return newStr
 
 struct Map[K, V]
 
@@ -266,7 +215,7 @@ fn rand(int start, int end) int
     return (*_end - *_start) * ((double)rand() / (double)RAND_MAX) + *_start;
   return 0
 
-fn rand() num
+fn rand() f64
   include
     return ((double)rand() / (double)RAND_MAX);
   return 0.0
@@ -281,7 +230,7 @@ fn str(int val) str
     snprintf(_output, _len + 1, "%ld", *_val);
   return { base = output, len = len }
 
-fn str(num val) str
+fn str(f64 val) str
   int len
   include
     _len = snprintf(NULL, 0, "%lf", *_val);
@@ -301,24 +250,24 @@ fn str(char val) str
   buf[0] = val
   return str(buf)
 
-fn char(byte val) char
+fn char(u8 val) char
   include 
     return (char)(*_val);
   return '\0'
 
-fn byte(char val) byte
-  include
-    return ($(byte))(*_val);
-  return byte('\0')
+fn u8(char val) u8
+  include 
+    return (uint8_t)(*_val);
+  return 0
 
 struct Scanner[T]
-  Arr[byte] buf
+  Arr[u8] buf
   T stream
-  TypeUnion[int, err](T, Arr[byte]) readBytes
+  TypeUnion[int, err](T, Arr[u8]) readBytes
   int amtInBuf
   int i
 
-fn scanner(T stream, TypeUnion[int, err](T, Arr[byte]) r=read) Scanner[T]
+fn scanner(T stream, TypeUnion[int, err](T, Arr[u8]) r=read) Scanner[T]
   return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
 fn nextLine(&Scanner[T] scanner) str|err
@@ -332,7 +281,7 @@ fn nextLine(&Scanner[T] scanner) str|err
       return err("no next element")
     output += char(scanner.buf[scanner.i])
     scanner.i += 1
-    if scanner.buf[scanner.i] == byte('\n')
+    if scanner.buf[scanner.i] == u8('\n')
       break
 
   return str(output)
@@ -340,9 +289,9 @@ fn nextLine(&Scanner[T] scanner) str|err
 fn str(i32 val) str
   return str(int(val))
 
-fn num(int val) num
+fn f64(int val) f64
   include
-    return ($(num))*_val;
+    return ($(f64))*_val;
   return 0
 
 fn int(i32 val) int
@@ -350,7 +299,7 @@ fn int(i32 val) int
     return ($(int))*_val;
   return 0
 
-fn f32(num val) f32
+fn f32(f64 val) f32
   include
     return ($(f32))*_val;
   return f32(0.0)

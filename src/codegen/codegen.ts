@@ -224,7 +224,7 @@ function replaceAll(s: string, find: string, replace: string) {
 
 function codeGenType(type: Type): string {
   if (type.tag == 'primative') {
-    if (type.val == 'int' || type.val == 'i64') return 'int64_t';
+    if (type.val == 'int') return 'int64_t';
     else if (type.val == 'i32') return 'int32_t';
     else if (type.val == 'i16') return 'int16_t';
     else if (type.val == 'i8') return 'int8_t';
@@ -232,9 +232,8 @@ function codeGenType(type: Type): string {
     else if (type.val == 'u32') return 'uint32_t';
     else if (type.val == 'u16') return 'uint16_t';
     else if (type.val == 'u8') return 'uint8_t';
-    else if (type.val == 'num' || type.val == 'f64') return 'double';
+    else if (type.val == 'f64') return 'double';
     else if (type.val == 'f32') return 'float';
-    else if (type.val == 'byte') return 'unsigned char';
     return type.val;
   }
   if (type.tag == 'ptr') {
@@ -767,21 +766,21 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
 
     let memGuard = `if (${innerName} < 0 || ${leftName}._len <= ${innerName}) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
-    memGuard += `snprintf(__buf, 128, "invalid access of array with index %ld", ${innerName}); `
+    memGuard += `snprintf(__buf, 128, "invalid access of array with index %ld", (int64_t)${innerName}); `
     memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
     addInst.before.push(memGuard);
-    return `${leftName}._start[${innerName}]`;
+    return `${leftName}._base[${innerName}]`;
   } 
   else if (leftExpr.tag == 'arr_offset_slice') {
     let range = codeGenExpr(leftExpr.val.range, addInst, ctx, position);
     let fromVar = codeGenExpr(leftExpr.val.var, addInst, ctx, position);
-    let memGuard = `if (${range}._end < ${range}._start || ${range}._start < 0 || ${fromVar}._len < ${range}._end) { `;
+    let memGuard = `if (${range}._end < ${range}._base || ${range}._base < 0 || (int64_t)${fromVar}._len < (int64_t)${range}._end) { `;
     memGuard += 'char __buf[128] = { 0 }; ';
-    memGuard += `snprintf(__buf, 128, "invalid access of array with range %ld:%ld", ${range}._start, ${range}._end); `
+    memGuard += `snprintf(__buf, 128, "invalid access of array with range %ld:%ld", (int64_t)${range}._base, (int64_t)${range}._end); `
     memGuard += `chad_panic("${position.document}", ${position.line}, __buf); }`
     addInst.before.push(memGuard);
 
-    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr, ._start = ${fromVar}._ptr + ${range}._start, ._len = ${range}._end - ${range}._start, ._refCount = ${fromVar}._refCount }`;
+    return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr, ._base = ${fromVar}._ptr + ${range}._base, ._len = ${range}._end - ${range}._base, ._refCount = ${fromVar}._refCount }`;
   }
   else if (leftExpr.tag == 'prime') {
     return `${ codeGenExpr(leftExpr.val, addInst, ctx, position) }._${leftExpr.variant}`;

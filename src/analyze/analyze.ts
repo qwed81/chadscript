@@ -1240,7 +1240,7 @@ function ensureLeftExprValid(
       return null;
     }
     else if (operation.tag == 'default') {
-      if (Type.typeApplicable(index.type, Type.INT, false)) {
+      if (index.type.tag == 'primative') {
         let newExpr: LeftExpr = { 
           tag: 'arr_offset_int',
           val: {
@@ -1250,7 +1250,8 @@ function ensureLeftExprValid(
           type: operation.returnType
         };
         return newExpr;
-      } else if (Type.typeApplicable(index.type, Type.RANGE, false)) {
+      }
+      else {
         let newExpr: LeftExpr = { 
           tag: 'arr_offset_slice',
           val: {
@@ -2274,8 +2275,8 @@ function ensureExprValid(
   if (expr.tag == 'int_const') {
     if (expectedReturn != null && expectedReturn.tag == 'primative') {
       let t = expectedReturn.val;
-      if (t == 'i64' || t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32' || t == 'u16' || t == 'u8'
-        || t == 'f32' || t == 'f64' || t == 'num') {
+      if (t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32' || t == 'u16' || t == 'u8'
+        || t == 'f32' || t == 'f64') {
         computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
       }
     }
@@ -2299,7 +2300,7 @@ function ensureExprValid(
       computedExpr = { tag: 'num_const', val: expr.val, type: { tag: 'primative', val: 'f32' } };
     }
     else {
-      computedExpr = { tag: 'num_const', val: expr.val, type: Type.NUM };
+      computedExpr = { tag: 'num_const', val: expr.val, type: { tag: 'primative', val: 'f64' } };
     }
   }
 

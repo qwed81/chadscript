@@ -3,7 +3,7 @@ import { HeaderInclude, parseHeaderFile, ExternFn } from '../header';
 import * as Parse from '../parse';
 
 export {
-  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, NUM, STR, BYTE, FMT as STR_BUF, ERR,
+  INT, RANGE_FIELDS, RANGE, BOOL, VOID, CHAR, STR, FMT as STR_BUF, ERR,
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
@@ -17,8 +17,6 @@ const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, 
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
 const CHAR: Type = { tag: 'primative', val: 'char' };
-const NUM: Type = { tag: 'primative', val: 'num' };
-const BYTE: Type = { tag: 'primative', val: 'byte' };
 
 const STR: Type = {
   tag: 'struct',
@@ -72,8 +70,8 @@ interface Struct {
   unit: string
 }
 
-type Primatives = 'bool' | 'void' | 'int' | 'char' | 'num' | 'byte'
-  | 'i8' | 'i16' | 'i32' | 'i64'
+type Primatives = 'bool' | 'void' | 'int' | 'char'
+  | 'i8' | 'i16' | 'i32'
   | 'u8' | 'u16' | 'u32' | 'u64'
   | 'f32' | 'f64';
 
@@ -408,9 +406,9 @@ function canBitwise(a: Type, b: Type, refTable: RefTable): OperatorResult {
     return null;
   }
 
-  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+  if (a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
     || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
-    || a.val == 'int' || a.val == 'byte' || a.val == 'char') {
+    || a.val == 'int' || a.val == 'char') {
     return { tag: 'default', returnType: a };
   }
 
@@ -426,57 +424,19 @@ function canMath(a: Type, b: Type, refTable: RefTable): OperatorResult {
     return null;
   }
 
-  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+  if (a.val == 'int' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
     || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
-    || a.val == 'f64' || a.val == 'f32') {
+    || a.val == 'f64' || a.val == 'f32' || a.val == 'char') {
     return { tag: 'default', returnType: a };
-  }
-
-  if (typeApplicable(a, INT, false)) {
-    if (typeApplicable(b, INT, false)) {
-      return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, NUM, false)) {
-      return { tag: 'default', returnType: NUM };
-    } else if (typeApplicable(b, BYTE, false)) {
-      return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, CHAR, false)) {
-      return { tag: 'default', returnType: INT };
-    }
-  }
-  else if (typeApplicable(a, BYTE, false)) {
-    if (typeApplicable(b, INT, false)) {
-      return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, BYTE, false)) {
-      return { tag: 'default', returnType: BYTE };
-    }
-  }
-  else if (typeApplicable(a, CHAR, false)) {
-    if (typeApplicable(b, INT, false)) {
-      return { tag: 'default', returnType: INT };
-    } else if (typeApplicable(b, CHAR, false)) {
-      return { tag: 'default', returnType: CHAR };
-    }
-  }
-  else if (typeApplicable(a, NUM, false)) {
-    if (typeApplicable(b, INT, false) || typeApplicable(b, NUM, false)) {
-      return { tag: 'default', returnType: NUM };
-    }
   }
 
   return null;
 }
 
 function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
-  if (a.val == 'i64' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+  if (a.val == 'int' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
     || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
-    || a.val == 'f64' || a.val == 'f32') {
-    return { tag: 'default', returnType: BOOL };
-  }
-
-  if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
-    return { tag: 'default', returnType: BOOL };
-  }
-  if (typeApplicable(a, NUM, false) && typeApplicable(b, NUM, false)) {
+    || a.val == 'f64' || a.val == 'f32' || a.val == 'char') {
     return { tag: 'default', returnType: BOOL };
   }
 
@@ -495,16 +455,9 @@ function canCompare(a: Type, b: Type, refTable: RefTable): OperatorResult {
 }
 
 function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
-  if (typeApplicable(a, INT, false) && typeApplicable(b, INT, false)) {
-    return { tag: 'default', returnType: BOOL };
-  }
-  if (typeApplicable(a, CHAR, false) && typeApplicable(b, CHAR, false)) {
-    return { tag: 'default', returnType: BOOL };
-  }
-  if (typeApplicable(a, BOOL, false) && typeApplicable(b, BOOL, false)) {
-    return { tag: 'default', returnType: BOOL };
-  }
-  if (typeApplicable(a, BYTE, false) && typeApplicable(b, BYTE, false)) {
+  if (a.val == 'int' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+    || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8'
+    || a.val == 'f64' || a.val == 'f32' || a.val == 'char') {
     return { tag: 'default', returnType: BOOL };
   }
 
@@ -521,9 +474,36 @@ function canEq(a: Type, b: Type, refTable: RefTable): OperatorResult {
   };
 }
 
+function isInt(a: Type): boolean {
+  return a.val == 'int' || a.val == 'i32' || a.val == 'i16' || a.val == 'i8'
+    || a.val == 'u64'|| a.val == 'u32' || a.val == 'u16' || a.val == 'u8';
+}
+
 function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'ptr') {
+  if (struct.tag == 'ptr' && isInt(index)) {
     return { tag: 'default', returnType: struct.val };
+  }
+  else if (struct.tag == 'struct' && isInt(index)) {
+    if (struct.val.id == 'std/core.Arr') {
+      return { tag: 'default', returnType: struct.val.generics[0] };
+    }
+    if (struct.val.id == 'std/core.str') {
+      return { tag: 'default', returnType: CHAR }
+    }
+    if (struct.val.id == 'std/core.Fmt') {
+      return { tag: 'default', returnType: CHAR }
+    }
+  }
+  else if (struct.tag == 'struct' && index.tag == 'struct' && index.val.id == 'std/core.range') {
+    if (struct.val.id == 'std/core.Arr') {
+      return { tag: 'default', returnType: struct.val.generics[0] };
+    }
+    if (struct.val.id == 'std/core.str') {
+      return { tag: 'default', returnType: CHAR }
+    }
+    if (struct.val.id == 'std/core.Fmt') {
+      return { tag: 'default', returnType: CHAR }
+    }
   }
 
   let fnResult = resolveFn('getIndex', null, null, [struct, index], refTable, null);
@@ -541,8 +521,24 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
 }
 
 function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTable): OperatorResult | null {
-  if (struct.tag == 'ptr') {
+  if (struct.tag == 'ptr' && isInt(index)) {
     return { tag: 'default', returnType: struct.val };
+  }
+  else if (struct.tag == 'struct' && isInt(index)) {
+    if (struct.val.id == 'std/core.Arr') {
+      return { tag: 'default', returnType: struct.val.generics[0] };
+    }
+    if (struct.val.id == 'std/core.Fmt') {
+      return { tag: 'default', returnType: CHAR }
+    }
+  }
+  else if (struct.tag == 'struct' && index.tag == 'struct' && index.val.id == 'std/core.range') {
+    if (struct.val.id == 'std/core.Arr') {
+      return { tag: 'default', returnType: struct };
+    }
+    if (struct.val.id == 'std/core.Fmt') {
+      return { tag: 'default', returnType: STR }
+    }
   }
 
   let fnResult = resolveFn('prepareIndex', null, null, [struct, index, exprType], refTable, null);
@@ -642,8 +638,8 @@ function resolveType(
   position: Position | null
 ): Type | null {
   if (def.tag == 'basic') {
-    if (def.val == 'int' || def.val == 'num' || def.val == 'bool' || def.val == 'char' || def.val == 'void' || def.val == 'byte' 
-      || def.val == 'i64' || def.val == 'i32' || def.val == 'i16' || def.val == 'i8'
+    if (def.val == 'int' || def.val == 'bool' || def.val == 'char' || def.val == 'void'
+      || def.val == 'i32' || def.val == 'i16' || def.val == 'i8'
       || def.val == 'u64' || def.val == 'u32' || def.val == 'u16' || def.val == 'u8'
       || def.val == 'f64' || def.val == 'f32'
       ) {

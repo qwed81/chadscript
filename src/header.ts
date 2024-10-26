@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { Type, INT, NUM, VOID, CHAR, BOOL, BYTE, Field } from './analyze/types';
+import { Type, INT, VOID, CHAR, BOOL, Field } from './analyze/types';
 import { execSync } from 'child_process';
 import { compilerError } from './util';
 
@@ -203,7 +203,7 @@ function parseCExpr(val: string): CExpr | null {
     return { type: INT, val: result };
   }
   
-  return { type: NUM, val: result };
+  return { type: { tag: 'primative', val: 'f64' }, val: result };
 }
 
 // splits to a(b) -> [a, b]
@@ -318,13 +318,13 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
     return { tag: 'primative', val: 'f32' };
   }
   else if (type == 'double') {
-    return NUM;
+    return { tag: 'primative', val: 'f64' };
   }
   else if (type == 'char') {
     return CHAR;
   }
   else if (type == 'uint8_t') {
-    return BYTE;
+    return { tag: 'primative', val: 'u8' };
   }
   else if (type == 'void') {
     return VOID;
