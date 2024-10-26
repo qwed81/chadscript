@@ -110,6 +110,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type.Type }
   | { tag: 'list_init', val: Expr[], type: Type.Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type.Type }
+  | { tag: 'cast', val: Expr, type: Type.Type }
   | { tag: 'str_const', val: string, type: Type.Type }
   | { tag: 'fmt_str', val: Expr[], type: Type.Type }
   | { tag: 'char_const', val: string, type: Type.Type }
@@ -1983,31 +1984,39 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'fn_call') {
-    // check if builtin function
-    if (expr.val.fn.tag == 'var' && expr.val.fn.val == 'ptr') {
-      if (expr.val.exprs.length != 1) {
-        if (!ignoreErrors) {
-          logError(expr.position, 'ptr expects 1 argument');
-        }
-        return null;
-      }
-      let variable = ensureExprValid(expr.val.exprs[0], null, table, scope, position, false);
-      if (variable == null) {
-        return null;
-      }
-      if (variable.tag != 'left_expr') {
-        logError(expr.position, 'ptr must be of variable');
-        return null;
-      }
 
-      computedExpr = { 
-        tag: 'ptr',
-        val: variable.val, 
-        type: {
-          tag: 'ptr',
-          val: variable.val.type 
+    // check if builtin function
+    if (expr.val.fn.tag == 'var') {
+      let name = expr.val.fn.val;
+      if (name == 'bool' || name == 'int' || name == 'char'
+        || name == 'i8' || name == 'i16' || name == 'i32'
+        || name == 'u8' || name == 'u16' || name == 'u32' || name == 'u64'
+        || name == 'f32' || name == 'f64') {
+
+        if (expr.val.exprs.length != 1) {
+          if (!ignoreErrors) {
+            logError(expr.position, 'ptr expects 1 argument');
+          }
+          return null;
         }
-      };
+        let variable = ensureExprValid(expr.val.exprs[0], null, table, scope, position, false);
+        if (variable == null) {
+          return null;
+        }
+
+        if (variable.type.tag != 'primative') {
+          if (!ignoreErrors) {
+            logError(expr.position, 'cast must be on primitive type');
+          }
+          return null;
+        }
+
+        computedExpr = { 
+          tag: 'cast',
+          val: variable, 
+          type: { tag: 'primative', val: name } 
+        };
+      }
     }
 
     // check if it was a C fn

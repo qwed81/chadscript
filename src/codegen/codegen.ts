@@ -510,6 +510,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
       exprText = `${ codeGenExpr(expr.val.left, addInst, ctx, position) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst, ctx, position) }`;
     }
   } 
+  else if (expr.tag == 'cast') {
+    exprText = `(${codeGenType(expr.type)})${codeGenExpr(expr.val, addInst, ctx, position)}`;
+  }
   else if (expr.tag == 'mv') {
     let exprStr = codeGenExpr(expr.val, addInst, ctx, position);
     addInst.after.push(`${exprStr} = (${codeGenType(expr.type)}){0};`);

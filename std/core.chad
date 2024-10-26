@@ -307,6 +307,6 @@ fn f32(f64 val) f32
 fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))
   int val = 0
-  C.scanf(cstr("%ld"), ptr(val))
+  C.scanf(cstr("%ld"), &val)
   return val
 

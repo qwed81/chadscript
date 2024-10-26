@@ -305,11 +305,15 @@ function resolveExpr(
     return { tag: 'is', left, variant: expr.variant, variantIndex: expr.variantIndex, type: expr.type };
   }
   else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert'
-    || expr.tag == 'assert_bool' || expr.tag == 'cp' || expr.tag == 'mv') {
+    || expr.tag == 'assert_bool' || expr.tag == 'cp' || expr.tag == 'mv'
+    || expr.tag == 'cast') {
 
     let inner = resolveExpr(expr.val, genericMap, ctx);
     let type = applyGenericMap(expr.type, genericMap);
     if (expr.tag == 'not') {
+      return { tag: expr.tag, val: inner, type };
+    }
+    else if (expr.tag == 'cast') {
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'try') {
