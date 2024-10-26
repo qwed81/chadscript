@@ -438,11 +438,13 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let itemType = inst.val.nextFn.type.val.returnType;
     let nextFnName = getFnUniqueId(inst.val.nextFn.unitName, inst.val.nextFn.fnName, inst.val.nextFn.type);
 
-    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName}.tag == 0; ${varName} = ${nextFnName}(&${iterName})) {`;
+    instText = `for (${codeGenType(itemType)} ${varName} = ${nextFnName}(&${iterName}); ${varName} != 0; ${varName} = ${nextFnName}(&${iterName})) {`;
     instText += codeGenBody(inst.val.body, indent + 1, false, false, ctx);
     let addToList: string[] = [];
     changeRefCount(addToList, varName, itemType, -1);
-    instText += addToList[0];
+    for (let i = 0; i < addToList.length; i++) {
+      instText += addToList[i];
+    }
     instText += tabs + '}';
   }
 
@@ -454,6 +456,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   for (let i of addInst.after) {
     outputText += tabs + i + '\n';
   }
+
   return outputText;
 }
 
@@ -796,10 +799,10 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
       return `(*_${leftExpr.val})`;
     }
     else if (leftExpr.mode == 'iter') {
-      return `(*_${leftExpr.val}__opt._val0._start)`;
+      return `(*_${leftExpr.val}__opt)`;
     }
     else if (leftExpr.mode == 'iter_copy') {
-      return `(_${leftExpr.val}__opt._val0)`
+      return `(_${leftExpr.val}__opt)`
     }
     else if (leftExpr.mode == 'none') {
       return `_${leftExpr.val}`;

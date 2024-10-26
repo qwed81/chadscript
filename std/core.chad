@@ -1,8 +1,3 @@
-fn or(int a, int b) int
-  include
-    return a | b;
-  return a
-
 struct err
   str message
 
@@ -16,27 +11,31 @@ enum TypeUnion[T, K]
 struct range
   int start
   int end
+  int output
 
-fn next(&range r) int|nil
-  int thisIndex = r.start
+fn next(&range r) *int
+  r.output = r.start
   if r.start == r.end
     return nil
   r.start += 1
-  return thisIndex
+  return &r.output
 
+##
 fn rev(range r) revRange
-  return { start = r.end - 1, end = r.start - 1 }
+  return { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
 
 struct revRange
   int start
   int end
+  int output
 
-fn next(&revRange r) int|nil
+fn next(&revRange r) *int
   int thisIndex = r.start
   if r.start == r.end
     return nil
   r.start -= 1
   return thisIndex
+##
 
 fn alloc(int amt) *T
   *T output
@@ -146,6 +145,7 @@ fn cstr(str s) *char
   *char cstr = alloc(s.len + 1)
   for i in 0:s.len
     cstr[i] = s[i]
+  cstr[s.len] = '\0'
   return cstr
 
 fn split(str s) Arr[str]
@@ -262,7 +262,14 @@ struct Heap[T]
 struct BST[T]
 
 fn rand(int start, int end) int
+  include
+    return (*_end - *_start) * ((double)rand() / (double)RAND_MAX) + *_start;
   return 0
+
+fn rand() num
+  include
+    return ((double)rand() / (double)RAND_MAX);
+  return 0.0
 
 fn str(int val) str
   int len
@@ -272,6 +279,16 @@ fn str(int val) str
   *char output = alloc(len + 1)
   include
     snprintf(_output, _len + 1, "%ld", *_val);
+  return { base = output, len = len }
+
+fn str(num val) str
+  int len
+  include
+    _len = snprintf(NULL, 0, "%lf", *_val);
+
+  *char output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%lf", *_val);
   return { base = output, len = len }
   
 fn print(T val, str(T) strImpl=str) 
@@ -323,10 +340,20 @@ fn nextLine(&Scanner[T] scanner) str|err
 fn str(i32 val) str
   return str(int(val))
 
+fn num(int val) num
+  include
+    return ($(num))*_val;
+  return 0
+
 fn int(i32 val) int
   include
     return ($(int))*_val;
   return 0
+
+fn f32(num val) f32
+  include
+    return ($(f32))*_val;
+  return f32(0.0)
 
 fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))

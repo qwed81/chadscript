@@ -685,17 +685,11 @@ function analyzeInst(
     }
 
     let returnType = fnResult.fnType.val.returnType;
-    if (returnType.tag == 'enum' && returnType.val.id == 'std/core.TypeUnion') {
-      let field2 = returnType.val.fields[1];
-      if (field2.type.tag == 'primative' && field2.type.val != 'void') {
-        logError(inst.position, 'next function does not return an option');
-        return null;
-      }
-
-      let iterType = returnType.val.fields[0].type;
+    if (returnType.tag == 'ptr') {
+      let iterType = returnType.val;
       scope.inLoop = true;
       enterScope(scope);
-      setValToScope(scope, inst.val.varName, iterType, false, 'iter_copy');
+      setValToScope(scope, inst.val.varName, iterType, false, 'iter');
       let body = analyzeInstBody(inst.val.body, table, scope);
       exitScope(scope);
       if (body == null) {
@@ -721,7 +715,7 @@ function analyzeInst(
       };
     }
 
-    logError(inst.position, 'expected optional value');
+    logError(inst.position, 'expected pointer in "next"');
     return null;
   }
 
@@ -2292,7 +2286,12 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'nil_const') {
-    computedExpr = { tag: 'nil_const', type: Type.VOID }
+    if (expectedReturn != null && expectedReturn.tag == 'ptr') {
+      computedExpr = { tag: 'nil_const', type: expectedReturn };
+    }
+    else {
+      computedExpr = { tag: 'nil_const', type: Type.VOID }
+    }
   }
 
   if (expr.tag == 'num_const') {

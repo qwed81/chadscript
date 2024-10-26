@@ -198,7 +198,7 @@ function toStr(t: Type | null): string {
   }
 
   if (t.tag == 'ptr') {
-    return toStr(t.val) + '*';
+    return '*' + toStr(t.val);
   }
 
   if (t.tag == 'struct' || t.tag == 'enum') {
