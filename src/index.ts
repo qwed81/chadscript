@@ -35,6 +35,7 @@ function parseUnitsRecur(basePath: string, moduleName: string, outParseUnits: Pr
   }
 }
 
+
 let programUnits: ProgramUnit[] = [];
 for (let i = 2; i < process.argv.length; i++) {
   let filePath = process.argv[i];

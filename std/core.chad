@@ -289,24 +289,28 @@ fn nextLine(&Scanner[T] scanner) str|err
 fn str(i32 val) str
   return str(int(val))
 
-fn f64(int val) f64
-  include
-    return ($(f64))*_val;
-  return 0
-
-fn int(i32 val) int
-  include
-    return ($(int))*_val;
-  return 0
-
-fn f32(f64 val) f32
-  include
-    return ($(f32))*_val;
-  return f32(0.0)
-
 fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))
   int val = 0
   C.scanf(cstr("%ld"), &val)
   return val
 
+enum Type
+  str Basic
+  *Type Ptr
+  *TypeFn Fn
+  *TypeStruct Struct
+  *TypeStruct Enum
+
+struct TypeFn
+  get Arr[Type] params
+  get Type retType
+  get str name
+
+struct TypeField
+  get str name
+  get Type type
+
+struct TypeStruct
+  get Arr[TypeField] fields
+  get str name

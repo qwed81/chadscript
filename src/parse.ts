@@ -225,6 +225,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'cp', val: Expr, position: Position }
   | { tag: 'mv', val: Expr,  position: Position }
   | { tag: 'ptr', val: Expr, position: Position }
+  | { tag: 'typeof', val: Type, position: Position }
 
 const MAPPING: [string, number][] = [
   [':', 0],
@@ -1317,6 +1318,18 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
       return null;
     }
     return { tag: 'not', val: expr, position };
+  }
+
+  if (tokens[0].val == 'typeof') {
+    if (tokens.length < 4 || tokens[tokens.length - 1].val != ')' || tokens[1].val != '(') {
+      return null;
+    }
+
+    let innerType = tryParseType(tokens.slice(2, -1));
+    if (innerType == null) {
+      return null;
+    }
+    return { tag: 'typeof', val: innerType, position };
   }
 
   let fnCall = tryParseFnCall(tokens);

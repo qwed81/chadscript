@@ -7,8 +7,8 @@ export {
   Field, Struct, Type, toStr, typeApplicable, typeApplicableStateful, isGeneric,
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
-  isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams,
-  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise,
+  isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams, primativeList,
+  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise, TYPE, FIELD, FN, STRUCT
 }
 
 const INT: Type = { tag: 'primative', val: 'int' };
@@ -55,6 +55,61 @@ const FMT: Type = {
     id: 'std/core.Fmt',
     unit: 'std/core'
   }
+}
+
+
+let _type: Type | null = null;
+function TYPE(): Type {
+  if (_type == null) {
+    let table = getUnitReferencesFromName('std/core')!;
+    _type = resolveStruct('Type', [], table, null);
+  }
+  return _type!;
+}
+
+let _field: Type | null = null;
+function FIELD(): Type {
+  if (_field == null) {
+    let table = getUnitReferencesFromName('std/core')!;
+    _field = resolveStruct('TypeField', [], table, null);
+  }
+  return _field!;
+}
+
+let _fn: Type | null = null;
+function FN(): Type {
+  if (_fn == null) {
+    let table = getUnitReferencesFromName('std/core')!;
+    _fn = resolveStruct('TypeFn', [], table, null);
+  }
+  return _fn!;
+}
+
+let _struct: Type | null = null;
+function STRUCT(): Type {
+  if (_struct == null) {
+    let table = getUnitReferencesFromName('std/core')!;
+    _struct = resolveStruct('TypeStruct', [], table, null);
+  }
+  return _struct!;
+}
+
+function primativeList(): Type[] {
+  let primatives: Type[] = [];
+  primatives.push({ tag: 'primative', val: 'bool' });
+  primatives.push({ tag: 'primative', val: 'void' });
+  primatives.push({ tag: 'primative', val: 'int' });
+  primatives.push({ tag: 'primative', val: 'char' });
+  primatives.push({ tag: 'primative', val: 'i8' });
+  primatives.push({ tag: 'primative', val: 'i16' });
+  primatives.push({ tag: 'primative', val: 'i32' });
+  primatives.push({ tag: 'primative', val: 'u8' });
+  primatives.push({ tag: 'primative', val: 'u16' });
+  primatives.push({ tag: 'primative', val: 'u32' });
+  primatives.push({ tag: 'primative', val: 'u64' });
+  primatives.push({ tag: 'primative', val: 'f32' });
+  primatives.push({ tag: 'primative', val: 'f64' });
+  return primatives;
 }
 
 interface Field {
@@ -151,21 +206,7 @@ function isComplex(type: Type): boolean {
 }
 
 // replaces all mutablility of the type so that it can be created into a key
-function standardizeType(type: Type) {
-  if (type.tag == 'struct' || type.tag == 'enum') {
-    for (let i = 0; i < type.val.fields.length; i++) {
-      standardizeType(type.val.fields[i].type);
-    }
-    for (let i = 0; i <type.val.generics.length; i++) {
-      standardizeType(type.val.generics[i]);
-    }
-  }
-  else if (type.tag == 'fn') {
-    standardizeType(type.val.returnType);
-    for (let i = 0; i < type.val.paramTypes.length; i++) {
-      standardizeType(type.val.paramTypes[i]);
-    }
-  }
+function standardizeType(type: Type, recursive: Set<Type> = new Set()) {
 }
 
 function getVariantIndex(type: Type, fieldName: string): number {
@@ -237,7 +278,7 @@ function typeApplicableStateful(
   sub: Type,
   supa: Type,
   genericMap: Map<string, Type>,
-  fnHeader: boolean
+  fnHeader: boolean,
 ): boolean {
   if (supa.tag == 'generic') {
     if (!fnHeader && supa.tag != sub.tag) {
@@ -286,6 +327,7 @@ function typeApplicableStateful(
 
     for (let i = 0; i < sub.val.generics.length; i++) {
       if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader)) {
+        console.log(sub.val.generics, supa.val.generics, genericMap, fnHeader);
         return false;
       }
     }
@@ -318,7 +360,12 @@ function typeApplicable(sub: Type, supa: Type, fnHeader: boolean): boolean {
   return typeApplicableStateful(sub, supa, genericMap, fnHeader);
 }
 
-function applyGenericMap(input: Type, map: Map<string, Type>): Type {
+function applyGenericMap(input: Type, map: Map<string, Type>, recursive: Set<Type> = new Set()): Type {
+  if (recursive.has(input)) {
+    return input;
+  }
+  recursive.add(input);
+
   if (input.tag == 'generic') {
     if (map.has(input.val)) {
       return map.get(input.val)!;
@@ -331,23 +378,25 @@ function applyGenericMap(input: Type, map: Map<string, Type>): Type {
   else if (input.tag == 'struct' || input.tag == 'enum') {
     let newGenerics: Type[] = [];
     let newFields: Field[] = [];
+
+    let copySet = new Set(recursive);
     for (let field of input.val.fields) {
-      let fieldType = applyGenericMap(field.type, map);
+      let fieldType = applyGenericMap(field.type, map, copySet);
       newFields.push({ name: field.name, type: fieldType, visibility: field.visibility });
     }
     for (let generic of input.val.generics) {
-      newGenerics.push(applyGenericMap(generic, map));
+      newGenerics.push(applyGenericMap(generic, map, recursive));
     }
     return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id, unit: input.val.unit }};
   }
   else if (input.tag == 'ptr') {
-    return { tag: 'ptr', val: applyGenericMap(input.val, map) };
+    return { tag: 'ptr', val: applyGenericMap(input.val, map, recursive) };
   }
   else if (input.tag == 'fn') {
-    let newReturnType: Type = applyGenericMap(input.val.returnType, map);
+    let newReturnType: Type = applyGenericMap(input.val.returnType, map, recursive);
     let newParamTypes: Type[] = []
     for (let paramType of input.val.paramTypes) {
-      let newParamType = applyGenericMap(paramType, map);
+      let newParamType = applyGenericMap(paramType, map, recursive);
       newParamTypes.push(newParamType);
     }
     return {
@@ -635,7 +684,7 @@ function resolveType(
   def: Parse.Type,
   refTable: RefTable,
   // if position is null do not display errors
-  position: Position | null
+  position: Position | null,
 ): Type | null {
   if (def.tag == 'basic') {
     if (def.val == 'int' || def.val == 'bool' || def.val == 'char' || def.val == 'void'
@@ -710,13 +759,32 @@ function resolveType(
   return null;
 }
 
+function serializeGenerics(generics: Type[]): string {
+  let genericStr = '';
+  for (let i = 0; i < generics.length; i++) {
+    genericStr += toStr(generics[i]) + '|';
+  }
+  return genericStr;
+}
+
+let typeCache: Map<string, Type> = new Map();
 function resolveStruct(
   name: string,
   generics: Type[],
   refTable: RefTable,
   // if position is null do not display errors
-  position: Position | null
+  position: Position | null,
 ): Type | null {
+  let key = JSON.stringify({ name, generics: serializeGenerics(generics), unit: refTable.thisUnit.fullName });
+  let cached = typeCache.get(key);
+  if (cached != undefined) {
+    return cached;
+  }
+
+ // requires skipping type checking to satisfy recursive type
+  let outputType: Type = {} as any;
+  typeCache.set(key, outputType);
+
   let possibleStructs: Type[] = [];
   for (let unit of refTable.units) {
     let unitRefTable = getUnitReferences(unit);
@@ -736,7 +804,7 @@ function resolveStruct(
       if (structDef.header.generics.length != generics.length) {
         continue;
       }
-      
+
       let genericMap = new Map<string, Type>();
       for (let i = 0; i < generics.length; i++) {
         let genericName = structDef.header.generics[i]
@@ -793,7 +861,19 @@ function resolveStruct(
     return null;
   }
 
-  return possibleStructs[0];
+  let thisStruct = possibleStructs[0];
+  if (thisStruct.tag != 'struct' && thisStruct.tag != 'enum') {
+    return null;
+  }
+
+  outputType.tag = thisStruct.tag;
+  outputType.val = {
+    fields: thisStruct.val.fields,
+    generics: thisStruct.val.generics,
+    id: thisStruct.val.id,
+    unit: thisStruct.val.unit
+  };
+  return outputType;
 }
 
 interface NamedParam {

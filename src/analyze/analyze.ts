@@ -123,6 +123,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type.Type }
   | { tag: 'cfn_call', fnName: string, exprs: Expr[], type: Type.Type }
   | { tag: 'cp', val: Expr, type: Type.Type }
   | { tag: 'mv', val: Expr, type: Type.Type }
+  | { tag: 'typeof', val: Type.Type, type: Type.Type }
 
 interface DotOp {
   left: Expr
@@ -334,6 +335,7 @@ function verifyDataType(
     }
     let dataType = Type.resolveType(type, table, position);
     if (dataType == null) {
+      logError(position, 'unknown datatype');
       return false;
     }
     return true;
@@ -353,6 +355,7 @@ function verifyDataType(
     let dataType = Type.resolveType(type, table, position);
     for (let g of type.val.generics) {
       if (verifyDataType(g, position, table, validGenerics) == false) {
+        logError(position, 'unknown datatype');
         return false;
       }
     }
@@ -370,10 +373,12 @@ function verifyDataType(
   if (type.tag == 'fn') {
     for (let i = 0; i < type.val.paramTypes.length; i++) {
       if (verifyDataType(type.val.paramTypes[i], position, table, validGenerics) == false) {
+        logError(position, 'unknown datatype');
         return false;
       }
     }
     if (verifyDataType(type.val.returnType, position, table, validGenerics) == false) {
+      logError(position, 'unknown datatype');
       return false;
     }
     return true;
@@ -1524,6 +1529,10 @@ function ensureFnCallValid(
     }
 
     if (!ignoreErrors) {
+      console.log(JSON.stringify(fnType.val.returnType, null, 2));
+      console.log(JSON.stringify(expectedReturn, null, 2));
+
+
       logError(position, 'invalid return type');
     }
     return null;
@@ -1770,6 +1779,22 @@ function ensureExprValid(
         variantIndex: 1
       }
     }
+  }
+
+  if (expr.tag == 'typeof') {
+    let t = Type.resolveType(expr.val, table, position);
+    if (t == null) {
+      if (!ignoreErrors) {
+        logError(position, 'is operator only valid on enums');
+      }
+      return null;
+    }
+
+    computedExpr = {
+      tag: 'typeof',
+      val: t,
+      type: Type.TYPE()
+    };
   }
 
   if (expr.tag == 'ptr') {

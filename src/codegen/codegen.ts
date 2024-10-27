@@ -1,7 +1,7 @@
 import { Position, compilerError, logError, NULL_POS } from '../util';
 import { Program  } from '../analyze/analyze';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn } from '../analyze/analyze';
-import { toStr, Type, STR, VOID, ERR, createRes } from '../analyze/types';
+import { toStr, Type, STR, VOID, ERR, TYPE, FIELD, STRUCT, FN, createRes, createList, primativeList } from '../analyze/types';
 import { replaceGenerics, CProgram, CStruct, CFn } from './concreteFns';
 
 export {
@@ -62,7 +62,7 @@ function codegen(prog: Program): OutputFile[] {
   // forward declare structs for pointers
   for (let struct of newProg.orderedStructs) {
     if (struct.tag == 'struct' || struct.tag == 'enum') {
-      cstructMap.set(JSON.stringify(struct.val.name), struct);
+      cstructMap.set(toStr(struct.val.name), struct);
       if (struct.val.name.tag != 'struct' || struct.val.name.val.unit != 'extern') {
         chadDotH += '\n' + codeGenType(struct.val.name) + ';';
       }
@@ -84,6 +84,7 @@ function codegen(prog: Program): OutputFile[] {
   // generate implementations of types
   chadDotH += codeGenStructDefs(newProg.orderedStructs);
   chadDotC += codeGenRefcountImpls(newProg.orderedStructs);
+  chadDotC += codeGenTypeInfo(newProg.orderedStructs);
 
   for (let c of newProg.consts) {
     chadDotH += `\nextern ${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)};`;
@@ -510,6 +511,9 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
       exprText = `${ codeGenExpr(expr.val.left, addInst, ctx, position) } ${ expr.val.op } ${ codeGenExpr(expr.val.right, addInst, ctx, position) }`;
     }
   } 
+  else if (expr.tag == 'typeof') {
+    exprText = reflectionTypeName(expr.val);
+  }
   else if (expr.tag == 'cast') {
     exprText = `(${codeGenType(expr.type)})${codeGenExpr(expr.val, addInst, ctx, position)}`;
   }
@@ -910,6 +914,103 @@ function codeGenRefcountImpls(structs: CStruct[]): string {
   return refCountStr;
 }
 
+function reflectionType(type: Type): string {
+  let typeName: string = reflectionTypeName(type);
+  let typeOfType = codeGenType(TYPE());
+  let typeOfStr = codeGenType(STR);
+  let typeOfField = codeGenType(FIELD());
+  let typeOfFieldArr = codeGenType(createList(FIELD()));
+  let typeOfStruct = codeGenType(STRUCT());
+  let typeOfFn = codeGenType(FN());
+
+  if (type.tag == 'primative') {
+    let name = type.val;
+    return `\nconst ${typeOfType} ${typeName} = (${codeGenType(TYPE())}){.tag = 0, ._Basic = (${ codeGenType(STR) }){ ._base = "${name}", ._len = ${ strLen(name) }}};`;
+  }
+  else if (type.tag == 'ptr') {
+    return `\nconst ${typeOfType} ${typeName} = (${codeGenType(TYPE())}){.tag = 1, ._Ptr = (${typeOfType}*)&${reflectionTypeName(type.val)}};`;
+  }
+  else if (type.tag == 'struct' || type.tag == 'enum') {
+    let output: string = '';
+    let structId = type.val.id;
+    let fieldAmt = type.val.fields.length;
+    output += `\nconst ${typeOfField} ${typeName}_fields[${fieldAmt}] = {`;
+
+    for (let i = 0; i < fieldAmt; i++) {
+      output += `(${typeOfField}){
+        ._name = (${typeOfStr}){ ._base = "${type.val.fields[i].name}", ._len = ${strLen(structId)} },
+        ._type = ${reflectionTypeName(type.val.fields[i].type)}
+      },`
+    }
+    output += '};'
+
+    output += `\nconst ${typeOfType} ${typeName} = (${typeOfType}){
+      .tag = ${type.tag == 'struct' ? 3 : 4},
+      ._${type.tag == 'struct' ? 'Struct' : 'Enum' } = &(${typeOfStruct}){
+      ._name = (${typeOfStr}){ ._base = "${type.val.id}", ._len = ${strLen(structId)} },
+      ._fields = (${typeOfFieldArr}){ ._base = (${typeOfField}*)${typeName}_fields, ._len = ${fieldAmt}, ._capacity = ${fieldAmt} }}};`
+    return output;
+  }
+
+  return '';
+}
+
+function reflectionTypeName(type: Type): string {
+  if (type.tag == 'primative') {
+    return type.val + '_name';
+  }
+  else if (type.tag == 'ptr') {
+    return reflectionTypeName(type.val) + '_ptr';
+  }
+  else if (type.tag == 'struct' || type.tag == 'enum') {
+    return codeGenType(type).replace(' ', '_') + '_name';
+  }
+  return '';
+}
+
+function codeGenTypeInfo(structs: CStruct[]): string {
+  let structStr = '';
+  for (let type of primativeList()) {
+    structStr += reflectionType(type);
+    structStr += reflectionType({ tag: 'ptr', val: type });
+  }
+
+  for (let struct of structs) {
+    if (struct.tag == 'struct' || struct.tag == 'enum') {
+      let type = struct.val.name;
+      if (type.tag != 'struct' && type.tag != 'enum') {
+        continue;
+      }
+
+      // quick fix need to allow recursive types later
+      let id = type.val.id;
+      if (id == 'std/core.Type' || id == 'std/core.TypeField' || id == 'std/core.TypeFn'
+        || id == 'std/core.TypeStruct') {
+        continue;
+      }
+
+      if (id == 'std/core.Arr') {
+        let inner = type.val.generics[0];
+        if (inner.tag == 'enum' && inner.val.id == 'std/core.Type') {
+          continue;
+        }
+      }
+
+      if (id == 'std/core.Arr') {
+        let inner = type.val.generics[0];
+        if (inner.tag == 'struct' && inner.val.id == 'std/core.TypeField') {
+          continue;
+        }
+      }
+
+      structStr += reflectionType(type);
+      structStr += reflectionType({ tag: 'ptr', val: type });
+    }
+  }
+
+  return structStr;
+}
+
 // belongs in the header
 function codeGenStructDefs(structs: CStruct[]): string {
   let structStr = '';
@@ -919,10 +1020,14 @@ function codeGenStructDefs(structs: CStruct[]): string {
     }
 
     if (struct.tag == 'struct') {
-      if (struct.val.name.tag == 'struct' && struct.val.name.val.unit == 'extern') {
+      if (struct.val.name.tag != 'struct') {
+        continue;
+      }
+      if (struct.val.name.val.unit == 'extern') {
         continue;
       }
 
+      // code generate the struct
       structStr += '\n' + codeGenType(struct.val.name) + ' {';
       for (let i = 0; i < struct.val.fieldTypes.length; i++) {
         structStr += '\n  ' + codeGenType(struct.val.fieldTypes[i]) + ' _' + struct.val.fieldNames[i] + ';';
