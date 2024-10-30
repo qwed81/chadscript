@@ -1,0 +1,14 @@
+struct sha256
+
+fn sha256()
+
+fn update(&sha256 hash, Arr[u8] input)
+
+fn finalize(&sha256 hash) Arr[u8]
+
+struct aes
+
+
+
+
+
