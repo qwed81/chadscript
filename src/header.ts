@@ -174,6 +174,7 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
     fields.push({
       visibility: 'pub',
       name: cField.name,
+      recursive: false,
       type: fieldType
     })
   }

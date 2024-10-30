@@ -8,11 +8,11 @@ export {
   applyGenericMap, canMath, canCompare as canOrder, canEq, canGetIndex, canSetIndex, RefTable,
   getUnitReferences, resolveType, resolveFn, createList, FnResult,
   isRes, createRes, getVariantIndex, NamedParam, getFnNamedParams, primativeList,
-  OperatorResult, getUnitNameOfStruct, standardizeType, isComplex, canBitwise, TYPE, FIELD, FN, STRUCT
+  OperatorResult, getUnitNameOfStruct, isComplex, canBitwise, TYPE, FIELD, FN, STRUCT
 }
 
 const INT: Type = { tag: 'primative', val: 'int' };
-const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null }, { name: 'end', type: INT, visibility: null }];
+const RANGE_FIELDS: Field[] = [{ name: 'start', type: INT, visibility: null, recursive: false }, { name: 'end', type: INT, visibility: null, recursive: false }];
 const RANGE: Type = { tag: 'struct', val: { generics: [], fields: RANGE_FIELDS, id: 'std/core.range', unit: 'std/core' } };
 const BOOL: Type = { tag: 'primative', val: 'bool' };
 const VOID: Type = { tag: 'primative', val: 'void' }
@@ -22,8 +22,8 @@ const STR: Type = {
   tag: 'struct',
   val: {
     fields: [
-      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR } },
-      { visibility: 'get', name: 'len', type: INT }
+      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR }, recursive: false },
+      { visibility: 'get', name: 'len', type: INT, recursive: false }
     ],
     generics: [],
     id: 'std/core.str',
@@ -35,7 +35,7 @@ const ERR: Type = {
   tag: 'struct',
   val: {
     fields: [
-      { visibility: null, name: 'message', type: STR }
+      { visibility: null, name: 'message', type: STR, recursive: false }
     ],
     generics: [],
     id: 'std/core.err',
@@ -47,9 +47,9 @@ const FMT: Type = {
   tag: 'struct',
   val: {
     fields: [
-      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR } },
-      { visibility: 'get', name: 'len', type: INT },
-      { visibility: 'get', name: 'capacity', type: INT }
+      { visibility: 'get', name: 'base', type: { tag: 'ptr', val: CHAR }, recursive: false },
+      { visibility: 'get', name: 'len', type: INT, recursive: false },
+      { visibility: 'get', name: 'capacity', type: INT, recursive: false }
     ],
     generics: [],
     id: 'std/core.Fmt',
@@ -113,6 +113,7 @@ function primativeList(): Type[] {
 }
 
 interface Field {
+  recursive: boolean,
   visibility: Parse.FieldVisibility
   name: string
   type: Type
@@ -148,8 +149,8 @@ function createRes(genericType: Type, errorType: Type): Type {
     val: {
       id: 'std/core.TypeUnion',
       fields: [
-        { name: 'val0', type: genericType, visibility: null },
-        { name: 'val1', type: errorType, visibility: null }
+        { name: 'val0', type: genericType, visibility: null, recursive: false },
+        { name: 'val1', type: errorType, visibility: null, recursive: false }
       ],
       generics: [genericType, errorType],
       unit: 'std/core'
@@ -162,9 +163,9 @@ function createList(genericType: Type): Type {
     tag: 'struct',
     val: {
       fields: [
-        { visibility: 'get', name: 'base', type: { tag: 'ptr', val: genericType } },
-        { visibility: 'get', name: 'len', type: INT },
-        { visibility: 'get', name: 'capacity', type: INT }
+        { visibility: 'get', name: 'base', type: { tag: 'ptr', val: genericType }, recursive: false },
+        { visibility: 'get', name: 'len', type: INT, recursive: false },
+        { visibility: 'get', name: 'capacity', type: INT, recursive: false }
       ],
       generics: [genericType],
       id: 'std/core.Arr',
@@ -178,8 +179,8 @@ function createTypeUnion(val0Type: Type, val1Type: Type): Type {
     tag: 'enum',
     val: {
       fields: [
-        { visibility: 'pub', name: 'val0', type: val0Type },
-        { visibility: 'pub', name: 'val1', type: val1Type },
+        { visibility: 'pub', name: 'val0', type: val0Type, recursive: false },
+        { visibility: 'pub', name: 'val1', type: val1Type, recursive: false },
       ],
       generics: [val0Type, val1Type],
       id: 'std/core.TypeUnion',
@@ -206,8 +207,7 @@ function isComplex(type: Type): boolean {
 }
 
 // replaces all mutablility of the type so that it can be created into a key
-function standardizeType(type: Type, recursive: Set<Type> = new Set()) {
-}
+// function standardizeType(type: Type, recursive: Set<Type> = new Set()) {}
 
 function getVariantIndex(type: Type, fieldName: string): number {
   if (type.tag != 'enum') {
@@ -382,7 +382,7 @@ function applyGenericMap(input: Type, map: Map<string, Type>, recursive: Set<Typ
     let copySet = new Set(recursive);
     for (let field of input.val.fields) {
       let fieldType = applyGenericMap(field.type, map, copySet);
-      newFields.push({ name: field.name, type: fieldType, visibility: field.visibility });
+      newFields.push({ name: field.name, type: fieldType, visibility: field.visibility, recursive: field.recursive });
     }
     for (let generic of input.val.generics) {
       newGenerics.push(applyGenericMap(generic, map, recursive));
@@ -820,7 +820,7 @@ function resolveStruct(
         }
 
         let concreteFieldType = applyGenericMap(fieldType, genericMap);
-        fields.push({ name: field.name, type: concreteFieldType, visibility: field.visibility });
+        fields.push({ name: field.name, type: concreteFieldType, visibility: field.visibility, recursive: field.recursive });
       }
 
       let thisStructId = unit.fullName + '.' + structDef.header.name;
@@ -830,7 +830,7 @@ function resolveStruct(
           fields,
           generics,
           id: thisStructId,
-          unit: unit.fullName
+          unit: unit.fullName,
         } 
       };
       possibleStructs.push(thisStruct);
@@ -916,7 +916,7 @@ function getFnNamedParams(
 
       // to standardize the named param function
       let fnTypeReturnType = JSON.parse(JSON.stringify(fnType.val.returnType));
-      standardizeType(fnTypeReturnType);
+      // standardizeType(fnTypeReturnType);
       if (!typeApplicableStateful(fnTypeReturnType, returnType, genericMap, true)) {
         continue;
       }

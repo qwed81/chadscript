@@ -84,7 +84,7 @@ function codegen(prog: Program): OutputFile[] {
   // generate implementations of types
   chadDotH += codeGenStructDefs(newProg.orderedStructs);
   chadDotC += codeGenRefcountImpls(newProg.orderedStructs);
-  chadDotC += codeGenTypeInfo(newProg.orderedStructs);
+  // chadDotC += codeGenTypeInfo(newProg.orderedStructs);
 
   for (let c of newProg.consts) {
     chadDotH += `\nextern ${codeGenType(c.type)} ${getConstUniqueId(c.unitName, c.name)};`;
@@ -485,7 +485,12 @@ function strLen(expr: string) {
 
 // if the instruction is a left expr: returns the c syntax for accessing the variable
 // if the instruction is a expr: reservers a variable and sets it to the expr, and then returns the reserved name
-function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Position): string {
+function codeGenExpr(
+  expr: Expr,
+  addInst: AddInst,
+  ctx: FnContext,
+  position: Position,
+): string {
   let exprText: string = 'undefined';
 
   if (expr.tag == 'bin') {
@@ -637,8 +642,21 @@ function codeGenExpr(expr: Expr, addInst: AddInst, ctx: FnContext, position: Pos
     exprText = `${codeGenLeftExpr(expr.left, addInst, ctx, position)}.tag == ${expr.variantIndex}`;
   } else if (expr.tag == 'enum_init') {
     if (expr.fieldExpr != null) {
+      if (expr.type.tag != 'enum') {
+        return 'undefined';
+      }
+
       let generatedExpr = codeGenExpr(expr.fieldExpr, addInst, ctx, position);
       changeRefCount(addInst.after, generatedExpr, expr.fieldExpr.type, 1);
+      
+      let field = expr.type.val.fields[expr.variantIndex];
+      if (field.recursive) {
+        let v = reserveVarNoStack(ctx);
+        addInst.before.push(`${codeGenType(field.type)}* ${v} = malloc(sizeof(${codeGenType(field.type)}));`);
+        addInst.before.push(`*${v} = ${generatedExpr};`)
+        generatedExpr = v;
+      }
+
       exprText = `(${ codeGenType(expr.type) }){ .tag = ${expr.variantIndex}, ._${expr.fieldName} = ${ generatedExpr } }`;
     } else {
       exprText = `(${ codeGenType(expr.type) }){ .tag = ${expr.variantIndex} }`;
@@ -790,6 +808,14 @@ function codeGenLeftExpr(leftExpr: LeftExpr, addInst: AddInst, ctx: FnContext, p
     return `(${codeGenType(leftExpr.type)}){ ._ptr = ${fromVar}._ptr, ._base = ${fromVar}._ptr + ${range}._base, ._len = ${range}._end - ${range}._base, ._refCount = ${fromVar}._refCount }`;
   }
   else if (leftExpr.tag == 'prime') {
+    let enumType: Type = leftExpr.val.type;
+    if (enumType.tag != 'enum') {
+      return 'undefined';
+    }
+
+    if (enumType.val.fields[leftExpr.variantIndex].recursive) {
+      return `(*${ codeGenExpr(leftExpr.val, addInst, ctx, position) }._${leftExpr.variant})`;
+    }
     return `${ codeGenExpr(leftExpr.val, addInst, ctx, position) }._${leftExpr.variant}`;
   }
   else if (leftExpr.tag == 'fn') {
@@ -1030,7 +1056,11 @@ function codeGenStructDefs(structs: CStruct[]): string {
       // code generate the struct
       structStr += '\n' + codeGenType(struct.val.name) + ' {';
       for (let i = 0; i < struct.val.fieldTypes.length; i++) {
-        structStr += '\n  ' + codeGenType(struct.val.fieldTypes[i]) + ' _' + struct.val.fieldNames[i] + ';';
+        structStr += '\n  ' + codeGenType(struct.val.fieldTypes[i]);
+        if (struct.val.name.val.fields[i].recursive) {
+          structStr += '*';
+        } 
+        structStr += ' _' + struct.val.fieldNames[i] + ';';
       }
       if (struct.autoDrop) {
         structStr += '\n  int64_t* refCount;';
@@ -1039,6 +1069,10 @@ function codeGenStructDefs(structs: CStruct[]): string {
       structStr += '\n};'
     }
     else if (struct.tag == 'enum') {
+      if (struct.val.name.tag != 'enum') {
+        continue;
+      }
+
       structStr += '\n' + codeGenType(struct.val.name) + ' {';
       structStr += '\n  int64_t tag;';
       structStr += '\n  union {';
@@ -1047,7 +1081,12 @@ function codeGenStructDefs(structs: CStruct[]): string {
         if (typeStr == 'void') {
           typeStr = 'int64_t';
         }
-        structStr += '\n    ' + typeStr + ' _' + struct.val.fieldNames[i] + ';' 
+
+        structStr += '\n  ' + typeStr;
+        if (struct.val.name.val.fields[i].recursive) {
+          structStr += '*';
+        } 
+        structStr += ' _' + struct.val.fieldNames[i] + ';';
       }
       structStr += '\n  };\n};'
     }

@@ -110,6 +110,7 @@ interface Var {
   name: string
   position: Position
   visibility: FieldVisibility
+  recursive: boolean
 }
 
 interface StructHeader {
@@ -618,15 +619,25 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
     let name = line.tokens[line.tokens.length - 1].val;
     let visibility: FieldVisibility = null;
     let typeTokens = line.tokens.slice(0, -1);
-    if (line.tokens[0].val == 'get') {
-      visibility = line.tokens[0].val;
-      typeTokens = line.tokens.slice(1, -1);
+    let recursive = false;
+
+    let i = 0;
+    if (line.tokens[0].val == 'recur') {
+      recursive = true;
+      i = 1;
     }
-    else if (line.tokens[0].val == 'pri') {
+
+    let nextToken = line.tokens[i].val;
+    if (nextToken == 'get') {
+      visibility = 'get';
+      typeTokens = line.tokens.slice(i + 1, -1);
+    }
+    else if (nextToken == 'pri') {
       visibility = null;
-      typeTokens = line.tokens.slice(1, -1);
+      typeTokens = line.tokens.slice(i + 1, -1);
     }
     else {
+      typeTokens = line.tokens.slice(i, -1);
       visibility = 'pub';
     }
 
@@ -635,7 +646,7 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
       logError(positionRange(typeTokens), 'field type not valid')
       return null;
     }
-    structFields.push({ t, name, position: line.position, visibility });
+    structFields.push({ t, name, position: line.position, visibility, recursive });
   }
 
   return { header: structName, fields: structFields, position: header.position };

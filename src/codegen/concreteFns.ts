@@ -2,7 +2,7 @@ import { Program, Fn, Inst, Expr, LeftExpr, Const } from '../analyze/analyze';
 import { logError, compilerError, NULL_POS } from '../util';
 import { ProgramUnit } from '../parse';
 import {
-  Type, typeApplicableStateful, applyGenericMap, standardizeType,
+  Type, typeApplicableStateful, applyGenericMap, 
   getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,
   INT, VOID, getUnitReferences, TYPE, toStr
 } from '../analyze/types';
@@ -126,7 +126,6 @@ function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
 }
 
 function queueType(ctx: ResolveContext, type: Type) {
-  standardizeType(type);
   let key = toStr(type);
   if (ctx.queuedTypes.has(key)) {
     return;
@@ -136,6 +135,9 @@ function queueType(ctx: ResolveContext, type: Type) {
   // can be called prior to ordering structs
   if (type.tag == 'struct' || type.tag == 'enum') {
     for (let i = 0; i < type.val.fields.length; i++) {
+      if (type.val.fields[i].recursive) {
+        continue;
+      }
       queueType(ctx, type.val.fields[i].type);
     }
   }
@@ -257,7 +259,6 @@ function resolveInst(
 }
 
 function addFnToResolve(ctx: ResolveContext, fnName: string, unitName: string, fnType: Type, refTable: RefTable) {
-  standardizeType(fnType);
   if (fnType.tag != 'fn') {
     compilerError('expected fn type');
     return undefined;
@@ -676,16 +677,17 @@ function typeTreeRecur(
   alreadyGenned: Set<string>,
   output: CStruct[],
   autoDropSet: Set<string>,
-  queue: Type[]
+  queue: Type[],
+  isRecursive: boolean
 ) {
   if (type.tag == 'fn') {
     let typeKey = toStr(type);
     if (alreadyGenned.has(typeKey)) {
       return;
     }
-    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, autoDropSet, queue);
+    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, autoDropSet, queue, false);
     for (let i = 0; i < type.val.paramTypes.length; i++) {
-      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, autoDropSet, queue);
+      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, autoDropSet, queue, false);
     }
     alreadyGenned.add(typeKey);
     output.push({ tag: 'fn', val: type });
@@ -697,6 +699,14 @@ function typeTreeRecur(
       return;
     }
     queue.push(type.val);
+  }
+
+  if (isRecursive) {
+    let typeKey = toStr(type);
+    if (alreadyGenned.has(typeKey)) {
+      return;
+    }
+    queue.push(type);
   }
 
   if (type.tag != 'struct' && type.tag != 'enum') {
@@ -715,7 +725,7 @@ function typeTreeRecur(
 
   inStack.add(typeKey);
   for (let field of type.val.fields) {
-    typeTreeRecur(field.type, inStack, alreadyGenned, output, autoDropSet, queue);
+    typeTreeRecur(field.type, inStack, alreadyGenned, output, autoDropSet, queue, field.recursive);
   }
   inStack.delete(typeKey);
 
@@ -744,7 +754,7 @@ function orderStructs(typeResolveQueue: Type[], autoDropSet: Set<string>): CStru
   let output: CStruct[] = [];
   while (typeResolveQueue.length != 0) {
     let type = typeResolveQueue.shift()!;
-    typeTreeRecur(type, new Set(), alreadyGenned, output, autoDropSet, typeResolveQueue);
+    typeTreeRecur(type, new Set(), alreadyGenned, output, autoDropSet, typeResolveQueue, false);
   }
 
   return output;
