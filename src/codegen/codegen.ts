@@ -55,7 +55,7 @@ function codegen(prog: Program): OutputFile[] {
   chadDotC += '\n#include "chad.h"';
   chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
   chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %ld: %s\\n", file, line, message); \nexit(-1); \n}'
-  chadDotC += 'int initRuntime(int amt);';
+  // chadDotC += 'int initRuntime(int amt);';
 
   let cstructMap: Map<string, CStruct> = new Map();
 
@@ -109,9 +109,9 @@ function codegen(prog: Program): OutputFile[] {
 
   chadDotC +=
   `
-  int main() {
-  initRuntime(0);
-  ${ codeGenType(createRes(VOID, ERR)) } result = ${entryName}();
+  int main(int argc, char** argv) {
+  int64_t argcCast = argc;
+  ${ codeGenType(createRes(VOID, ERR)) } result = ${entryName}(&argcCast, &argv);
   if (result.tag == 1) {
     fprintf(stderr, "%s\\n", result._val1._message._base);
   }
@@ -336,6 +336,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
 
   let instText;
   let inst = insts[instIndex];
+
   if (inst.tag == 'declare') {
     let type = inst.val.type;
     ctx.vars.push([type, '_' + inst.val.name]);
@@ -395,7 +396,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   }
   else if (inst.tag == 'while') {
     addInst.before.push(`while (true) {`);
-    let bodyText = '';
+    let bodyText = codeGenBody(inst.val.body, indent + 1, false, false, ctx);
     let condName = codeGenExpr(inst.val.cond, addInst, ctx, inst.position);
     bodyText += `if (!${condName}) break;\n`
     instText = bodyText + `${tabs}}`;
@@ -579,7 +580,7 @@ function codeGenExpr(
     exprText = codeGenStructInit(expr, addInst, ctx, position);
   } 
   else if (expr.tag == 'list_init') {
-    if (expr.type.tag != 'struct' || expr.type.val.id != 'std/core.Arr') {
+    if (expr.type.tag != 'struct' || expr.type.val.id != 'std/core.Vec') {
       return 'undefined';
     }
 
@@ -700,7 +701,7 @@ function codeGenCp(
     return;
   }
 
-  if (type.tag == 'struct' && type.val.id == 'std/core.Arr') {
+  if (type.tag == 'struct' && type.val.id == 'std/core.Vec') {
     let arrReserve = reserveVarNoStack(ctx);
     let size = `${srcPrefix}._len * sizeof(${codeGenType(type.val.generics[0])})`;
     addInst.after.push(`void* ${arrReserve} = malloc(${size});`);
@@ -1015,14 +1016,14 @@ function codeGenTypeInfo(structs: CStruct[]): string {
         continue;
       }
 
-      if (id == 'std/core.Arr') {
+      if (id == 'std/core.Vec') {
         let inner = type.val.generics[0];
         if (inner.tag == 'enum' && inner.val.id == 'std/core.Type') {
           continue;
         }
       }
 
-      if (id == 'std/core.Arr') {
+      if (id == 'std/core.Vec') {
         let inner = type.val.generics[0];
         if (inner.tag == 'struct' && inner.val.id == 'std/core.TypeField') {
           continue;

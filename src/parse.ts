@@ -1083,7 +1083,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
   else if (keyword == 'continue') {
     return { tag: 'continue', position: line.position }
   }
-  else if (keyword == 'return') {
+  else if (keyword == 'ret') {
     if (tokens.length == 1) {
       return { tag: 'return_void', position: line.position };
     }
@@ -1097,12 +1097,18 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     return { tag: 'return', val: expr, position: line.position  };
   } 
 
-  let expression = tryParseExpr(tokens, line.position);
-  if (expression != null) {
-    return { tag: 'expr', val: expression, position: line.position };
+  if (!tokens.find(x => x.val == '++=')) {
+    let expression = tryParseExpr(tokens, line.position);
+    if (expression != null) {
+      return { tag: 'expr', val: expression, position: line.position };
+    }
   }
 
-  if (!tokens.find(x => x.val == '=') && !tokens.find(x => x.val == '+=') && !tokens.find(x => x.val == '-=')) {
+  if (!tokens.find(x => x.val == '=') 
+    && !tokens.find(x => x.val == '+=') 
+    && !tokens.find(x => x.val == '-=')
+    && !tokens.find(x => x.val == '++=')) {
+
     let type = tryParseType(tokens.slice(0, -1));
     let name = tokens[tokens.length - 1].val;
     if (tokens.length > 1 && type != null) {
@@ -1112,10 +1118,12 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
   }
 
   let assignOp: string = '='; 
-  if (tokens.find(x => x.val == '+=')) {
-    assignOp = '+=';
+  if (tokens.find(x => x.val == '++=')) {
+    assignOp = '++=';
   } else if (tokens.find(x => x.val == '-=')) {
     assignOp = '-=';
+  } else if (tokens.find(x => x.val == '+=')) {
+    assignOp = '+=';
   }
 
   let splits = balancedSplitTwo(tokens, assignOp);
@@ -1537,7 +1545,7 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
   // split tokens based on special characters
   let tokens: Token[] = [];
   let tokenStart = 0;
-  const splitTokens = [' ', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^', '|'];
+  const splitTokens = [' ', '+', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^', '|'];
   for (let i = 0; i < line.length; i++) {
     // process string as a single token
     if (line[i] == '"') {
@@ -1618,6 +1626,10 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
     if (tokens[i - 1].val == '!' && tokens[i].val == '=') {
       tokens.splice(i, 1);
       tokens[i - 1].val = '!=';
+    }
+    else if (i > 1 && tokens[i - 2].val == '+' && tokens[i - 1].val == '+' && tokens[i].val == '=') {
+      tokens.splice(i - 1, 2);
+      tokens[i - 2].val = '++=';
     }
     else if (tokens[i].val == '=' && (tokens[i - 1].val == '>' || tokens[i - 1].val == '<'
       || tokens[i - 1].val == '+' || tokens[i - 1].val == '-' || tokens[i - 1].val == '=')) {

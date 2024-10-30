@@ -836,7 +836,7 @@ function analyzeInst(
       return null;
     }
 
-    if (inst.val.op == '+=' && Type.typeApplicable(to.type, Type.STR_BUF, false)) {
+    if (inst.val.op == '++=' && Type.typeApplicable(to.type, Type.STR_BUF, false)) {
       let expr = ensureExprValid(inst.val.expr, null, table, scope, inst.position);
       if (expr == null) {
         return null;
@@ -894,7 +894,7 @@ function analyzeInst(
       };
     }
 
-    if (inst.val.op == '+=' && to.type.tag != 'primative') {
+    if (inst.val.op == '++=' && to.type.tag != 'primative') {
       let expr = ensureExprValid(inst.val.expr, null, table, scope, inst.position);
       if (expr == null) {
         return null;
@@ -945,7 +945,6 @@ function analyzeInst(
       return null;
     }
 
-    // += on strbuf
     if (inst.val.op == '+=' || inst.val.op == '-=') {
       if (Type.canMath(to.type, expr.type, table) == null) {
         logError(inst.position, inst.val.op + ` is not supported on type ${Type.toStr(to.type)}`);
@@ -2114,7 +2113,7 @@ function ensureExprValid(
   if (expr.tag == 'list_init') {
     // determine what should be the type of the inner values
     let exprType: Type.Type | null = null;
-    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.id == 'std/core.Arr') {
+    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.id == 'std/core.Vec') {
       let ptrType = expectedReturn.val.fields[0].type;
       if (ptrType.tag != 'ptr') {
         compilerError('expected ptr field');

@@ -168,7 +168,7 @@ function createList(genericType: Type): Type {
         { visibility: 'get', name: 'capacity', type: INT, recursive: false }
       ],
       generics: [genericType],
-      id: 'std/core.Arr',
+      id: 'std/core.Vec',
       unit: 'std/core'
     }
   }
@@ -194,7 +194,7 @@ function isComplex(type: Type): boolean {
     return true;
   }
   if (type.tag == 'struct' || type.tag == 'enum') {
-    if (type.val.id == 'std/core.Arr') {
+    if (type.val.id == 'std/core.Vec') {
       return true;
     }
     for (let field of type.val.fields) {
@@ -533,7 +533,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
     return { tag: 'default', returnType: struct.val };
   }
   else if (struct.tag == 'struct' && isInt(index)) {
-    if (struct.val.id == 'std/core.Arr') {
+    if (struct.val.id == 'std/core.Vec') {
       return { tag: 'default', returnType: struct.val.generics[0] };
     }
     if (struct.val.id == 'std/core.str') {
@@ -544,7 +544,7 @@ function canGetIndex(struct: Type, index: Type, refTable: RefTable): OperatorRes
     }
   }
   else if (struct.tag == 'struct' && index.tag == 'struct' && index.val.id == 'std/core.range') {
-    if (struct.val.id == 'std/core.Arr') {
+    if (struct.val.id == 'std/core.Vec') {
       return { tag: 'default', returnType: struct.val.generics[0] };
     }
     if (struct.val.id == 'std/core.str') {
@@ -574,7 +574,7 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
     return { tag: 'default', returnType: struct.val };
   }
   else if (struct.tag == 'struct' && isInt(index)) {
-    if (struct.val.id == 'std/core.Arr') {
+    if (struct.val.id == 'std/core.Vec') {
       return { tag: 'default', returnType: struct.val.generics[0] };
     }
     if (struct.val.id == 'std/core.Fmt') {
@@ -582,7 +582,7 @@ function canSetIndex(struct: Type, index: Type, exprType: Type, refTable: RefTab
     }
   }
   else if (struct.tag == 'struct' && index.tag == 'struct' && index.val.id == 'std/core.range') {
-    if (struct.val.id == 'std/core.Arr') {
+    if (struct.val.id == 'std/core.Vec') {
       return { tag: 'default', returnType: struct };
     }
     if (struct.val.id == 'std/core.Fmt') {

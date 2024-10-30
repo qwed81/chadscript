@@ -2,7 +2,7 @@ struct err
   str message
 
 fn err(str message) err
-  return { message = message }
+  ret { message = message }
 
 enum TypeUnion[T, K]
   T val0
@@ -16,13 +16,13 @@ struct range
 fn next(&range r) *int
   r.output = r.start
   if r.start == r.end
-    return nil
+    ret nil
   r.start += 1
-  return &r.output
+  ret &r.output
 
 ##
 fn rev(range r) revRange
-  return { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
+  ret { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
 
 struct revRange
   int start
@@ -32,49 +32,46 @@ struct revRange
 fn next(&revRange r) *int
   int thisIndex = r.start
   if r.start == r.end
-    return nil
+    ret nil
   r.start -= 1
-  return thisIndex
+  ret thisIndex
 ##
 
 fn alloc(int amt) *T
   *T output
   include
     _output = malloc(sizeof($(T)) * *_amt);
-  return output
+  ret output
 
 fn null() *T
   include
-    return NULL;
-  return null()
+    ret NULL;
+  ret null()
 
 fn ptrCast(*S input) *E
   include
-    return ($(*E))(*_input);
-  return ptrCast(input)
+    ret ($(*E))(*_input);
+  ret ptrCast(input)
 
-struct Arr[T]
+struct Vec[T]
   get *T base
   get int capacity
   get int len
 
-fn arr() Arr[T]
-  return { base = alloc(4), capacity = 4, len = 0 }
+fn vec(int amt) Vec[T]
+  ret { base = alloc(amt), capacity = amt, len = amt }
 
-fn arr(int amt) Arr[T]
-  return { base = alloc(amt), capacity = amt, len = amt }
-
-fn str(Arr[T] l, str(T) strImpl=str) str
+fn str(Vec[T] l, str(T) strImpl=str) str
   Fmt buf = fmt()
-  buf += "["
+  buf ++= "["
   for i in 0:l.len
-    buf += strImpl(l[i])
+    buf ++= strImpl(l[i])
     if i != l.len - 1
-      buf += ','
-  buf += ']'
-  return str(buf)
+      buf ++= ','
+  buf ++= ']'
+  ret str(buf)
 
-fn append(&Arr[T] l, T val)
+fn append(&Vec[T] l, T val)
   if l.len == l.capacity
     *T newAlloc = alloc(l.capacity * 2)
 
@@ -86,37 +83,37 @@ fn append(&Arr[T] l, T val)
   l.base[l.len] = cp val
   l.len += 1
 
-fn append(&Arr[T] to, Arr[T] from)
+fn append(&Vec[T] to, Vec[T] from)
   for i in 0:from.len
-    to += from[i]
+    to ++= from[i]
 
 struct str
   get *char base
   get int len
 
 fn str(str s) str
-  return s
+  ret s
 
 fn eq(str a, str b) bool
   if a.len != b.len
-    return false
+    ret false
   for i in 0:a.len
     if a[i] != b[i]
-      return false
-  return true
+      ret false
+  ret true
 
 fn cstr(str s) *char
   *char cstr = alloc(s.len + 1)
   for i in 0:s.len
     cstr[i] = s[i]
   cstr[s.len] = '\0'
-  return cstr
+  ret cstr
 
-fn split(str s) Arr[str]
-  return split(s, ' ')
+fn split(str s) Vec[str]
+  ret split(s, ' ')
 
-fn split(str s, char c) Arr[str]
-  Arr[str] output = []
+fn split(str s, char c) Vec[str]
+  Vec[str] output = []
 
   int end = 0
   int start = 0
@@ -124,29 +121,29 @@ fn split(str s, char c) Arr[str]
     if end >= s.len 
       break
     if s[end] == c
-      output += s[start:end]
+      output ++= s[start:end]
       start = end + 1
     end += 1
-  output += s[start:s.len]
-  return output
+  output ++= s[start:s.len]
+  ret output
 
 fn trim(str s) str
-  return ""
+  ret ""
 
 fn contains(str s, str inner) bool
-  return false
+  ret false
 
 fn startsWith(str s, str start) bool
-  return false
+  ret false
 
 fn endsWith(str s, str end) bool
-  return false
+  ret false
 
 fn indexOf(str s, str inner) int|nil
-  return nil
+  ret nil
 
 fn lastIndexOf(str s, str inner) int|nil
-  return nil
+  ret nil
 
 struct Fmt
   get *char base
@@ -154,36 +151,36 @@ struct Fmt
   get int len
 
 fn fmt() Fmt
-  return { base = alloc(8), capacity = 8, len = 0 }
+  ret { base = alloc(8), capacity = 8, len = 0 }
 
 fn fmt(int size) Fmt
-  return { base = alloc(size), capacity = size, len = size }
+  ret { base = alloc(size), capacity = size, len = size }
 
 fn clone(Fmt buf) Fmt
   *char newBase = alloc(buf.len)
   for i in 0:buf.len
     newBase[i] = buf[i]
-  return { base = newBase, capacity = buf.len, len = buf.len }
+  ret { base = newBase, capacity = buf.len, len = buf.len }
 
-fn fromUtf8(Arr[u8] bytes) Fmt
+fn fromUtf8(Vec[u8] bytes) Fmt
   Fmt buf = fmt(bytes.len)
   for i in 0:bytes.len
     buf[i] = char(bytes[i])
-  return buf
+  ret buf
 
-fn toUtf8(Fmt buf) Arr[u8]
-  Arr[u8] bytes = arr(buf.len)
+fn toUtf8(Fmt buf) Vec[u8]
+  Vec[u8] bytes = vec(buf.len)
   for i in 0:buf.len
     bytes[i] = u8(buf[i])
-  return bytes
+  ret bytes
 
 fn fmt(str start) Fmt
   Fmt buf = fmt()
   append(buf, start)
-  return buf
+  ret buf
 
 fn str(Fmt buf) str
-  return { base = buf.base, len = buf.len }
+  ret { base = buf.base, len = buf.len }
 
 fn appendOne(&Fmt s, char c)
   if s.len == s.capacity
@@ -212,13 +209,13 @@ struct BST[T]
 
 fn rand(int start, int end) int
   include
-    return (*_end - *_start) * ((double)rand() / (double)RAND_MAX) + *_start;
-  return 0
+    ret (*_end - *_start) * ((double)rand() / (double)RAND_MAX) + *_start;
+  ret 0
 
 fn rand() f64
   include
-    return ((double)rand() / (double)RAND_MAX);
-  return 0.0
+    ret ((double)rand() / (double)RAND_MAX);
+  ret 0.0
 
 fn str(int val) str
   int len
@@ -228,7 +225,7 @@ fn str(int val) str
   *char output = alloc(len + 1)
   include
     snprintf(_output, _len + 1, "%ld", *_val);
-  return { base = output, len = len }
+  ret { base = output, len = len }
 
 fn str(f64 val) str
   int len
@@ -238,7 +235,7 @@ fn str(f64 val) str
   *char output = alloc(len + 1)
   include
     snprintf(_output, _len + 1, "%lf", *_val);
-  return { base = output, len = len }
+  ret { base = output, len = len }
   
 fn print(T val, str(T) strImpl=str) 
   *char printStr = cstr(strImpl(val))
@@ -248,27 +245,17 @@ fn print(T val, str(T) strImpl=str)
 fn str(char val) str
   Fmt buf = fmt(1)
   buf[0] = val
-  return str(buf)
-
-fn char(u8 val) char
-  include 
-    return (char)(*_val);
-  return '\0'
-
-fn u8(char val) u8
-  include 
-    return (uint8_t)(*_val);
-  return 0
+  ret str(buf)
 
 struct Scanner[T]
-  Arr[u8] buf
+  Vec[u8] buf
   T stream
-  TypeUnion[int, err](T, Arr[u8]) readBytes
+  TypeUnion[int, err](T, Vec[u8]) readBytes
   int amtInBuf
   int i
 
-fn scanner(T stream, TypeUnion[int, err](T, Arr[u8]) r=read) Scanner[T]
-  return { buf = arr(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
+fn scanner(T stream, TypeUnion[int, err](T, Vec[u8]) r=read) Scanner[T]
+  ret { buf = vec(1024), stream = mv stream, readBytes = r, amtInBuf = 0, i = 0 }
 
 fn nextLine(&Scanner[T] scanner) str|err
   Fmt output = fmt()
@@ -278,22 +265,22 @@ fn nextLine(&Scanner[T] scanner) str|err
       scanner.amtInBuf = try scanner.readBytes(scanner.stream, scanner.buf)
       scanner.i = 0
     if scanner.amtInBuf == 0
-      return err("no next element")
-    output += char(scanner.buf[scanner.i])
+      ret err("no next element")
+    output ++= char(scanner.buf[scanner.i])
     scanner.i += 1
     if scanner.buf[scanner.i] == u8('\n')
       break
 
-  return str(output)
+  ret str(output)
 
 fn str(i32 val) str
-  return str(int(val))
+  ret str(int(val))
 
 fn input(str output) int|err
   C.printf(cstr("%s"), cstr(output))
   int val = 0
   C.scanf(cstr("%ld"), &val)
-  return val
+  ret val
 
 enum Type
   str Basic
@@ -303,7 +290,7 @@ enum Type
   *TypeStruct Enum
 
 struct TypeFn
-  get Arr[Type] params
+  get Vec[Type] params
   get Type retType
   get str name
 
@@ -312,5 +299,5 @@ struct TypeField
   get Type type
 
 struct TypeStruct
-  get Arr[TypeField] fields
+  get Vec[TypeField] fields
   get str name
