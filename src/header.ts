@@ -119,6 +119,7 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     }
     else if (child.kind == 'TypedefDecl') {
       let typeDefType = parseCType(child.type.qualType, structTypeMap);
+      structTypeMap.set(child.name, typeDefType);
       symbols.typeDefs.push({
         name: child.name,
         type: typeDefType
@@ -220,7 +221,7 @@ function splitLastParen(input: string): [string, string] {
 
     if (numOpen == 0) {
       let insideParen = input.slice(i + 1, input.length - 1);
-      let outsideParen = input.slice(0, i - 1);
+      let outsideParen = input.slice(0, i);
       return [outsideParen, insideParen]
     }
   }
@@ -302,7 +303,7 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
   }
 
   if (type.endsWith('*')) {
-    let innerType = parseCType(type.slice(0, type.length - 1), structTypeMap);
+    let innerType = parseCType(type.slice(0, -1), structTypeMap);
     return { tag: 'ptr', val: innerType };
   }
 
@@ -330,14 +331,23 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
   else if (type == 'void') {
     return VOID;
   }
+  else if (type == 'size_t') {
+    return { tag: 'primative', val: 'u64' };
+  }
 
   let thisStruct: Type | undefined = structTypeMap.get(type);
   if (thisStruct != undefined) {
     return thisStruct;
   }
 
-  // console.log(type);
-
-  return VOID;
+  return {
+    tag: 'struct',
+    val: {
+      fields: [],
+      id: type,
+      unit: 'extern',
+      generics: []
+    }
+  }
 }
 

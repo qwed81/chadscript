@@ -1133,6 +1133,7 @@ function resolveFn(
 
   if (wrongTypeFns.length > 0) {
     if (calleePosition != null) {
+
       logError(calleePosition, 'function does not match type signature');
     }
     return null;
