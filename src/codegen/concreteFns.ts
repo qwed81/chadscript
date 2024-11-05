@@ -1,195 +1,127 @@
-import { Program, Fn, Inst, Expr, LeftExpr, Const } from '../analyze/analyze';
-import { logError, compilerError, NULL_POS } from '../util';
-import { ProgramUnit } from '../parse';
-import {
-  Type, typeApplicableStateful, applyGenericMap, 
-  getFnNamedParams, RefTable, resolveFn as typeResolveFn, typeApplicable,
-  INT, VOID, getUnitReferences, TYPE, toStr
-} from '../analyze/types';
-import { ensureExprValid, FnContext, newScope } from '../analyze/analyze';
+import { FnImpl, Inst, Expr, LeftExpr } from '../analyze/analyze';
+import { compilerError } from '../util';
+import { Type, serializeType, applyGenericMap, NIL, typeApplicableStateful } from '../typeload';
 
 export {
-  replaceGenerics, CProgram, CFn, CStruct
+  replaceGenerics, Program
 }
 
-interface CProgram {
+interface Program {
   includes: string[]
-  fns: CFn[]
-  consts: Const[]
-  strTable: string[]
-  orderedStructs: CStruct[]
-  entry: CFn
+  fns: FnImpl[]
+  orderedTypes: Type[]
+  entry: FnImpl
 }
 
-type CStruct = { tag: 'fn', val: Type }
-  | { tag: 'struct', val: CStructImpl, autoDrop: boolean }
-  | { tag: 'enum', val: CStructImpl }
-
-interface CStructImpl {
-  name: Type
-  fieldTypes: Type[],
-  fieldNames: string[]
+interface FnKey {
+  name: string,
+  unit: string,
+  // serializeType
+  type: string 
 }
 
-interface CFn {
-  name: string
-  genericMap: Map<string, Type>
-  unitName: string
-  type: Type
-  paramNames: string[]
-  body: Inst[]
+interface FnSet {
+  // maps via serializeType(type)
+  types: Map<string, Type>,
+  // maps via json(FnKey)
+  fns: Map<string, FnImpl>
 }
 
-interface NeedResolveFn {
-  fnName: string,
-  unitName: string,
-  fnRefTable: RefTable,
-  fnType: Type
-}
-
-interface ResolveContext {
-  allFns: Fn[],
-  fnResolveQueue: NeedResolveFn[],
-  queuedFns: Set<string>
-  typeResolveQueue: Type[]
-  queuedTypes: Set<string>,
-  // tells if the type with a key string has a manual reference count impl
-  autoDropSet: Set<string>
-  allUnits: ProgramUnit[]
-}
-
-function replaceGenerics(prog: Program, mainFn: Fn): CProgram {
-  let ctx: ResolveContext = {
-    allFns: prog.fns,
-    autoDropSet: new Set(),
-    fnResolveQueue: [],
-    queuedFns: new Set(),
-    typeResolveQueue: [],
-    queuedTypes: new Set(),
-    allUnits: prog.fns[0].refTable.allUnits
+function replaceGenerics(prog: Program, mainFn: FnImpl): Program {
+  let fnSet: FnSet = {
+    types: new Map(),
+    fns: new Map()
   };
 
-  let entry: CFn = resolveFn(mainFn, new Map(), ctx);
-
-  let resolved: CFn[] = [];
-  resolved.push(entry);
-
-  while (ctx.fnResolveQueue.length > 0) {
-    let dep = ctx.fnResolveQueue.pop()!;
-    let genericMap: Map<string, Type>;
-    let selectedIndex = -1;
-
-    // find which function its referencing
-    for (let i = 0; i < prog.fns.length; i++) {
-      let map: Map<string, Type> = new Map();
-      if (prog.fns[i].name == dep.fnName && prog.fns[i].unitName == dep.unitName) {
-        if (typeApplicableStateful(dep.fnType, prog.fns[i].type, map, true)) {
-          genericMap = map;
-          selectedIndex = i;
-          break;
-        }
-      }
-    }
-
-    let fnToResolve: Fn;
-    // this is the default fn
-    if (selectedIndex == -1) {
-      if (dep.fnType.tag != 'fn') {
-        compilerError('type should always be fn')
-        continue;
-      }
-      
-      let scope: FnContext = newScope(dep.fnType.val.returnType, new Set(), []);
-      let defaultFn = createDefaultFn(dep, dep.fnRefTable, scope);
-      if (defaultFn == null) {
-        continue;
-      }
-      fnToResolve = defaultFn;
-    }
-    else {
-      fnToResolve = prog.fns[selectedIndex]
-    }
-
-    let cFn = resolveFn(fnToResolve, genericMap!, ctx);
-    resolved.push(cFn);
-  }
-
-  let orderedStructs = orderStructs(ctx.typeResolveQueue, ctx.autoDropSet);
+  let entry = monomorphizeFn(mainFn, fnSet, new Map());
+  let orderedTypes = orderTypes(Array.from(fnSet.types.values()));
   return {
-    orderedStructs,
+    orderedTypes,
     includes: prog.includes,
-    consts: prog.consts,
-    fns: resolved,
-    strTable: prog.strTable,
-    entry 
+    fns: Array.from(fnSet.fns.values()),
+    entry
   };
 }
 
-function queueType(ctx: ResolveContext, type: Type) {
-  let key = toStr(type);
-  if (ctx.queuedTypes.has(key)) {
+function shouldResolveFn(
+  set: FnSet,
+  name: string,
+  unit: string,
+  type: Type
+): boolean {
+  let keyProps: FnKey = { name, unit, type: serializeType(type) };
+  let key = JSON.stringify(keyProps);
+  return set.fns.has(key);
+}
+
+function getFn(
+  set: FnSet,
+  name: string,
+  unit: string,
+  type: Type
+): FnImpl {
+  let keyProps: FnKey = { name, unit, type: serializeType(type) };
+  let key = JSON.stringify(keyProps);
+  return set.fns.get(key)!;
+}
+
+function addType(set: FnSet, type: Type) {
+  let key = serializeType(type);
+  if (set.types.has(key)) {
     return;
   }
+  set.types.set(key, type);
 
   // have to queue all the types recursively so that resolveManualRefCount
   // can be called prior to ordering structs
-  if (type.tag == 'struct' || type.tag == 'enum') {
+  if (type.tag == 'struct') {
     for (let i = 0; i < type.val.fields.length; i++) {
-      if (type.val.fields[i].recursive) {
-        continue;
-      }
-      queueType(ctx, type.val.fields[i].type);
+      addType(set, type.val.fields[i].type);
     }
   }
   else if (type.tag == 'fn') {
-    for (let i = 0; i < type.val.paramTypes.length; i++) {
-      queueType(ctx, type.val.paramTypes[i]);
+    for (let i = 0; i < type.paramTypes.length; i++) {
+      addType(set, type.paramTypes[i]);
     }
-    queueType(ctx, type.val.returnType);
-  }
-
-  let isCounted = resolveManualRefCountImpl(type, ctx);
-  ctx.typeResolveQueue.push(type);
-  ctx.queuedTypes.add(key);
-  if (isCounted) {
-    ctx.autoDropSet.add(key);
+    addType(set, type.returnType);
   }
 }
 
-function resolveFn(
-  genericFn: Fn,
+function monomorphizeFn(
+  genericFn: FnImpl,
+  set: FnSet,
   genericMap: Map<string, Type>,
-  ctx: ResolveContext
-): CFn {
-  let newType = applyGenericMap(genericFn.type, genericMap);
-  if (newType.tag != 'fn') {
-    return undefined!;
+): FnImpl {
+  let paramTypes: Type[] = [];
+  for (let param of genericFn.header.paramTypes) {
+    let newParam = applyGenericMap(param, genericMap);
+    addType(set, newParam);
+    paramTypes.push(newParam);
   }
+  let retType = applyGenericMap(genericFn.header.returnType, genericMap);
+  addType(set, retType);
 
-  for (let type of newType.val.paramTypes) {
-    queueType(ctx, type);
-  }
-  queueType(ctx, newType.val.returnType)
-
-  let body: Inst[] = resolveInstBody(genericFn.body, genericMap, ctx);
+  let body = resolveInstBody(genericFn.body, set, genericMap);
   return {
-    name: genericFn.name,
-    paramNames: genericFn.paramNames,
-    genericMap,
-    unitName: genericFn.unitName,
-    type: newType,
+    header: {
+      returnType: retType,
+      paramTypes,
+      name: genericFn.header.name,
+      unit: genericFn.header.unit,
+      mode: genericFn.header.mode
+    },
     body
   };
 }
 
 function resolveInstBody(
   body: Inst[],
+  set: FnSet,
   genericMap: Map<string, Type>,
-  ctx: ResolveContext
 ): Inst[] {
   let resolvedBody: Inst[] = [];
   for (let inst of body) {
-    let resolvedInst = resolveInst(inst, genericMap, ctx);
+    let resolvedInst = resolveInst(inst, set, genericMap);
     resolvedBody.push(resolvedInst);
   }
   return resolvedBody;
@@ -197,36 +129,31 @@ function resolveInstBody(
 
 function resolveInst(
   inst: Inst,
+  set: FnSet,
   genericMap: Map<string, Type>,
-  ctx: ResolveContext
 ): Inst {
   if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
-    let cond = resolveExpr(inst.val.cond, genericMap, ctx);
-    let body = resolveInstBody(inst.val.body, genericMap, ctx);
+    let cond = resolveExpr(inst.val.cond, set, genericMap);
+    let body = resolveInstBody(inst.val.body, set, genericMap);
     return { tag: inst.tag, val: { cond, body }, position: inst.position };
   }
   else if (inst.tag == 'else') {
-    let body = resolveInstBody(inst.val, genericMap, ctx);
+    let body = resolveInstBody(inst.val, set, genericMap);
     return { tag: 'else', val: body, position: inst.position };
   }
-  else if (inst.tag == 'arena') {
-    let body = resolveInstBody(inst.val, genericMap, ctx);
-    return { tag: 'arena', val: body, position: inst.position };
-  }
   else if (inst.tag == 'for_in') {
-    let body = resolveInstBody(inst.val.body, genericMap, ctx);
-    let iter = resolveExpr(inst.val.iter, genericMap, ctx);
-    let nextFn = resolveLeftExpr(inst.val.nextFn, genericMap, ctx);
-    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter, nextFn }, position: inst.position };
+    let body = resolveInstBody(inst.val.body, set, genericMap);
+    let iter = resolveExpr(inst.val.iter, set, genericMap);
+    return { tag: 'for_in', val: { varName: inst.val.varName, body, iter }, position: inst.position };
   }
   else if (inst.tag == 'return') {
     if (inst.val != null) {
-      return { tag: 'return', val: resolveExpr(inst.val, genericMap, ctx), position: inst.position };
+      return { tag: 'return', val: resolveExpr(inst.val, set, genericMap), position: inst.position };
     }
     return inst;
   }
   else if (inst.tag == 'expr') {
-    let val = resolveExpr(inst.val, genericMap, ctx);
+    let val = resolveExpr(inst.val, set, genericMap);
     return { tag: 'expr', val, position: inst.position };
   }
   else if (inst.tag == 'break' || inst.tag == 'continue') {
@@ -234,16 +161,16 @@ function resolveInst(
   }
   else if (inst.tag == 'declare') {
     let type = applyGenericMap(inst.val.type, genericMap);
-    queueType(ctx, type);
+    addType(set, type);
     if (inst.val.expr != null) {
-      let expr = resolveExpr(inst.val.expr, genericMap, ctx);
+      let expr = resolveExpr(inst.val.expr, set, genericMap);
       return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
     } 
     return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, position: inst.position }
   }
   else if (inst.tag == 'assign') {
-    let expr = resolveExpr(inst.val.expr, genericMap, ctx);
-    let to = resolveLeftExpr(inst.val.to, genericMap, ctx);
+    let expr = resolveExpr(inst.val.expr, set, genericMap);
+    let to = resolveLeftExpr(inst.val.to, set, genericMap);
     return { tag: 'assign', val: { op: inst.val.op, to, expr }, position: inst.position };
   }
   else if (inst.tag == 'include') {
@@ -258,58 +185,24 @@ function resolveInst(
   return undefined!;
 }
 
-function addFnToResolve(ctx: ResolveContext, fnName: string, unitName: string, fnType: Type, refTable: RefTable) {
-  if (fnType.tag != 'fn') {
-    compilerError('expected fn type');
-    return undefined;
-  }
-  for (let i = 0; i < fnType.val.linkedParams.length; i++) {
-    fnType.val.linkedParams[i] = true;
-  }
-
-  // set a blank refTable to create proper key
-  let newLeftExpr: LeftExpr = {
-    tag: 'fn',
-    fnName,
-    unitName,
-    type: fnType,
-    refTable: undefined!, 
-    extern: false
-  };
-  let key = JSON.stringify(newLeftExpr);
-  // set the refTable back so its valid
-  newLeftExpr.refTable = refTable;
-
-  if (!ctx.queuedFns.has(key)) {
-    ctx.fnResolveQueue.push({ fnName, unitName, fnType, fnRefTable: refTable });
-    ctx.queuedFns.add(key);
-  }
-  return newLeftExpr;
-}
-
 function resolveExpr(
   expr: Expr,
+  set: FnSet,
   genericMap: Map<string, Type>,
-  ctx: ResolveContext
 ): Expr {
-  if (expr.tag == 'resolve') {
-    return resolveExpr(expr.val, genericMap, ctx);
-  }
-  else if (expr.tag == 'bin') {
-    let left = resolveExpr(expr.val.left, genericMap, ctx);
-    let right = resolveExpr(expr.val.right, genericMap, ctx);
+  if (expr.tag == 'bin') {
+    let left = resolveExpr(expr.val.left, set, genericMap);
+    let right = resolveExpr(expr.val.right, set, genericMap);
     let type = applyGenericMap(expr.type, genericMap);
     return { tag: 'bin', val: { op: expr.val.op, left, right }, type };
   }
   else if (expr.tag == 'is') {
-    let left = resolveLeftExpr(expr.left, genericMap, ctx);
+    let left = resolveLeftExpr(expr.left, set, genericMap);
     return { tag: 'is', left, variant: expr.variant, variantIndex: expr.variantIndex, type: expr.type };
   }
-  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert'
-    || expr.tag == 'assert_bool' || expr.tag == 'cp' || expr.tag == 'mv'
-    || expr.tag == 'cast') {
+  else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert' || expr.tag == 'cast') {
 
-    let inner = resolveExpr(expr.val, genericMap, ctx);
+    let inner = resolveExpr(expr.val, set, genericMap);
     let type = applyGenericMap(expr.type, genericMap);
     if (expr.tag == 'not') {
       return { tag: expr.tag, val: inner, type };
@@ -321,61 +214,26 @@ function resolveExpr(
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'assert') {
-      return { tag: expr.tag, val: inner, type };
-    }
-    else if (expr.tag == 'assert_bool') {
       return { tag: expr.tag, val: inner, type};
     }
-    else if (expr.tag == 'cp') {
-      return { tag: 'cp', val: inner, type };
-    }
-    else if (expr.tag == 'mv') {
-      return { tag: 'mv', val: inner, type }
-    }
-  }
-  else if (expr.tag == 'typeof') {
-    let newType = applyGenericMap(expr.val, genericMap);
-    queueType(ctx, newType);
-    return { tag: 'typeof', val: newType, type: TYPE() }
   }
   else if (expr.tag == 'nil_const') {
-    return { tag: 'nil_const', type: VOID };
+    return { tag: 'nil_const', type: NIL };
   }
   else if (expr.tag == 'fn_call') {
-    let fn = resolveLeftExpr(expr.val.fn, genericMap, ctx);
-
+    let fn = resolveLeftExpr(expr.val.fn, set, genericMap);
     let exprs: Expr[] = [];
-    let lookupRequired = false;
     for (let param of expr.val.exprs) {
-      if (param.tag == 'resolve') {
-        lookupRequired = true;
-      }
-      exprs.push(resolveExpr(param, genericMap, ctx));
+      exprs.push(resolveExpr(param, set, genericMap));
     }
 
     let returnType = applyGenericMap(expr.type, genericMap);
-    if (lookupRequired && fn.tag == 'fn') {
-      let paramTypes = exprs.map(x => x.type);
-      let resolvedFn = typeResolveFn(
-        fn.fnName,
-        null,
-        returnType,
-        paramTypes,
-        null,
-        null
-      );
-
-      if (resolvedFn == null) {
-        logError(NULL_POS, 'could not find function with resolved type');
-      }
-    }
-
     return { tag: 'fn_call', val: { fn, exprs }, type: returnType };
   }
   else if (expr.tag == 'list_init') {
     let exprs: Expr[] = [];
     for (let e of expr.val) {
-      let res = resolveExpr(e, genericMap, ctx);
+      let res = resolveExpr(e, set, genericMap);
       exprs.push(res);
     }
 
@@ -385,7 +243,7 @@ function resolveExpr(
   else if (expr.tag == 'struct_init') {
     let inits = [];
     for (let init of expr.val) {
-      let initExpr = resolveExpr(init.expr, genericMap, ctx);
+      let initExpr = resolveExpr(init.expr, set, genericMap);
       inits.push({ name: init.name, expr: initExpr });
     }
 
@@ -395,29 +253,21 @@ function resolveExpr(
   else if (expr.tag == 'enum_init') {
     let type = applyGenericMap(expr.type, genericMap);
     if (expr.fieldExpr != null) {
-      let fieldExpr = resolveExpr(expr.fieldExpr, genericMap, ctx);
+      let fieldExpr = resolveExpr(expr.fieldExpr, set, genericMap);
       return { tag: 'enum_init', fieldName: expr.fieldName, variantIndex: expr.variantIndex, fieldExpr, type };
     }
     return { tag: 'enum_init', fieldName: expr.fieldName, variantIndex: expr.variantIndex, fieldExpr: null, type };
   }
   else if (expr.tag == 'left_expr') {
-    let val = resolveLeftExpr(expr.val, genericMap, ctx);
+    let val = resolveLeftExpr(expr.val, set, genericMap);
     return { tag: 'left_expr', val, type: val.type };
   }
   else if (expr.tag == 'fmt_str') {
     let resolvedExprs: Expr[] = [];
     for (let val of expr.val) {
-      resolvedExprs.push(resolveExpr(val, genericMap, ctx));
+      resolvedExprs.push(resolveExpr(val, set, genericMap));
     }
     return { tag: 'fmt_str', val: resolvedExprs, type: expr.type };
-  }
-  else if (expr.tag == 'cfn_call') {
-    let resolvedExprs: Expr[] = []
-    for (let val of expr.exprs) {
-      resolvedExprs.push(resolveExpr(val, genericMap, ctx));
-    }
-    let returnType = applyGenericMap(expr.type, genericMap);
-    return { tag: 'cfn_call', type: returnType, exprs: resolvedExprs, fnName: expr.fnName };
   }
   else if (expr.tag == 'char_const'
     || expr.tag == 'int_const'
@@ -428,7 +278,7 @@ function resolveExpr(
     return expr;
   }
   else if (expr.tag == 'ptr') {
-    let val = resolveLeftExpr(expr.val, genericMap, ctx);
+    let val = resolveLeftExpr(expr.val, set, genericMap);
     return { tag: 'ptr', val, type: { tag: 'ptr', val: val.type } };
   }
 
@@ -438,50 +288,47 @@ function resolveExpr(
 
 function resolveLeftExpr(
   leftExpr: LeftExpr,
+  set: FnSet,
   genericMap: Map<string, Type>,
-  ctx: ResolveContext
 ): LeftExpr {
   if (leftExpr.tag == 'dot') {
-    let left = resolveExpr(leftExpr.val.left, genericMap, ctx);
+    let left = resolveExpr(leftExpr.val.left, set, genericMap);
     let type = applyGenericMap(leftExpr.type, genericMap);
     return { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type };
   }
-  else if (leftExpr.tag == 'prime') {
-    let val = resolveExpr(leftExpr.val, genericMap, ctx);
-    return { 
-      tag: 'prime',
-      val,
-      variantIndex: leftExpr.variantIndex,
-      variant: leftExpr.variant,
-      type: applyGenericMap(leftExpr.type, genericMap) 
-    };
-  }
-  else if (leftExpr.tag == 'arr_offset_int') {
-    let index = resolveExpr(leftExpr.val.index, genericMap, ctx);
-    let v = resolveExpr(leftExpr.val.var, genericMap, ctx);
+  else if (leftExpr.tag == 'index') {
+    let index = resolveExpr(leftExpr.val.index, set, genericMap);
+    let v = resolveExpr(leftExpr.val.var, set, genericMap);
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'arr_offset_int', val: { var: v, index }, type };
-  }
-  else if (leftExpr.tag == 'arr_offset_slice') {
-    let range = resolveExpr(leftExpr.val.range, genericMap, ctx);
-    let v = resolveExpr(leftExpr.val.var, genericMap, ctx);
-    let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'arr_offset_slice', val: { var: v, range }, type };
+    return { tag: 'index', val: { var: v, index }, type };
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
     return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type };
   }
   else if (leftExpr.tag == 'fn') {
-    let depType = applyGenericMap(leftExpr.type, genericMap);
-    addFnToResolve(ctx, leftExpr.fnName, leftExpr.unitName, depType, leftExpr.refTable);
+    let impl = shouldResolveFn(set, leftExpr.name, leftExpr.unit, leftExpr.type);
+    let fnType: Type;
+
+    if (impl != null) {
+      fnType = leftExpr.type
+    }
+    else {
+      let fnImpl = getFn(set, leftExpr.name, leftExpr.unit, leftExpr.type);
+      let implType: Type = { tag: 'fn', paramTypes: fnImpl.header.paramTypes, returnType: fnImpl.header.returnType };
+      let newFnGenericMap: Map<string, Type> = new Map();
+      if (!typeApplicableStateful(leftExpr.type, implType, newFnGenericMap, true)) {
+        compilerError('fn should be applicable');
+      }
+      monomorphizeFn(fnImpl, set, newFnGenericMap);
+      fnType = implType;
+    }
+
     let newLeftExpr: LeftExpr = {
       tag: 'fn',
-      type: depType,
-      fnName: leftExpr.fnName,
-      unitName: leftExpr.unitName,
-      refTable: leftExpr.refTable ,
-      extern: leftExpr.extern
+      type: fnType,
+      name: leftExpr.name,
+      unit: leftExpr.unit,
     };
 
     return newLeftExpr;
@@ -491,241 +338,45 @@ function resolveLeftExpr(
   return undefined!;
 }
 
-// the default function is just a function with no named params
-// that calls the template function with the default named params.
-// used for resolve fns
-function createDefaultFn(
-  fnDep: NeedResolveFn,
-  refTable: RefTable,
-  scope: FnContext,
-): Fn | null {
-  if (fnDep.fnType.tag != 'fn') {
-    return null;
-  }
-
-  let returnType: Type = fnDep.fnType.val.returnType;
-  let paramTypes: Type[] = fnDep.fnType.val.paramTypes;
-  let template = typeResolveFn(fnDep.fnName, null, returnType, paramTypes, refTable, NULL_POS);
-  if (template == null) {
-    return null;
-  }
-
-  let namedParams = getFnNamedParams(fnDep.unitName, fnDep.fnName, fnDep.fnType, refTable, NULL_POS);
-  if (namedParams.length == 0) {
-    return null;
-  }
-
-  let defaultParamNames: string[] = [];
-  let defaultLinkedParams: boolean[] = [];
-  let defaultParamTypes: Type[] = [];
-
-  let defaultFnCallExprs: Expr[] = [];
-  if (template.fnType.tag != 'fn') {
-    return null;
-  }
-
-  for (let i = 0; i < template.paramNames.length; i++) {
-    // the default expr can be a valid expr, null, or in the case of a resolve
-    // fn it can be the string function name that should be resolved
-    let defaultExpr: Expr | null | string = null;
-    let paramType: Type | null = null;
-
-    let paramIsNamed = false;
-    for (let j = 0; j < namedParams.length; j++) {
-      if (namedParams[j].name == template.paramNames[i]) {
-        let parseExpr = namedParams[j].expr;
-        if (namedParams[j].type.tag != 'fn' || parseExpr.tag != 'left_expr' || parseExpr.val.tag != 'var') {
-          defaultExpr = ensureExprValid(parseExpr, namedParams[j].type, refTable, scope, NULL_POS);
-          paramType = template.fnType.val.paramTypes[i];
-        }
-        else {
-          defaultExpr = parseExpr.val.val; // the resolve string
-          paramType = template.fnType.val.paramTypes[i];
-        }
-        paramIsNamed = true;
-      }
-    }
-
-    if (paramIsNamed == false) {
-      defaultLinkedParams.push(fnDep.fnType.val.linkedParams[i]);
-      defaultParamTypes.push(fnDep.fnType.val.paramTypes[i]);
-      defaultParamNames.push(template.paramNames[i]);
-    }
-
-    if (defaultExpr == null || paramType == null) {
-      let expr: Expr = {
-        tag: 'left_expr',
-        val: {
-          tag: 'var',
-          val: template.paramNames[i],
-          mode: 'param',
-          type: fnDep.fnType.val.paramTypes[i]
-        },
-        type: fnDep.fnType.val.paramTypes[i]
-      };
-      defaultFnCallExprs.push(expr);
-    }
-    else {
-      if (typeof defaultExpr === 'string') {
-        if (paramType.tag != 'fn') {
-          compilerError('resolve only valid on fn types');
-          return null;
-        }
-
-        let returnType = paramType.val.returnType;
-        let thisParamTypes = paramType.val.paramTypes;
-        let fnResult = typeResolveFn(defaultExpr, null, returnType, thisParamTypes, refTable, NULL_POS);
-        if (fnResult == null) {
-          return null;
-        }
-
-        defaultExpr = {
-          tag: 'left_expr',
-          val: {
-            tag: 'fn',
-            type: paramType,
-            refTable: fnDep.fnRefTable,
-            fnName: fnResult.fnName,
-            unitName: fnResult.unitName,
-            extern: false
-          },
-          type: paramType,
-        };
-      }
-
-      defaultFnCallExprs.push(defaultExpr);
-    }
-  }
-
-  let defaultFnType: Type = {
-    tag: 'fn',
-    val: {
-      returnType: returnType,
-      paramTypes: paramTypes,
-      linkedParams: defaultLinkedParams
-    }
-  };
-
-  let leftExpr: LeftExpr = {
-    tag: 'fn',
-    unitName: template.unitName,
-    refTable: fnDep.fnRefTable,
-    fnName: template.fnName,
-    type: template.fnType,
-    extern: false
-  };
-
-  let callExpr: Expr = {
-    tag: 'fn_call',
-    type: template.fnType.val.returnType,
-    val: {
-      exprs: defaultFnCallExprs,
-      fn: leftExpr
-    } 
-  };
-  let callInst: Inst = {
-    tag: 'return',
-    val: callExpr,
-    position: NULL_POS
-  };
-  let defaultFn: Fn = {
-    name: fnDep.fnName,
-    unitName: fnDep.unitName,
-    paramNames: defaultParamNames,
-    type: defaultFnType,
-    body: [callInst],
-    scope,
-    refTable
-  };
-
-  return defaultFn;
-}
-
-function resolveManualRefCountImpl(type: Type, ctx: ResolveContext): boolean {
-  for (let fn of ctx.allFns) {
-    if (fn.name != 'drop') {
-      continue;
-    }
-
-    if (fn.type.tag != 'fn') {
-      compilerError('expected fn type');
-      return false;
-    }
-
-    let paramTypes = fn.type.val.paramTypes;
-    if (paramTypes.length < 1) {
-      logError(NULL_POS, 'invalid type signature for drop');
-      return false;
-    }
-
-    let genericMap: Map<string, Type> = new Map();
-    if (!typeApplicableStateful(type, paramTypes[0], genericMap, true)) {
-      continue;
-    }
-
-    let newFnType = applyGenericMap(fn.type, genericMap)
-    addFnToResolve(ctx, fn.name, fn.unitName, newFnType, fn.refTable);
-    return true;
-  }
-
-  return false;
-}
-
 function typeTreeRecur(
   type: Type,
   inStack: Set<string>,
   alreadyGenned: Set<string>,
-  output: CStruct[],
-  autoDropSet: Set<string>,
+  output: Type[],
   queue: Type[],
-  isRecursive: boolean
 ) {
   if (type.tag == 'fn') {
-    let typeKey = toStr(type);
-    if (alreadyGenned.has(typeKey)) {
-      return;
-    }
-    typeTreeRecur(type.val.returnType, inStack, alreadyGenned, output, autoDropSet, queue, false);
-    for (let i = 0; i < type.val.paramTypes.length; i++) {
-      typeTreeRecur(type.val.paramTypes[i], inStack, alreadyGenned, output, autoDropSet, queue, false);
+    let typeKey = serializeType(type);
+    if (alreadyGenned.has(typeKey)) return;
+    typeTreeRecur(type.returnType, inStack, alreadyGenned, output, queue);
+    for (let i = 0; i < type.paramTypes.length; i++) {
+      typeTreeRecur(type.paramTypes[i], inStack, alreadyGenned, output, queue);
     }
     alreadyGenned.add(typeKey);
-    output.push({ tag: 'fn', val: type });
+    output.push(type);
   }
 
   if (type.tag == 'ptr') {
-    let typeKey = toStr(type.val);
-    if (alreadyGenned.has(typeKey)) {
-      return;
-    }
+    let typeKey = serializeType(type.val);
+    if (alreadyGenned.has(typeKey)) return;
     queue.push(type.val);
   }
 
-  if (isRecursive) {
-    let typeKey = toStr(type);
-    if (alreadyGenned.has(typeKey)) {
-      return;
-    }
-    queue.push(type);
-  }
-
-  if (type.tag != 'struct' && type.tag != 'enum') {
+  if (type.tag != 'struct') {
     return;
   }
 
-  let typeKey = toStr(type);
+  let typeKey = serializeType(type);
   if (inStack.has(typeKey)) {
     compilerError('recusive struct ' + typeKey);
     return;
   }
-  if (alreadyGenned.has(typeKey)) {
-    return;
-  }
+  if (alreadyGenned.has(typeKey)) return;
   alreadyGenned.add(typeKey);
 
   inStack.add(typeKey);
   for (let field of type.val.fields) {
-    typeTreeRecur(field.type, inStack, alreadyGenned, output, autoDropSet, queue, field.recursive);
+    typeTreeRecur(field.type, inStack, alreadyGenned, output, queue);
   }
   inStack.delete(typeKey);
 
@@ -736,27 +387,16 @@ function typeTreeRecur(
     fieldNames.push(field.name);
   }
 
-  let cStruct = { 
-    tag: type.tag,
-    val: {
-      name: type,
-      fieldTypes,
-      fieldNames
-    },
-    autoDrop: autoDropSet.has(typeKey)
-  };
-
-  output.push(cStruct);
+  output.push(type);
 }
 
-function orderStructs(typeResolveQueue: Type[], autoDropSet: Set<string>): CStruct[] {
+function orderTypes(queue: Type[]): Type[] {
   let alreadyGenned: Set<string> = new Set();
-  let output: CStruct[] = [];
-  while (typeResolveQueue.length != 0) {
-    let type = typeResolveQueue.shift()!;
-    typeTreeRecur(type, new Set(), alreadyGenned, output, autoDropSet, typeResolveQueue, false);
+  let output: Type[] = [];
+  while (queue.length != 0) {
+    let type = queue.pop()!;
+    typeTreeRecur(type, new Set(), alreadyGenned, output, queue);
   }
-
   return output;
 }
 

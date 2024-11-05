@@ -39,7 +39,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
-  ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, ArrOffset, StructInitField,
+  ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, Index, StructInitField,
   BinExpr, Expr, parseDir, parseFile, FieldVisibility
 }
 
@@ -94,14 +94,14 @@ type Type = { tag: 'basic', val: string }
   | { tag: 'link', val: Type }
 
 interface Fn {
-  t: FnType
+  type: FnType
   paramNames: string[]
   defaultExprs: (Expr | null)[]
   pub: boolean
   name: string
   body: Inst[]
   position: Position
-  mode: 'fn' | 'trait'
+  mode: 'fn' | 'impl'
 }
 
 type FieldVisibility = 'pub' | 'get' | null 
@@ -139,7 +139,7 @@ interface ForIn {
 interface Declare {
   t: Type,
   name: string,
-  expr: Expr | null
+  expr: Expr
 }
 
 interface Assign {
@@ -152,11 +152,6 @@ interface FnCall {
   fn: LeftExpr
   exprs: Expr[]
   names: string[] // name will be '' in case of unamed expr
-}
-
-interface Macro {
-  name: string
-  body: string 
 }
 
 interface Include {
@@ -176,23 +171,20 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'expr', val: Expr, position: Position }
   | { tag: 'declare', val: Declare, position: Position }
   | { tag: 'assign', val: Assign, position: Position }
-  | { tag: 'macro', val: Macro, position: Position }
   | { tag: 'include', val: Include, position: Position }
-  | { tag: 'arena', val: Inst[], position: Position }
 
 interface DotOp {
   left: Expr,
   varName: string
 }
 
-interface ArrOffset {
+interface Index {
   var: Expr,
   index: Expr
 }
 
 type LeftExpr = { tag: 'dot', val: DotOp }
-  | { tag: 'prime', val: Expr }
-  | { tag: 'arr_offset', val: ArrOffset }
+  | { tag: 'index', val: Index }
   | { tag: 'var', val: string }
 
 interface StructInitField {
@@ -223,10 +215,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'bool_const', val: boolean, position: Position }
   | { tag: 'num_const', val: number, position: Position }
   | { tag: 'left_expr', val: LeftExpr, position: Position }
-  | { tag: 'cp', val: Expr, position: Position }
-  | { tag: 'mv', val: Expr,  position: Position }
   | { tag: 'ptr', val: Expr, position: Position }
-  | { tag: 'typeof', val: Type, position: Position }
 
 const MAPPING: [string, number][] = [
   [':', 0],
@@ -668,7 +657,7 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
   return {
     name,
     paramNames,
-    t,
+    type: t,
     pub,
     mode: mode,
     body: fnBody,
@@ -800,9 +789,9 @@ function parseFnHeader(
     pub = false;
   }
 
-  let fnMode: 'fn' | 'trait' = 'fn' 
+  let fnMode: 'fn' | 'impl' = 'fn' 
   if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
-  else if (tokens[0].val == 'trait' || tokens[1].val == 'trait') fnMode = 'trait'
+  else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
@@ -978,35 +967,6 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'if', val: { cond, body: b }, position: line.position };
   } 
-  else if (keyword == 'arena') {
-    if (tokens.length != 1) {
-      logError(line.position, 'unexpected tokens');
-      return null;
-    }
-
-    let b = parseInstBody(body);
-    if (b == null) {
-      return null;
-    }
-    return { tag: 'arena', val: b, position: line.position };
-  }
-  else if (line.tokens[0].val == '@') {
-    if (tokens.length != 2) {
-      logError(line.position, 'invalid macro');
-      return null;
-    }
-    let name = tokens.slice(1)[0].val;
-
-    let output = '';
-    for (let i = 0; i < body.length; i++) {
-      for (let j = 0; j < body[i].tokens.length; j++) {
-        output += body[i].tokens[j] + ' ';
-      }
-      output += '\n';
-    }
-
-    return { tag: 'macro', val: { name, body: output }, position: line.position };
-  }
   else if(keyword == 'include') {
     let lines: string[] = [];
     let types: Type[] = [];
@@ -1254,7 +1214,7 @@ function tryParseArrExpr(tokens: Token[]): LeftExpr | null {
     return null;
   }
 
-  return { tag: 'arr_offset', val: { var: expr, index: innerExpr }};
+  return { tag: 'index', val: { var: expr, index: innerExpr }};
 }
 
 function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null {
@@ -1265,14 +1225,6 @@ function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null 
   let dot = tryParseDotOp(tokens);
   if (dot != null) {
     return dot;
-  }
-
-  if (tokens[tokens.length - 1].val == '\'') {
-    let parsed = tryParseExpr(tokens.slice(0, -1), { ...position, end: position.end - 1 });
-    if (parsed == null) {
-      return null;
-    }
-    return { tag: 'prime', val: parsed };
   }
 
   return tryParseArrExpr(tokens);
@@ -1294,12 +1246,6 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
 
     if (tokens[0].val == 'try') {
       return { tag: 'try', val: parsed, position };
-    }
-    else if (tokens[0].val == 'cp') {
-      return { tag: 'cp', val: parsed, position };
-    }
-    else if (tokens[0].val == 'mv') {
-      return { tag: 'mv', val: parsed, position };
     }
     else if (tokens[0].val == '&') {
       return { tag: 'ptr', val: parsed, position }
@@ -1337,18 +1283,6 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
       return null;
     }
     return { tag: 'not', val: expr, position };
-  }
-
-  if (tokens[0].val == 'typeof') {
-    if (tokens.length < 4 || tokens[tokens.length - 1].val != ')' || tokens[1].val != '(') {
-      return null;
-    }
-
-    let innerType = tryParseType(tokens.slice(2, -1));
-    if (innerType == null) {
-      return null;
-    }
-    return { tag: 'typeof', val: innerType, position };
   }
 
   let fnCall = tryParseFnCall(tokens);

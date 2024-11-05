@@ -209,207 +209,9 @@ function isComplex(type: Type): boolean {
 // replaces all mutablility of the type so that it can be created into a key
 // function standardizeType(type: Type, recursive: Set<Type> = new Set()) {}
 
-function getVariantIndex(type: Type, fieldName: string): number {
-  if (type.tag != 'enum') {
-    return -1;
-  }
-
-  for (let i = 0; i < type.val.fields.length; i++) {
-    if (type.val.fields[i].name == fieldName) {
-      return i;
-    }
-  }
-
-  return -1;
-}
-
-function toStr(t: Type | null): string {
-  if (t == null) {
-    return 'null';
-  }
-  
-  if (t.tag == 'primative') {
-    return t.val;
-  }
-
-  if (t.tag == 'generic') {
-    return t.val;
-  }
-
-  if (t.tag == 'ptr') {
-    return '*' + toStr(t.val);
-  }
-
-  if (t.tag == 'struct' || t.tag == 'enum') {
-    let generics: string = '[';
-    for (let i = 0; i < t.val.generics.length; i++) {
-      generics += toStr(t.val.generics[i]);
-      if (i != t.val.generics.length - 1) {
-        generics += ', ';
-      }     
-    }
-    if (t.val.generics.length == 0) {
-      return t.val.id;
-    } else {
-      return t.val.id + generics + ']';
-    }
-  }
-
-  if (t.tag == 'fn') {
-    let s = '';
-    for (let i = 0; i < t.val.paramTypes.length; i++) {
-      s += toStr(t.val.paramTypes[i]);
-      if (i != t.val.paramTypes.length - 1) {
-        s += ', ';
-      }
-    }
-    return `${toStr(t.val.returnType)}(${s})`;
-  }
-
-  return JSON.stringify(t);
-}
 
 function isRes(type: Type): boolean {
   return type.tag == 'enum' && type.val.id == 'std/core.TypeUnion';
-}
-
-// fnHeader field is used to calculate whether a generic should accept any type
-function typeApplicableStateful(
-  sub: Type,
-  supa: Type,
-  genericMap: Map<string, Type>,
-  fnHeader: boolean,
-): boolean {
-  if (supa.tag == 'generic') {
-    if (!fnHeader && supa.tag != sub.tag) {
-      return false;
-    }
-
-    if (sub.tag == 'generic') {
-      return true;
-    }
-    else if (genericMap.has(supa.val)) {
-      return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap, fnHeader);
-    }
-    genericMap.set(supa.val, sub);
-    return true;
-  }
-
-  // T -> T|K is valid
-  if (supa.tag == 'enum' && supa.val.id == 'std/core.TypeUnion') {
-    let firstApplicable = typeApplicableStateful(sub, supa.val.fields[0].type, genericMap, fnHeader);
-    let secondApplicable = typeApplicableStateful(sub, supa.val.fields[1].type, genericMap, fnHeader);
-    if (firstApplicable || secondApplicable) {
-      return true;
-    }
-  }
-
-  if (sub.tag != supa.tag) {
-    return false;
-  }
-
-  if (sub.tag == 'primative' && supa.tag == 'primative') {
-    return sub.val == supa.val;
-  }
-
-  if (sub.tag == 'ptr' && supa.tag == 'ptr') {
-    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
-  }
-
-  if (sub.tag == 'enum' && supa.tag == 'enum' || sub.tag == 'struct' && supa.tag == 'struct') {
-    if (sub.val.id != supa.val.id) {
-      return false;
-    }
-
-    if (sub.val.generics.length != supa.val.generics.length) {
-      return false;
-    }
-
-    for (let i = 0; i < sub.val.generics.length; i++) {
-      if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader)) {
-        console.log(sub.val.generics, supa.val.generics, genericMap, fnHeader);
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  if (sub.tag == 'fn' && supa.tag == 'fn') {
-    if (!typeApplicableStateful(sub.val.returnType, supa.val.returnType, genericMap, fnHeader)) {
-      return false;
-    }
-
-    if (sub.val.paramTypes.length != supa.val.paramTypes.length) {
-      return false;
-    }
-    for (let i = 0; i < sub.val.paramTypes.length; i++) {
-      if (!typeApplicableStateful(sub.val.paramTypes[i], supa.val.paramTypes[i], genericMap, fnHeader)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  compilerError('typeEq type not handled');
-  return false;
-}
-
-function typeApplicable(sub: Type, supa: Type, fnHeader: boolean): boolean {
-  let genericMap = new Map<string, Type>();
-  return typeApplicableStateful(sub, supa, genericMap, fnHeader);
-}
-
-function applyGenericMap(input: Type, map: Map<string, Type>, recursive: Set<Type> = new Set()): Type {
-  if (recursive.has(input)) {
-    return input;
-  }
-  recursive.add(input);
-
-  if (input.tag == 'generic') {
-    if (map.has(input.val)) {
-      return map.get(input.val)!;
-    }
-    return input;
-  }
-  else if (input.tag == 'primative') {
-    return input;
-  }
-  else if (input.tag == 'struct' || input.tag == 'enum') {
-    let newGenerics: Type[] = [];
-    let newFields: Field[] = [];
-
-    let copySet = new Set(recursive);
-    for (let field of input.val.fields) {
-      let fieldType = applyGenericMap(field.type, map, copySet);
-      newFields.push({ name: field.name, type: fieldType, visibility: field.visibility, recursive: field.recursive });
-    }
-    for (let generic of input.val.generics) {
-      newGenerics.push(applyGenericMap(generic, map, recursive));
-    }
-    return { tag: input.tag, val: { fields: newFields, generics: newGenerics, id: input.val.id, unit: input.val.unit }};
-  }
-  else if (input.tag == 'ptr') {
-    return { tag: 'ptr', val: applyGenericMap(input.val, map, recursive) };
-  }
-  else if (input.tag == 'fn') {
-    let newReturnType: Type = applyGenericMap(input.val.returnType, map, recursive);
-    let newParamTypes: Type[] = []
-    for (let paramType of input.val.paramTypes) {
-      let newParamType = applyGenericMap(paramType, map, recursive);
-      newParamTypes.push(newParamType);
-    }
-    return {
-      tag: 'fn',
-      val: {
-        returnType: newReturnType,
-        paramTypes: newParamTypes,
-        linkedParams: input.val.linkedParams 
-      } 
-    };
-  }
-
-  return input;
 }
 
 function isGeneric(a: Type): boolean {
@@ -908,7 +710,7 @@ function getFnNamedParams(
       }
 
       let genericMap: Map<string, Type> = new Map();
-      let returnType = resolveType(fn.t.returnType, refTable, position);
+      let returnType = resolveType(fn.type.returnType, refTable, position);
       if (returnType == null) {
         compilerError('return type should have been checked earlier');
         return [];
@@ -924,7 +726,7 @@ function getFnNamedParams(
       let namedParams: NamedParam[] = [];
       let fnMatches = true;
       for (let j = 0; j < fn.paramNames.length; j++) {
-        let paramType = resolveType(fn.t.paramTypes[j], refTable, position);
+        let paramType = resolveType(fn.type.paramTypes[j], refTable, position);
         if (paramType == null) {
           fnMatches = false;
           break;
@@ -1178,7 +980,7 @@ function testFnType(
         namedParamCount += 1;
       }
     }
-    if (paramTypes != null && fnDef.t.paramTypes.length - namedParamCount != paramTypes.length) {
+    if (paramTypes != null && fnDef.type.paramTypes.length - namedParamCount != paramTypes.length) {
       outWrongTypeFns.push({ tag: 'chad', val: fnDef });
       continue;
     }
@@ -1188,8 +990,8 @@ function testFnType(
     let paramNames: string[] = [];
     let allParamsOk = true;
     let fnIsGeneric = false;
-    for (let i = 0; i < fnDef.t.paramTypes.length; i++) {
-      if (fnDef.t.paramTypes[i].tag == 'link') {
+    for (let i = 0; i < fnDef.type.paramTypes.length; i++) {
+      if (fnDef.type.paramTypes[i].tag == 'link') {
         linkedParams.push(true);
       } else {
         linkedParams.push(false);
@@ -1197,7 +999,7 @@ function testFnType(
 
       paramNames.push(fnDef.paramNames[i]);
 
-      let defParamType = resolveType(fnDef.t.paramTypes[i], refTable, calleePosition);
+      let defParamType = resolveType(fnDef.type.paramTypes[i], refTable, calleePosition);
       if (defParamType == null) {
         compilerError('param type invalid (checked before)');
         return null;
@@ -1221,7 +1023,7 @@ function testFnType(
     if (!allParamsOk) {
       continue;
     }
-    let defReturnType = resolveType(fnDef.t.returnType, unitRefTable, calleePosition);
+    let defReturnType = resolveType(fnDef.type.returnType, unitRefTable, calleePosition);
     if (defReturnType == null) {
       compilerError('return type invalid (checked before)');
       return null;
