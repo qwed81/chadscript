@@ -1,14 +1,14 @@
 import { parseFile, ProgramUnit } from './parse';
-import { analyze } from './analyze/analyze';
-import { codegen, OutputFile } from './codegen/codegen';
+import { analyze } from './analyze';
+import { codegen, OutputFile } from './codegen';
+import { replaceGenerics } from './replaceGenerics';
 import path from 'node:path';
 import { execSync } from 'node:child_process'
-
 import * as Util from './util';
-
-import fs, { readdirSync } from 'node:fs';
+import fs from 'node:fs';
 
 // gets all of the parse units according to the file structure
+/*
 function parseUnitsRecur(basePath: string, moduleName: string, outParseUnits: ProgramUnit[]) {
   let subPaths = readdirSync(basePath);
   for (let subPath of subPaths) {
@@ -34,40 +34,44 @@ function parseUnitsRecur(basePath: string, moduleName: string, outParseUnits: Pr
     }
   }
 }
+*/
 
+compileProgram()
+function compileProgram() {
+  let programUnits: ProgramUnit[] = [];
+  for (let i = 2; i < process.argv.length; i++) {
+    let filePath = process.argv[i];
+    let fileName: string = '';
+    if (filePath.endsWith('.chad')) {
+      fileName = filePath.slice(0, -5);
+    }
+    else {
+      continue;
+    }
 
-let programUnits: ProgramUnit[] = [];
-for (let i = 2; i < process.argv.length; i++) {
-  let filePath = process.argv[i];
-  let fileName: string = '';
-  if (filePath.endsWith('.chad')) {
-    fileName = filePath.slice(0, -5);
+    let progUnit = parseFile(filePath, fileName);
+    if (progUnit == null) {
+      continue;
+    }
+    programUnits.push(progUnit);
   }
-  else {
-    continue;
-  }
 
-  let progUnit = parseFile(filePath, fileName);
-  if (progUnit == null) {
-    continue;
-  }
-  programUnits.push(progUnit);
-}
-Util.setAllUnits(programUnits);
+  let program = analyze(programUnits);
+  if (program == null) return;
 
-let program = analyze(programUnits);
-let fileNames: string[] = []
-if (program != null) {
-  let outputFiles: OutputFile[] = codegen(program);
+  let mainFn = program.fns.find(x => x.header.name == 'main');
+  if (mainFn == undefined) return;
+  let implProgram = replaceGenerics(program, mainFn);
+  let outputFiles: OutputFile[] = codegen(implProgram);
+
+  let fileNames: string[]= [];
   for (let file of outputFiles) {
     fileNames.push(file.name);
     fs.writeFileSync(path.join('build', file.name), file.data);
   }
-}
 
-// only if there are some files to codegen
-if (fileNames.length > 0) {
-  // compile all of the code into shared objects
+  // finish by compiling with clang
+  if (fileNames.length == 0) return;
   let objPaths = '';
   let includePath = path.join(__dirname, 'includes');
   for (let fileName of fileNames) {
@@ -100,4 +104,3 @@ if (fileNames.length > 0) {
     execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} ${libPaths} -O3 -lm -o ${outputPath}`);
   } catch {}
 }
-

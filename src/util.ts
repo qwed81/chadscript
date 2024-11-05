@@ -1,12 +1,7 @@
 import { ProgramUnit } from './parse';
 
 export {
-  logError, compilerError, NULL_POS, Position, allUnits, setAllUnits
-}
-
-let allUnits: ProgramUnit[] = []
-function setAllUnits(units: ProgramUnit[]) {
-  allUnits = units;
+  logError, compilerError, Position
 }
 
 interface Position {
@@ -14,15 +9,6 @@ interface Position {
   line: number
   start: number
   end: number
-}
-
-// used when a function requires a position for error checking
-// but the function should never fail with the parameters being called
-const NULL_POS: Position = {
-  document: '',
-  line: 0,
-  start: 0,
-  end: 0
 }
 
 function compilerError(message: string) {

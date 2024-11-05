@@ -1,3 +1,4 @@
+/*
 import fs from 'node:fs';
 import { Type, INT, VOID, CHAR, BOOL, Field } from './analyze/types';
 import { execSync } from 'child_process';
@@ -351,3 +352,4 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
   }
 }
 
+*/

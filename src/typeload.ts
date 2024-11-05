@@ -12,6 +12,7 @@ export {
 type Modifier = 'pri' | 'pub';
 type FieldModifier = 'pri' | 'pub' | 'get';
 
+
 interface Field {
   name: string,
   type: Type,
@@ -44,7 +45,7 @@ interface Fn {
   paramTypes: Type[]
   paramNames: string[]
   returnType: Type
-  mode: 'fn' | 'impl'
+  mode: Parse.FnMode
 }
 
 interface UnitSymbols {
@@ -529,7 +530,6 @@ function resolveImpl(
   position: Position | null
 ) {
 
-
   for (let i = 0; i < 10; i++) {
 
   }
@@ -613,19 +613,19 @@ function resolveTypeInternal(unit: UnitSymbols, parseType: Parse.Type, position:
     return [{ tag: 'fn', paramTypes, returnType }];
   }
   else if (parseType.tag == 'ptr') {
-    let inner = resolveType(unit, parseType, position);
+    let inner = resolveType(unit, parseType.val, position);
     if (inner == null) return null;
     return [{ tag: 'ptr', val: inner }];
   }
   else if (parseType.tag == 'link') {
-    let inner = resolveType(unit, parseType, position);
+    let inner = resolveType(unit, parseType.val, position);
     if (inner == null) return null;
     return [{ tag: 'link', val: inner }];
   }
   else if (parseType.tag == 'type_union') {
-    let first = resolveType(unit, parseType, position);
+    let first = resolveType(unit, parseType.val0, position);
     if (first == null) return null;
-    let second = resolveType(unit, parseType, position);
+    let second = resolveType(unit, parseType.val1, position);
     if (second == null) return second;
     return [createTypeUnion(first, second)]
   }

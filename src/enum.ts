@@ -1,6 +1,6 @@
 import { LeftExpr,  Expr } from './analyze';
-import { compilerError } from '../util';
-import { getVariantIndex } from './types';
+import { compilerError } from './util';
+import { getFieldIndex } from './typeload';
 
 export {
   PossibleVariants, getVariantPossibilities, applyCond, applyInverseCond,
@@ -173,7 +173,7 @@ function getVariantPossibilities(scope: VariantScope, leftExpr: LeftExpr): strin
     }
   }
 
-  if (leftExpr.type.tag == 'enum') {
+  if (leftExpr.type.tag == 'struct' && leftExpr.type.val.isEnum) {
     return leftExpr.type.val.fields.map(x => x.name);
   } else {
     return [];
@@ -196,18 +196,10 @@ function leftExprToKey(leftExpr: LeftExpr): string[] | null {
         return null;
       }
     }
-    else if (currExpr.tag == 'arr_offset_int') {
+    else if (currExpr.tag == 'index') {
       if (currExpr.val.var.tag == 'left_expr') {
         output.push(currExpr.val.index + '');
         currExpr = currExpr.val.var.val;
-      } else {
-        return null;
-      }
-    }
-    else if (currExpr.tag == 'prime') {
-      if (currExpr.val.tag == 'left_expr') {
-        output.push('\'');
-        currExpr = currExpr.val.val;
       } else {
         return null;
       }
@@ -231,7 +223,7 @@ function getInverseExprSet(expr: Expr): PossibleVariants {
     return intersectingUnion(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'enum') {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.isEnum) {
       let key = expr.left;
       let newSet: PossibleVariants = [];
       let possible = expr.left.type.val.fields.map(x => x.name);
@@ -266,7 +258,7 @@ function getExprSet(expr: Expr): PossibleVariants {
     return unionsIntersection(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'enum') {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.isEnum) {
       let key = expr.left;
       let newSet: PossibleVariants = [];
       let possible = expr.left.type.val.fields.map(x => x.name);
@@ -330,20 +322,20 @@ function applyInverseCond(
 
 function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
   let set = scope[scope.length - 1];
-  if (expr.tag == 'enum_init' && expr.type.tag == 'enum') {
+  if (expr.tag == 'enum_init' && expr.type.tag == 'struct' && expr.type.val.isEnum) {
     let possible = expr.type.val.fields.map(x => x.name);
     add(set, leftExpr, [expr.fieldName], possible);
-    // handle int?? a = Some(Some(20)) where a'' is int
     if (expr.fieldExpr != null) {
       let newLeftExpr: LeftExpr = {
-        tag: 'prime',
+        tag: 'dot',
         val: {
-          tag: 'left_expr',
-          val: leftExpr,
-          type: expr.fieldExpr.type
+            left: {
+            tag: 'left_expr',
+            val: leftExpr,
+            type: expr.fieldExpr.type
+          },
+          varName: expr.fieldName,
         },
-        variant: expr.fieldName,
-        variantIndex: getVariantIndex(expr.type, expr.fieldName),
         type: expr.fieldExpr.type
       };
       recursiveAddExpr(scope, newLeftExpr, expr.fieldExpr);

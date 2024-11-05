@@ -1,11 +1,11 @@
-import * as Parse from '../parse';
-import { logError, compilerError, Position } from '../util'
+import * as Parse from './parse';
+import { logError, compilerError, Position } from './util'
 import {
   Type, Fn, UnitSymbols, loadUnits, resolveType, typeApplicable,
   NIL, INT, BOOL, resolveFn, FnResult, resolveTrait, FMT, toStr,
   isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
   RANGE
-} from '../typeload'
+} from './typeload'
 import * as Enum from './enum';
 
 export {

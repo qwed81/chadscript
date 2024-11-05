@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError, compilerError, NULL_POS, Position } from './util';
+import { logError, compilerError, Position } from './util';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
@@ -40,7 +40,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, Index, StructInitField,
-  BinExpr, Expr, parseDir, parseFile, FieldVisibility
+  BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode
 }
 
 interface SourceLine {
@@ -93,6 +93,8 @@ type Type = { tag: 'basic', val: string }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
 
+type FnMode = 'fn' | 'trait' | 'impl' | 'impl_trait'
+
 interface Fn {
   type: FnType
   paramNames: string[]
@@ -101,7 +103,7 @@ interface Fn {
   name: string
   body: Inst[]
   position: Position
-  mode: 'fn' | 'impl'
+  mode: FnMode
 }
 
 type FieldVisibility = 'pub' | 'get' | null 
@@ -230,9 +232,7 @@ const MAPPING: [string, number][] = [
 ]; 
 
 function positionRange(tokens: Token[]): Position {
-  if (tokens.length == 0) {
-    return NULL_POS;
-  }
+  if (tokens.length == 0) return { end: 0, start: 0, line: 0, document: '' };
   return { ...tokens[0].position, end: tokens[tokens.length - 1].position.end, start: tokens[0].position.start };
 }
 
@@ -775,7 +775,7 @@ function parseFnHeader(
   defaultExprs: (Expr | null)[]
   t: FnType 
   pub: boolean
-  mode: 'fn' | 'trait'
+  mode: FnMode
 
 } | null 
 {
@@ -789,7 +789,7 @@ function parseFnHeader(
     pub = false;
   }
 
-  let fnMode: 'fn' | 'impl' = 'fn' 
+  let fnMode: FnMode = 'fn' 
   if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
   else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
 
@@ -1070,9 +1070,8 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     && !tokens.find(x => x.val == '++=')) {
 
     let type = tryParseType(tokens.slice(0, -1));
-    let name = tokens[tokens.length - 1].val;
     if (tokens.length > 1 && type != null) {
-      return { tag: 'declare', val: { t: type, name, expr: null }, position: line.position };
+      logError(line.position, 'expected assigment');
     }
     return null;
   }

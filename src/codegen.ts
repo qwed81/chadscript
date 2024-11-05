@@ -1,7 +1,7 @@
-import { Position, compilerError, logError } from '../util';
-import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR } from '../typeload';
-import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl } from '../analyze/analyze';
-import { Program } from './concreteFns';
+import { Position, compilerError, logError } from './util';
+import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR } from './typeload';
+import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl } from './analyze';
+import { Program } from './replaceGenerics';
 
 export {
   codegen, OutputFile

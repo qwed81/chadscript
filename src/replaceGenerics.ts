@@ -1,6 +1,6 @@
-import { FnImpl, Inst, Expr, LeftExpr } from '../analyze/analyze';
-import { compilerError } from '../util';
-import { Type, serializeType, applyGenericMap, NIL, typeApplicableStateful } from '../typeload';
+import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram } from './analyze';
+import { compilerError } from './util';
+import { Type, serializeType, applyGenericMap, NIL, typeApplicableStateful } from './typeload';
 
 export {
   replaceGenerics, Program
@@ -27,7 +27,7 @@ interface FnSet {
   fns: Map<string, FnImpl>
 }
 
-function replaceGenerics(prog: Program, mainFn: FnImpl): Program {
+function replaceGenerics(prog: AnalyzeProgram, mainFn: FnImpl): Program {
   let fnSet: FnSet = {
     types: new Map(),
     fns: new Map()
@@ -106,6 +106,7 @@ function monomorphizeFn(
     header: {
       returnType: retType,
       paramTypes,
+      paramNames: genericFn.header.paramNames,
       name: genericFn.header.name,
       unit: genericFn.header.unit,
       mode: genericFn.header.mode
@@ -162,11 +163,8 @@ function resolveInst(
   else if (inst.tag == 'declare') {
     let type = applyGenericMap(inst.val.type, genericMap);
     addType(set, type);
-    if (inst.val.expr != null) {
-      let expr = resolveExpr(inst.val.expr, set, genericMap);
-      return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
-    } 
-    return { tag: 'declare', val: { type, name: inst.val.name, expr: null }, position: inst.position }
+    let expr = resolveExpr(inst.val.expr, set, genericMap);
+    return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
   }
   else if (inst.tag == 'assign') {
     let expr = resolveExpr(inst.val.expr, set, genericMap);
