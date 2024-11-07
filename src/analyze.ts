@@ -2,9 +2,9 @@ import * as Parse from './parse';
 import { logError, compilerError, Position } from './util'
 import {
   Type, Fn, UnitSymbols, loadUnits, resolveType, typeApplicable,
-  NIL, INT, BOOL, resolveFn, FnResult, resolveTrait, FMT, toStr,
+  NIL, INT, BOOL, resolveFn, FnResult, FMT, toStr,
   isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
-  RANGE
+  RANGE, resolveImpl, refType, typeEq, createTypeUnion
 } from './typeload'
 import * as Enum from './enum';
 
@@ -21,6 +21,7 @@ interface FnImpl {
 interface Program {
   includes: string[]
   fns: FnImpl[]
+  symbols: UnitSymbols[]
 }
 
 interface CondBody {
@@ -44,6 +45,7 @@ interface ForIn {
   varName: string,
   iter: Expr
   body: Inst[]
+  nextFn: Fn
 }
 
 interface Include {
@@ -110,13 +112,12 @@ interface Index {
   index: Expr
 }
 
-type Mode = 'C' | 'none' | 'param' | 'iter' | 'iter_copy' | { tag: 'const', unitName: string};
+type Mode = 'C' | 'none' | 'iter' | 'link'; 
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
   | { tag: 'var', val: string, mode: Mode, type: Type }
   | { tag: 'fn', unit: string, name: string, type: Type }
-
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let includes: Set<string> = new Set();
@@ -131,6 +132,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
   let validProgram: Program | null = {
     includes: [...includes],
     fns: [],
+    symbols: []
   };
 
   let symbols: UnitSymbols[] = loadUnits(units); 
@@ -149,6 +151,7 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
     }
   }
 
+  if (validProgram != null) validProgram.symbols = symbols;
   return validProgram;
 }
 
@@ -199,24 +202,13 @@ function analyzeFn(
   enterScope(scope);
   let paramTypes: Type[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
-    let paramType = fn.type.paramTypes[i];
     let mut = false;
-    if (paramType.tag == 'link') {
-      paramType = paramType.val;
-      mut = true;
-    }
-
     let resolvedParamType = resolveType(symbols, fn.type.paramTypes[i], fn.position);
     if (resolvedParamType == null) return null;
-    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut, 'param');
+
+    setValToScope(scope, fn.paramNames[i], resolvedParamType, mut, resolvedParamType.tag == 'link' ? 'link' : 'none');
     paramTypes.push(resolvedParamType);
   }
-
-  let thisFn: FnResult | null = resolveFn(symbols, fn.name, paramTypes, scope.returnType, null);
-  if (thisFn == null) {
-    compilerError('fn should always resolve');
-    return null; 
-  };
 
   if (allElifFollowIf(fn.body) == false) return null;
   let body = analyzeInstBody(symbols, fn.body, scope);
@@ -227,8 +219,24 @@ function analyzeFn(
     return null;
   }
 
+  let fnList: Fn[] | undefined = symbols.fns.get(fn.name);
+  let thisFn: Fn | null = null;
+  if (fnList == undefined) return null;
+  fnLoop: for (let i = 0; i < fnList.length; i++) {
+    if (fnList[i].paramTypes.length != paramTypes.length) continue;
+    if (!typeEq(fnList[i].returnType, scope.returnType)) continue;
+    for (let j = 0; j < paramTypes.length; j++) {
+      if (!typeEq(fnList[i].paramTypes[j], paramTypes[j])) continue fnLoop;
+    }
+    thisFn = fnList[i];
+  }
+  if (thisFn == null) {
+    compilerError('fn should exist');
+    return null;
+  }
+
   return {
-    header: thisFn.fnReference,
+    header: thisFn,
     body
   };
 }
@@ -406,7 +414,7 @@ function analyzeInst(
     let iterExpr = ensureExprValid(symbols, inst.val.iter, null, scope, inst.position);
     if (iterExpr == null) return null;
 
-    let fnResult = resolveTrait(symbols, 'next', [iterExpr.type], null, inst.position);
+    let fnResult = resolveImpl(symbols, 'next', [refType(iterExpr.type)], null, inst.position);
     if (fnResult == null || fnResult.resolvedType.tag != 'fn') {
       logError(inst.position, 'value is not an iterator');
       return null;
@@ -430,7 +438,8 @@ function analyzeInst(
       val: {
         varName: inst.val.varName,
         iter: iterExpr,
-        body: body 
+        body: body,
+        nextFn: fnResult.fnReference
       },
       position: inst.position
     };
@@ -508,17 +517,37 @@ function analyzeInst(
   if (inst.tag == 'assign') {
     let to = ensureLeftExprValid(symbols, inst.val.to, scope, inst.position);
     if (to == null) return null;
-    let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
-    if (expr == null) return null;
-
-    if (inst.val.op == '++=') {
-      resolveTrait(symbols, 'append', [to.type, expr.type], NIL, inst.position);
-    }
-    else if (inst.val.op == '+=' || inst.val.op == '-=') {
-      resolveTrait(symbols, 'math', [to.type, expr.type], to.type, inst.position);
-    }
 
     Enum.remove(scope.variantScope, to);
+    if (inst.val.op == '++=') {
+      let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
+      if (expr == null) return null;
+
+      let impl = resolveImpl(symbols, 'append', [refType(to.type), expr.type], NIL, inst.position);
+      if (impl == null) return null;
+      return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
+    }
+    else if (inst.val.op == '+=' || inst.val.op == '-=') {
+      let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
+      if (expr == null) return null;
+
+      if (to.type.tag == 'struct' && isBasic(to.type)
+        && expr.type.tag == 'struct' && isBasic(expr.type)
+        && to.type.val.name == expr.type.val.name) {
+        let name = to.type.val.name;
+        if (name == 'bool' || name == 'nil') {
+          logError(inst.position, `can not apply ${inst.val.op} to ${name}`);
+          return null;
+        }
+      }
+      else {
+        resolveImpl(symbols, 'math', [to.type, expr.type], to.type, inst.position);
+      }
+    }
+
+    let expr = ensureExprValid(symbols, inst.val.expr, to.type, scope, inst.position);
+    if (expr == null) return null;
+
     if (inst.val.op == '=') Enum.recursiveAddExpr(scope.variantScope, to, expr);
     return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
 
@@ -618,7 +647,20 @@ function ensureLeftExprValid(
     if (left == null) return null;
     let index = ensureExprValid(symbols, leftExpr.val.index, null, scope, position);
     if (index == null) return null;
-    resolveTrait(symbols, 'index', [left.type, index.type], null, position);
+    if (left.type.tag == 'ptr') {
+      return { tag: 'index', val: { var: left, index, }, type: left.type.val };
+    }
+
+    let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
+    if (trait == null) return null;
+    if (trait.resolvedType.tag != 'fn') return null;
+
+    let retType = trait.resolvedType.returnType;
+    if (retType.tag != 'ptr') {
+      if (position != null) logError(position, 'index should return a pointer');
+      return null;
+    };
+    return { tag: 'index', val: { var: left, index, }, type: retType.val };
   }
   else if (leftExpr.tag == 'var') {
     let v = getVar(scope, leftExpr.val);
@@ -631,7 +673,6 @@ function ensureLeftExprValid(
     return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode };
   }
 
-  compilerError('ensureLeftExprValid fallthrough')
   return null;
 }
 
@@ -690,7 +731,7 @@ function ensureFnCallValid(
     }
   }
 
-  let result = resolveFn(symbols, fnCall.fn.val, initialTypes, expectedReturn, position);
+  let result = resolveFn(['fn', 'trait'], symbols, fnCall.fn.val, initialTypes, expectedReturn, position);
   if (result == null || result.resolvedType.tag != 'fn') return null;
   let newTypes: Type[] = result.resolvedType.paramTypes;
   let resolvedExprs: Expr[] = []
@@ -733,7 +774,8 @@ function ensureBinOpValid(
       tag: 'struct_init',
       val: [
         { name: 'start', expr: leftTuple },
-        { name: 'end', expr: rightTuple }
+        { name: 'end', expr: rightTuple },
+        { name: 'output', expr: { tag: 'int_const', val: 0, type: INT } }
       ],
       type: RANGE
     };
@@ -787,21 +829,49 @@ function ensureBinOpValid(
     if (right == null) return null;
     let op = expr.op;
 
-    let trait: FnResult | null = null;
-    if (op == '+' || op == '-' || op == '*' || op == '/') {
-      trait = resolveTrait(symbols, 'math', [left.type, right.type], expectedReturn, position);
-    }
-    else if (op == '<' || op == '>' || op == '<=' || op == '>=') {
-      trait = resolveTrait(symbols, 'cmp', [left.type, right.type], expectedReturn, position);
-    }
-    else if (op == '==' || op == '!=') {
-      trait = resolveTrait(symbols, 'eq', [left.type, right.type], expectedReturn, position);
-    }
-    else if (op == '|' || op == '&' || op == '^') {
-      trait = resolveTrait(symbols, 'bitwise', [left.type, right.type], expectedReturn, position);
-    }
+    // determine with the builtin operators
+    if (left.type.tag == 'struct' && isBasic(left.type)
+      && right.type.tag == 'struct' && isBasic(right.type)
+      && left.type.val.name == right.type.val.name) {
+      let t = right.type.val.name;
+      if (op == '+' || op == '-' || op == '*' || op == '/' || op == '%'
+        || op == '<' || op == '>' || op == '<=' || op == '>=') {
+        if (t == 'bool' || t == 'nil') {
+          if (position != null) logError(position, `can not ${op} on '${t}'`);
+          return null;
+        }
+      }
+      else if (op == '|' || op == '&' || op == '^') {
+        if (t == 'bool' || t == 'nil' || t == 'f32' || t == 'f64') {
+          if (position != null) logError(position, `can not ${op} on '${t}'`);
+          return null;
+        }
+      }
 
-    if (trait == null) return null;
+      let outputType: Type = left.type;
+      if (op == '<' || op == '>' || op == '<=' || op == '>=' || op == '==' || op == '!=') {
+        outputType = BOOL;
+      }
+      computedExpr = { tag: 'bin', type: outputType, val: { left, op, right } };
+    }
+    else {
+      let trait: FnResult | null = null;
+      if (op == '+' || op == '-' || op == '*' || op == '/') {
+        trait = resolveImpl(symbols, 'math', [left.type, right.type], expectedReturn, position);
+      }
+      else if (op == '<' || op == '>' || op == '<=' || op == '>=') {
+        trait = resolveImpl(symbols, 'cmp', [left.type, right.type], BOOL, position);
+      }
+      else if (op == '==' || op == '!=') {
+        trait = resolveImpl(symbols, 'eq', [left.type, right.type], BOOL, position);
+      }
+      else if (op == '|' || op == '&' || op == '^') {
+        trait = resolveImpl(symbols, 'bitwise', [left.type, right.type], expectedReturn, position);
+      }
+
+      if (trait == null || trait.resolvedType.tag != 'fn') return null;
+      computedExpr = { tag: 'bin', type: trait.resolvedType.returnType, val: { left, op, right } };
+    }
   }
 
   if (expectedReturn != null) {
@@ -877,7 +947,7 @@ function ensureExprValid(
     if (exprLeft == null) return null;
 
     // if T|K is a known, should still be able to use 'is'
-    if (exprLeft.type.tag != 'struct' || exprLeft.type.val.isEnum) {
+    if (exprLeft.type.tag != 'struct' || !exprLeft.type.val.isEnum) {
       if (position == null) {
         compilerError('can not use is with null position');
         return null;
@@ -978,21 +1048,27 @@ function ensureExprValid(
 
   if (expr.tag == 'try') {
     let errorType: Type | null = null;
-    let okType: Type | null = null;
     if (expr.tag == 'try') {
       if (scope.returnType.tag == 'struct' 
         && scope.returnType.val.name == 'TypeUnion'
         && scope.returnType.val.unit == 'std/core') {
-        okType = scope.returnType.val.fields[0].type;
         errorType = scope.returnType.val.fields[1].type;
       }
     }
-    if (errorType == null || okType == null) return null;
+    if (errorType == null) return null;
 
-    let innerExpr = ensureExprValid(symbols, expr.val, okType, scope, position);
+    let innerExpr: Expr | null;
+    if (expectedReturn != null) {
+      let typeUnion: Type = createTypeUnion(expectedReturn, errorType);
+      innerExpr = ensureExprValid(symbols, expr.val, typeUnion, scope, position);
+    }
+    else {
+      innerExpr = ensureExprValid(symbols, expr.val, null, scope, position);
+    }
     if (innerExpr == null) return null;
+
     if (expr.tag == 'try') {
-      return { tag: 'try', val: innerExpr, type: okType };
+      return { tag: 'try', val: innerExpr, type: innerExpr.type };
     }
   }
 
@@ -1171,7 +1247,7 @@ function ensureExprValid(
       if (fmtExpr == null) return null;
 
       let fmtType: Type = { tag: 'link', val: FMT };
-      let fn = resolveTrait(symbols, 'writeStr', [fmtExpr.type, fmtType], NIL, position);
+      let fn = resolveImpl(symbols, 'writeStr', [fmtExpr.type, fmtType], NIL, position);
       if (fn == null) return null;
       newExprs.push(fmtExpr);
     }
@@ -1228,27 +1304,23 @@ function ensureExprValid(
       && expr.val.tag == 'var'
     ) {
       let fieldIndex = getFieldIndex(expectedReturn, expr.val.val);
-      if (fieldIndex != -1) {
-        if (typeApplicable(expectedReturn.val.fields[fieldIndex].type, NIL, false)) {
-          let fieldName = expectedReturn.val.fields[fieldIndex].name;
-          computedExpr = {
-            tag: 'enum_init',
-            variantIndex: getFieldIndex(expectedReturn, fieldName),
-            fieldName,
-            fieldExpr: null,
-            type: expectedReturn
-          };
-        } 
-        else {
-          if (position) logError(expr.position, 'enum init expects value - non-void variant');
-          return null;
-        }
+      if (fieldIndex != -1 && typeApplicable(expectedReturn.val.fields[fieldIndex].type, NIL, false)) {
+        let fieldName = expectedReturn.val.fields[fieldIndex].name;
+        computedExpr = {
+          tag: 'enum_init',
+          variantIndex: getFieldIndex(expectedReturn, fieldName),
+          fieldName,
+          fieldExpr: null,
+          type: expectedReturn
+        };
       } 
+    } 
 
+    if (computedExpr == null) {
       let exprTuple = ensureLeftExprValid(symbols, expr.val, scope, position);
       if (exprTuple == null) return null;
       computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
-    } 
+    }
   }
 
   if (expectedReturn != null) {

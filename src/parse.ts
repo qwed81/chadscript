@@ -73,7 +73,6 @@ interface ProgramUnit {
   fns: Fn[]
   consts: Const[]
   structs: Struct[]
-  enums: Struct[]
 }
 
 interface GenericType {
@@ -106,7 +105,7 @@ interface Fn {
   mode: FnMode
 }
 
-type FieldVisibility = 'pub' | 'get' | null 
+type FieldVisibility = 'pub' | 'get' | 'pri'
 interface Var {
   t: Type,
   name: string
@@ -119,6 +118,7 @@ interface StructHeader {
   name: string,
   generics: string[]
   pub: boolean
+  isEnum: boolean
 }
 
 interface Struct {
@@ -251,7 +251,7 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
 // returns the program, null if invalid syntax, and logs all errors to the console
 function parse(unitText: string, documentName: string): ProgramUnit | null {
   let lines = getLines(unitText, documentName);
-  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], consts: [], enums: [] };
+  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], consts: [] };
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
@@ -268,18 +268,12 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
         start = 1;
       }
 
-      if (line.tokens[start].val == 'struct') {
+      if (line.tokens[start].val == 'struct' || line.tokens[start].val == 'enum') {
         let struct = parseStruct(newLine, body, pub);
         if (struct == null) {
           return null;
         }
         program.structs.push(struct);
-      } else if (line.tokens[start].val == 'enum') {
-        let en = parseStruct(newLine, body, pub);
-        if (en == null) {
-          return null;
-        }
-        program.enums.push(en);
       } else if (line.tokens[start].val == 'use') {
         if (line.position.line != 1) {
           logError(line.position, 'uses must be at top of file');
@@ -290,7 +284,9 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
           return null;
         }
         program.uses = uses;
-      } else if (line.tokens[start].val == 'fn' || line.tokens[start].val == 'trait') {
+      } else if (line.tokens[start].val == 'fn'
+        || line.tokens[start].val == 'trait'
+        || line.tokens[start].val == 'impl') {
         let fn = parseFn(line, body);
         if (fn == null) {
           return null;
@@ -602,11 +598,11 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
     }
   }
 
-  let structName: StructHeader = { name: header.tokens[1].val, generics, pub };
+  let structName: StructHeader = { name: header.tokens[1].val, generics, pub, isEnum: header.tokens[0].val == 'enum' };
   let structFields: Var[] = [];
   for (let line of body) {
     let name = line.tokens[line.tokens.length - 1].val;
-    let visibility: FieldVisibility = null;
+    let visibility: FieldVisibility = 'pub';
     let typeTokens = line.tokens.slice(0, -1);
     let recursive = false;
 
@@ -622,7 +618,7 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
       typeTokens = line.tokens.slice(i + 1, -1);
     }
     else if (nextToken == 'pri') {
-      visibility = null;
+      visibility = 'pri';
       typeTokens = line.tokens.slice(i + 1, -1);
     }
     else {
@@ -630,12 +626,18 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
       visibility = 'pub';
     }
 
-    let t = tryParseType(typeTokens);
-    if (t == null) {
-      logError(positionRange(typeTokens), 'field type not valid')
-      return null;
+    // for nil in enum
+    if (typeTokens.length == 0) {
+      structFields.push({ t: { tag: 'basic', val: 'nil'}, name, position: line.position, visibility, recursive });
     }
-    structFields.push({ t, name, position: line.position, visibility, recursive });
+    else {
+      let t = tryParseType(typeTokens);
+      if (t == null) {
+        logError(positionRange(typeTokens), 'field type not valid')
+        return null;
+      }
+      structFields.push({ t, name, position: line.position, visibility, recursive });
+    }
   }
 
   return { header: structName, fields: structFields, position: header.position };
@@ -791,6 +793,7 @@ function parseFnHeader(
 
   let fnMode: FnMode = 'fn' 
   if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
+  else if (tokens[0].val == 'trait' || tokens[1].val == 'trait') fnMode = 'trait'
   else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
@@ -840,7 +843,7 @@ function parseFnHeader(
   }
 
   let returnTokens = tokens.slice(paramEnd + 1);
-  let returnType: Type | null = { tag: 'basic', val: 'void' };
+  let returnType: Type | null = { tag: 'basic', val: 'nil' };
   if (returnTokens.length != 0) {
     let possibleReturn: Type | null = null;
     // attempt to parse as named return

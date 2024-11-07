@@ -3,15 +3,15 @@ import { logError, compilerError, Position } from './util';
 
 export {
   UnitSymbols, loadUnits, resolveType, Type,
-  NIL, BOOL, ANY, resolveFn, resolveTrait, Fn, FnResult, ERR,
+  NIL, BOOL, ANY, resolveFn, Fn, FnResult, ERR,
   CHAR, INT, I32, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
-  typeApplicableStateful, serializeType, createTypeUnion
+  typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
+  typeEq
 }
 
 type Modifier = 'pri' | 'pub';
 type FieldModifier = 'pri' | 'pub' | 'get';
-
 
 interface Field {
   name: string,
@@ -57,6 +57,20 @@ interface UnitSymbols {
   fns: Map<string, Fn[]>
 }
 
+const NIL: Type = basic('nil');
+const BOOL: Type = basic('bool');
+const F32: Type = basic('f32');
+const F64: Type = basic('f64');
+const CHAR: Type = basic('char');
+const INT: Type = basic('int');
+const I32: Type = basic('i32');
+const I16: Type = basic('i16'); 
+const I8: Type = basic('i8');
+const U64: Type =  basic('u64');
+const U32: Type =  basic('u32');
+const U16: Type =  basic('u16');
+const U8: Type =  basic('u8');
+
 function basic(name: string): Type {
   return { 
     tag: 'struct',
@@ -71,24 +85,59 @@ function basic(name: string): Type {
   }
 }
 
-const ERR: Type = { tag: 'struct', val: { name: 'err', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] } };
-const STR: Type = { tag: 'struct', val: { name: 'str', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] } };
-const FMT: Type = { tag: 'struct', val: { name: 'Fmt', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] } };
-const RANGE: Type = { tag: 'struct', val: { name: 'range', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] } };
+const STR: Type = {
+  tag: 'struct',
+  val: {
+    name: 'str',
+    generics: [],
+    unit: 'std/core',
+    modifier: 'pub',
+    isEnum: false,
+    fields: [] 
+  }
+};
 
-const NIL: Type = basic('nil');
-const BOOL: Type = basic('bool');
-const F32: Type = basic('f32');
-const F64: Type = basic('f64');
-const CHAR: Type = basic('char');
-const INT: Type = basic('int');
-const I32: Type = basic('i32');
-const I16: Type = basic('i16'); 
-const I8: Type = basic('i8');
-const U64: Type =  basic('u64');
-const U32: Type =  basic('u32');
-const U16: Type =  basic('u16');
-const U8: Type =  basic('u8');
+const ERR: Type = {
+  tag: 'struct',
+  val: {
+    name: 'err',
+    generics: [],
+    unit: 'std/core',
+    modifier: 'pub',
+    isEnum: false,
+    fields: [
+      { name: 'message', type: STR, modifier: 'get' }
+    ] 
+  }
+};
+
+const FMT: Type = {
+  tag: 'struct',
+  val: {
+    name: 'Fmt',
+    generics: [],
+    unit: 'std/core',
+    modifier: 'pub',
+    isEnum: false,
+    fields: [] 
+  }
+};
+
+const RANGE: Type = {
+  tag: 'struct',
+  val: {
+    name: 'range',
+    generics: [],
+    unit: 'std/core',
+    modifier: 'pub',
+    isEnum: false,
+    fields: [
+      { name: 'start', type: INT, modifier: 'pub' },
+      { name: 'end', type: INT, modifier: 'pub' },
+      { name: 'output', type: INT, modifier: 'pub' }
+    ] 
+  }
+};
 
 const BASICS: Struct[] = [
   { name: 'i8', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
@@ -105,6 +154,10 @@ const BASICS: Struct[] = [
   { name: 'char', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
   { name: 'nil', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] }
 ];
+
+function refType(type: Type): Type {
+  return { tag: 'link', val: type };
+}
 
 function serializeType(type: Type): string {
   return toStr(type);
@@ -190,6 +243,11 @@ function isGeneric(a: Type): boolean {
   return false;
 }
 
+function typeEq(t1: Type, t2: Type) {
+  return typeApplicableStateful(t1, t2, new Map(), true) 
+    && typeApplicableStateful(t2, t1, new Map(), true);
+}
+
 // fnHeader field is used to calculate whether a generic should accept any type
 function typeApplicableStateful(
   sub: Type,
@@ -197,6 +255,13 @@ function typeApplicableStateful(
   genericMap: Map<string, Type>,
   fnHeader: boolean,
 ): boolean {
+  if (sub.tag == 'link') {
+    return typeApplicableStateful(sub.val, supa, genericMap, fnHeader);
+  }
+  if (supa.tag == 'link') {
+    return typeApplicableStateful(sub, supa.val, genericMap, fnHeader);
+  }
+
   if (supa.tag == 'generic') {
     if (!fnHeader && supa.tag != sub.tag) return false;
     if (sub.tag == 'generic') return true;
@@ -216,7 +281,7 @@ function typeApplicableStateful(
 
   if (sub.tag != supa.tag) return false;
 
-  if (isBasic(sub) && isBasic(supa)) return (sub as any).val == (supa as any).val;
+  if (isBasic(sub) && isBasic(supa)) return (sub as any).val.name == (supa as any).val.name;
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
     return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
   }
@@ -258,7 +323,8 @@ function toStr(t: Type | null): string {
   if (t == null) return 'null';
   if (t.tag == 'struct' && isBasic(t)) return t.val.name;
   if (t.tag == 'generic') return t.val;
-  if (t.tag == 'ptr') return '*' + toStr(t.val)
+  if (t.tag == 'ptr') return '*' + toStr(t.val);
+  if (t.tag == 'link') return '&' + toStr(t.val);
   if (t.tag == 'struct') {
     let generics: string = '[';
     for (let i = 0; i < t.val.generics.length; i++) {
@@ -388,8 +454,27 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
     unitSymbols.allUnits = symbols;
   }
 
-  loadStructs(units, symbols)
-  loadFns(units, symbols)
+  let coreUnit = symbols.find(x => x.name == 'std/core');
+  if (coreUnit == undefined) {
+    compilerError('must include core unit');
+    return [];
+  }
+
+  for (let i = 0; i < symbols.length; i++) {
+    if (symbols[i].name == 'std/core') continue;
+    let containsCore: boolean = false;
+    for (let j = 0; j < symbols[i].useUnits.length; j++) {
+      if (symbols[i].useUnits[j].name == 'std/core') {
+        containsCore = true;
+        break;
+      }
+    }
+    if (!containsCore) symbols[i].useUnits.push(coreUnit);
+  }
+
+  loadStructs(units, symbols);
+  loadFields(units, symbols);
+  loadFns(units, symbols);
   for (let i = 0; i < units.length; i++) {
     analyzeUnitDataTypes(symbols[i], units[i]);
   }
@@ -403,22 +488,50 @@ function loadStructs(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
     let unitTypeMap: Map<string, Struct> = new Map();
     for (let struct of unit.structs) {
       let modifier: Modifier = struct.header.pub ? 'pub' : 'pri';
-      let s: Struct = { name: struct.header.name, unit: unit.fullName, generics: [], modifier: modifier, isEnum: false, fields: [] };
+      let s: Struct = { 
+        name: struct.header.name,
+        unit: unit.fullName,
+        generics: [],
+        modifier: modifier,
+        isEnum: struct.header.isEnum,
+        fields: [] 
+      };
+      for (let genericLetter of struct.header.generics) {
+        s.generics.push({ tag: 'generic', val: genericLetter });
+      }
       unitTypeMap.set(struct.header.name, s);
     }
-    for (let en of unit.enums) {
-      let modifier: Modifier = en.header.pub ? 'pub' : 'pri';
-      let s: Struct = { name: en.header.name, unit: unit.fullName, generics: [], modifier: modifier, isEnum: true, fields: [] };
-      unitTypeMap.set(en.header.name, s);
-    }
 
-    // load bssic types
+    // load basic types
     if (unit.fullName == 'std/core') {
       for (let basic of BASICS) {
-        unitTypeMap.set(unit.fullName, basic);
+        unitTypeMap.set(basic.name, basic);
       }
     }
     to[i].structs = unitTypeMap;
+  }
+}
+
+function loadFields(units: Parse.ProgramUnit[], symbols: UnitSymbols[]) {
+  for (let i = 0; i < symbols.length; i++) {
+    for (let parseStruct of units[i].structs) {
+      let struct = symbols[i].structs.get(parseStruct.header.name);
+      if (struct == undefined) continue;
+
+      for (let field of parseStruct.fields) {
+        let type = resolveType(symbols[i], field.t, field.position);
+        if (type == null) {
+          logError(field.position, 'invalid type');
+          continue;
+        };
+        struct.fields.push({
+          name: field.name,
+          type,
+          modifier: field.visibility
+        })
+      }
+    }
+
   }
 }
 
@@ -479,13 +592,14 @@ interface FnLookupResult {
 }
 
 function resolveFn(
+  modeFilter: string[],
   unit: UnitSymbols,
   name: string,
   paramTypes: (Type | null)[],
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
-  let results = lookupFnInternal('fn', unit, name, paramTypes, retType);
+  let results = lookupFnInternal(modeFilter, unit, name, paramTypes, retType);
   if (results.possibleFns.length == 1) return results.possibleFns[0];
   if (results.possibleFns.length > 1) {
     if (position != null) logError(position, 'function is ambiguous');
@@ -499,46 +613,98 @@ function resolveFn(
   return null;
 }
 
-function resolveTrait(
-  unit: UnitSymbols,
-  name: string,
-  paramTypes: (Type | null)[],
-  retType: Type | null,
-  position: Position | null
-): FnResult | null {
-  let results = lookupFnInternal('trait', unit, name, paramTypes, retType);
-  if (results.possibleFns.length == 1) return results.possibleFns[0];
-  if (results.possibleFns.length > 1) {
-    if (position != null) logError(position, 'trait is ambiguous');
-    return null
-  }
-  if (results.wrongTypeFns.length > 0) {
-    if (position != null) logError(position, 'trait is wrong type');
-    return null
-  }
-  if (position != null) logError(position, 'unknown trait');
-  return null;
-}
-
 // given the concrete types, of the trait, return the implementation
 // that is needed
 function resolveImpl(
-  unit: UnitSymbols,
+  symbols: UnitSymbols,
   name: string,
   paramTypes: Type[],
-  retType: Type,
+  retType: Type | null,
   position: Position | null
-) {
-
-  for (let i = 0; i < 10; i++) {
-
+): FnResult | null {
+  let searchImpl = paramTypes[0];
+  if (searchImpl.tag == 'link') searchImpl = searchImpl.val;
+  if (searchImpl.tag != 'struct') {
+    if (position != null) logError(position, 'invalid impl');
+    return null; 
   }
-  
 
+  let unit: UnitSymbols | null = null;
+  for (let testUnit of symbols.allUnits) {
+    if (testUnit.name != searchImpl.val.unit) continue;
+    unit = testUnit;
+  }
+  if (unit == null) {
+    if (position != null) logError(position, 'invalid impl');
+    return null; 
+  }
+
+  let unitFns: Fn[] | undefined = unit.fns.get(name);
+  if (unitFns == undefined) {
+    if (position != null) logError(position, 'unknown impl');
+    return null; 
+  }
+
+  let wrongTypeFns: Fn[] = []; 
+  let possibleFns: FnResult[] = [];
+  let nonGenericPossibleFns: FnResult[] = [];
+  fnLoop: for (let fn of unitFns) {
+    if (fn.mode != 'impl') continue;
+    if (fn.paramTypes.length != paramTypes.length) continue;
+    let genericMap: Map<string, Type> = new Map();
+    for (let i = 0; i < paramTypes.length; i++) {
+      let pType = paramTypes[i];
+      if (pType == null) continue;
+      if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true)) {
+        wrongTypeFns.push(fn);
+        continue fnLoop;
+      }
+    }
+    if (retType != null) {
+      if (!typeApplicableStateful(retType, fn.returnType, genericMap, true)) {
+        wrongTypeFns.push(fn);
+        continue fnLoop;
+      }
+    }
+
+    let fnType: Type = { tag: 'fn', returnType: fn.returnType, paramTypes: fn.paramTypes };
+    let resolvedType: Type = applyGenericMap(fnType, genericMap);
+    let possibleFn = {
+      fnReference: fn,
+      name: fn.name,
+      unit: fn.unit,
+      resolvedType,
+      genericMap
+    }
+    if (isGeneric(fnType)) {
+      possibleFns.push(possibleFn);
+    }
+    else {
+      nonGenericPossibleFns.push(possibleFn);
+    }
+  }
+
+  if (nonGenericPossibleFns.length == 1) return nonGenericPossibleFns[0];
+  if (nonGenericPossibleFns.length > 1) {
+    if (position != null) logError(position, 'impl is ambiguous');
+    return null
+  }
+
+  if (possibleFns.length == 1) return possibleFns[0];
+  if (possibleFns.length > 1) {
+    if (position != null) logError(position, 'impl is ambiguous');
+    return null
+  }
+  if (wrongTypeFns.length > 0) {
+    if (position != null) logError(position, 'impl is wrong type');
+    return null
+  }
+  if (position != null) logError(position, 'unknown impl');
+  return null;
 }
 
 function lookupFnInternal(
-  filter: 'fn' | 'trait',
+  modeFilter: string[],
   unit: UnitSymbols,
   name: string,
   paramTypes: (Type | null)[],
@@ -555,7 +721,7 @@ function lookupFnInternal(
   let wrongTypeFns: Fn[] = []; 
   let possibleFns: FnResult[] = [];
   fnLoop: for (let fn of fns) {
-    if (fn.mode != filter) continue;
+    if (!modeFilter.includes(fn.mode)) continue;
     let genericMap: Map<string, Type> = new Map();
     if (fn.paramTypes.length != paramTypes.length) continue;
     for (let i = 0; i < paramTypes.length; i++) {
@@ -568,7 +734,7 @@ function lookupFnInternal(
     }
 
     if (retType != null) {
-      if (!typeApplicableStateful(fn.returnType, retType, genericMap, true)) {
+      if (!typeApplicableStateful(retType, fn.returnType, genericMap, true)) {
         wrongTypeFns.push(fn);
         continue fnLoop;
       }
@@ -588,17 +754,70 @@ function lookupFnInternal(
 }
 
 // returns the amount of types applicable, null if already printed error
-function resolveTypeInternal(unit: UnitSymbols, parseType: Parse.Type, position: Position): Type[] | null {
-  if (parseType.tag == 'basic' || parseType.tag == 'generic') {
+function resolveTypeInternal(
+  unit: UnitSymbols,
+  parseType: Parse.Type,
+  position: Position
+): Type[] | null {
+  if (parseType.tag == 'basic' && parseType.val.length == 1 
+    && parseType.val[0] >= 'A' && parseType.val[0] <= 'Z'
+  ) {
+    return [{ tag: 'generic', val: parseType.val }];
+  }
+  else if (parseType.tag == 'basic' || parseType.tag == 'generic') {
     let types: Type[] = [];
+
     let name = parseType.tag == 'basic' ? parseType.val : parseType.val.name; 
+    let allStructs: Struct[] = [];
     let struct: Struct | undefined = unit.structs.get(name);
-    if (struct != undefined) types.push({ tag: 'struct', val: struct });
+    if (struct != undefined) allStructs.push(struct);
     for (let useUnit of unit.useUnits) {
-      name = parseType.tag == 'basic' ? parseType.val : parseType.val.name; 
       struct = useUnit.structs.get(name);
-      if (struct != undefined) types.push({ tag: 'struct', val: struct });
+      if (struct != undefined) allStructs.push(struct);
     }
+
+    for (let struct of allStructs) {
+      if (parseType.tag == 'generic') {
+        let genericMap: Map<string, Type> = new Map();
+        if (parseType.val.generics.length != struct.generics.length) {
+          continue;
+        }
+
+        let newStruct: Struct = { 
+          generics: [],
+          name,
+          unit: struct.unit,
+          modifier: struct.modifier,
+          fields: [],
+          isEnum: struct.isEnum
+        };
+        for (let i = 0; i < struct.generics.length; i++) {
+          let genericType = resolveType(unit, parseType.val.generics[i], position);
+          if (genericType == null) return null;
+          let g = struct.generics[i];
+          if (g.tag != 'generic') {
+            compilerError('expected generic');
+            return null;
+          }
+          newStruct.generics.push(genericType);
+          genericMap.set(g.val, genericType);
+        }
+
+        for (let i = 0; i < struct.fields.length; i++) {
+          let newFieldType = applyGenericMap(struct.fields[i].type, genericMap);
+          newStruct.fields.push({
+            type: newFieldType,
+            modifier: struct.fields[i].modifier,
+            name: struct.fields[i].name
+          });
+        }
+        types.push({ tag: 'struct', val: newStruct });
+      }
+      else {
+        types.push({ tag: 'struct', val: struct });
+      }
+    }
+
     return types;
   }
   else if (parseType.tag == 'fn') {
@@ -638,16 +857,17 @@ function analyzeUnitDataTypes(symbols: UnitSymbols, unit: Parse.ProgramUnit): bo
     if (verifyStruct(symbols, struct) == false) {
       invalidDataType = true;
     }
-  }
-  for (let en of unit.enums) {
-    for (let i = 0; i < en.fields.length; i++) {
-      if (en.fields[i].visibility == 'get' || en.fields[i].visibility == null) {
-        logError(en.fields[i].position, 'enum fields can not have visibility modifier');
+
+    if (struct.header.isEnum) {
+      for (let i = 0; i < struct.fields.length; i++) {
+        if (struct.fields[i].visibility == 'get' ||struct.fields[i].visibility == null) {
+          logError(struct.fields[i].position, 'enum fields can not have visibility modifier');
+          invalidDataType = true;
+        }
+      }
+      if (verifyStruct(symbols, struct) == false) {
         invalidDataType = true;
       }
-    }
-    if (verifyStruct(symbols, en) == false) {
-      invalidDataType = true;
     }
   }
 

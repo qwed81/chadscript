@@ -101,6 +101,6 @@ function compileProgram() {
 
   let outputPath = path.join('build', 'output');
   try {
-    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} ${libPaths} -O3 -lm -o ${outputPath}`);
+    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} ${libPaths} -o ${outputPath}`);
   } catch {}
 }
