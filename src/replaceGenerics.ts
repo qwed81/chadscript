@@ -1,8 +1,9 @@
+import { FnMode } from './parse';
 import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram } from './analyze';
 import { compilerError } from './util';
 import {
-  typeEq, Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
-  NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, refType, INT
+  Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
+  NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT
 } from './typeload';
 
 export {
@@ -21,6 +22,8 @@ interface FnKey {
   unit: string,
   // serializeType
   type: string 
+  // to prevent double declaration
+  mode: FnMode
 }
 
 interface FnSet {
@@ -29,7 +32,7 @@ interface FnSet {
   types: Map<string, Type>,
   // maps via json(FnKey)
   fns: Map<string, FnImpl>,
-  // to be able to lookup traits
+  // to be able to lookup impls
   symbols: UnitSymbols[]
 }
 
@@ -65,9 +68,10 @@ function shouldResolveFn(
   set: FnSet,
   name: string,
   unit: string,
+  mode: FnMode,
   type: Type
 ): boolean {
-  let keyProps: FnKey = { name, unit, type: serializeType(type) };
+  let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
   let key = JSON.stringify(keyProps);
   return !set.fns.has(key);
 }
@@ -76,11 +80,13 @@ function getFnTemplate(
   set: FnSet,
   name: string,
   unit: string,
+  mode: FnMode,
   type: Type
 ): FnImpl {
   let fnList: FnImpl[] = set.fnTemplates.get(name)!;
   for (let i = 0; i < fnList.length; i++) {
     if (fnList[i].header.unit != unit) continue;
+    if (fnList[i].header.mode != mode) continue;
     let templateType: Type = {
       tag: 'fn',
       returnType: fnList[i].header.returnType,
@@ -144,7 +150,8 @@ function monomorphizeFn(
   let keyProps: FnKey = {
     name: genericFn.header.name,
     unit: genericFn.header.unit,
-    type: serializeType({ tag: 'fn', returnType, paramTypes}) 
+    type: serializeType({ tag: 'fn', returnType, paramTypes}) ,
+    mode: genericFn.header.mode
   };
   let key = JSON.stringify(keyProps);
   set.fns.set(key, impl)
@@ -188,6 +195,7 @@ function resolveInst(
       tag: 'fn',
       unit: nf.unit,
       name: nf.name,
+      mode: nf.mode,
       type
     };
     addType(set, RANGE); 
@@ -215,8 +223,18 @@ function resolveInst(
     return { tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }
   }
   else if (inst.tag == 'assign') {
-    let expr = resolveExpr(inst.val.expr, set, genericMap);
     let to = resolveLeftExpr(inst.val.to, set, genericMap);
+    let expr = resolveExpr(inst.val.expr, set, genericMap);
+
+    if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+      let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
+      return {
+        tag: 'expr',
+        val: implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr , expr]),
+        position: inst.position
+      };
+    }
+
     return { tag: 'assign', val: { op: inst.val.op, to, expr }, position: inst.position };
   }
   else if (inst.tag == 'include') {
@@ -231,6 +249,43 @@ function resolveInst(
   return undefined!;
 }
 
+function implToExpr(
+  set: FnSet,
+  name: string,
+  paramTypes: Type[],
+  returnType: Type | null,
+  genericMap: Map<string, Type>,
+  exprs: Expr[]
+): Expr {
+  let impl = resolveImpl(set.symbols[0], name, paramTypes, returnType, null);
+  if (impl == null) {
+    compilerError('always can resovle impl');
+    return undefined!;
+  }
+  let fnExpr: LeftExpr = {
+    tag: 'fn',
+    unit: impl.unit,
+    name: impl.name,
+    type: impl.resolvedType,
+    mode: impl.mode
+  };
+
+  fnExpr = resolveLeftExpr(fnExpr, set, genericMap);
+  if (impl.resolvedType.tag != 'fn') {
+    compilerError('should always be fn');
+    return undefined!;
+  }
+
+  return {
+    tag: 'fn_call',
+    val: {
+      fn: fnExpr,
+      exprs 
+    }, 
+    type: impl.resolvedType.returnType 
+  };
+}
+
 function resolveExpr(
   expr: Expr,
   set: FnSet,
@@ -240,26 +295,9 @@ function resolveExpr(
     let left = resolveExpr(expr.val.left, set, genericMap);
     let right = resolveExpr(expr.val.right, set, genericMap);
     if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type)) {
-      let impl = resolveImpl(set.symbols[0], 'eq', [left.type, right.type], BOOL, null);
-      if (impl == null) {
-        compilerError('always can resovle trait');
-        return undefined!;
-      }
-      let eq: LeftExpr = {
-        tag: 'fn',
-        unit: impl.unit,
-        name: impl.name,
-        type: impl.resolvedType
-      };
-      resolveLeftExpr(eq, set, genericMap);
-      return {
-        tag: 'fn_call',
-        val: {
-          fn: eq,
-          exprs: [left, right] 
-        }, 
-        type: BOOL 
-      };
+      let impl = implToExpr(set, 'eq', [left.type, right.type], BOOL, genericMap, [left, right]);
+      if (expr.val.op == '!=') return { tag: 'not', val: impl, type: BOOL };
+      return impl;
     }
 
     let type = applyGenericMap(expr.type, genericMap);
@@ -294,6 +332,16 @@ function resolveExpr(
     let exprs: Expr[] = [];
     for (let param of expr.val.exprs) {
       exprs.push(resolveExpr(param, set, genericMap));
+    }
+
+    if (fn.tag == 'fn' && fn.mode == 'decl') {
+      if (fn.type.tag != 'fn') {
+        compilerError('should always be fn')
+        return undefined!;
+      }
+
+      let paramTypes = exprs.map(x => x.type);
+      return implToExpr(set, fn.name, paramTypes, fn.type.returnType, genericMap, exprs);
     }
 
     let returnType = applyGenericMap(expr.type, genericMap);
@@ -333,8 +381,10 @@ function resolveExpr(
   }
   else if (expr.tag == 'fmt_str') {
     let resolvedExprs: Expr[] = [];
-    for (let val of expr.val) {
-      resolvedExprs.push(resolveExpr(val, set, genericMap));
+    for (let innerExpr of expr.val) {
+      let resolvedExpr = resolveExpr(innerExpr, set, genericMap);
+      let fnCall = implToExpr(set, 'format', [FMT, resolvedExpr.type], null, genericMap, [undefined!, resolvedExpr]);
+      resolvedExprs.push(fnCall);
     }
     return { tag: 'fmt_str', val: resolvedExprs, type: expr.type };
   }
@@ -369,30 +419,11 @@ function resolveLeftExpr(
     let index = resolveExpr(leftExpr.val.index, set, genericMap);
     let v = resolveExpr(leftExpr.val.var, set, genericMap);
     if (leftExpr.val.var.type.tag != 'ptr') {
-      let impl = resolveImpl(set.symbols[0], 'index', [refType(v.type), index.type], null, null);
-      if (impl == null) {
-        compilerError('always can resovle trait');
-        return undefined!;
-      }
-      let eq: LeftExpr = {
-        tag: 'fn',
-        unit: impl.unit,
-        name: impl.name,
-        type: impl.resolvedType
-      };
-      resolveLeftExpr(eq, set, genericMap);
-      let fnCall: Expr = {
-        tag: 'fn_call',
-        val: {
-          fn: eq,
-          exprs: [v, index] 
-        }, 
-        type: BOOL 
-      };
+      let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index]);
       return {
         tag: 'index',
         val: {
-          var: fnCall,
+          var: inner,
           index: { tag: 'int_const', val: 0, type: INT }
         },
         type: leftExpr.type
@@ -407,14 +438,16 @@ function resolveLeftExpr(
     return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type };
   }
   else if (leftExpr.tag == 'fn') {
-    let shouldResolve = shouldResolveFn(set, leftExpr.name, leftExpr.unit, leftExpr.type);
+    let shouldResolve = shouldResolveFn(set, leftExpr.name, leftExpr.unit, leftExpr.mode, leftExpr.type);
+    let thisFnType = applyGenericMap(leftExpr.type, genericMap);
+
     let fnType: Type;
 
     if (shouldResolve) {
-      let genericFn = getFnTemplate(set, leftExpr.name, leftExpr.unit, leftExpr.type);
+      let genericFn = getFnTemplate(set, leftExpr.name, leftExpr.unit, leftExpr.mode, leftExpr.type);
       let genericType: Type = { tag: 'fn', paramTypes: genericFn.header.paramTypes, returnType: genericFn.header.returnType };
       let newFnGenericMap: Map<string, Type> = new Map();
-      if (!typeApplicableStateful(leftExpr.type, genericType, newFnGenericMap, true)) {
+      if (!typeApplicableStateful(thisFnType, genericType, newFnGenericMap, true)) {
         compilerError('fn should be applicable');
       }
       monomorphizeFn(genericFn, set, newFnGenericMap);
@@ -430,6 +463,7 @@ function resolveLeftExpr(
       type: fnType,
       name: leftExpr.name,
       unit: leftExpr.unit,
+      mode: leftExpr.mode
     };
 
     return newLeftExpr;

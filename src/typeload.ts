@@ -581,6 +581,7 @@ function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Positio
 interface FnResult {
   name: string,
   unit: string,
+  mode: Parse.FnMode,
   resolvedType: Type
   fnReference: Fn
   genericMap: Map<string, Type>
@@ -622,33 +623,17 @@ function resolveImpl(
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
-  let searchImpl = paramTypes[0];
-  if (searchImpl.tag == 'link') searchImpl = searchImpl.val;
-  if (searchImpl.tag != 'struct') {
-    if (position != null) logError(position, 'invalid impl');
-    return null; 
-  }
 
-  let unit: UnitSymbols | null = null;
-  for (let testUnit of symbols.allUnits) {
-    if (testUnit.name != searchImpl.val.unit) continue;
-    unit = testUnit;
-  }
-  if (unit == null) {
-    if (position != null) logError(position, 'invalid impl');
-    return null; 
-  }
-
-  let unitFns: Fn[] | undefined = unit.fns.get(name);
-  if (unitFns == undefined) {
-    if (position != null) logError(position, 'unknown impl');
-    return null; 
+  let lookupFns: Fn[] = [];
+  for (let unit of symbols.allUnits) {
+    let fns: Fn[] | undefined = unit.fns.get(name);
+    if (fns != undefined) lookupFns.push(...fns);
   }
 
   let wrongTypeFns: Fn[] = []; 
   let possibleFns: FnResult[] = [];
   let nonGenericPossibleFns: FnResult[] = [];
-  fnLoop: for (let fn of unitFns) {
+  fnLoop: for (let fn of lookupFns) {
     if (fn.mode != 'impl') continue;
     if (fn.paramTypes.length != paramTypes.length) continue;
     let genericMap: Map<string, Type> = new Map();
@@ -669,13 +654,14 @@ function resolveImpl(
 
     let fnType: Type = { tag: 'fn', returnType: fn.returnType, paramTypes: fn.paramTypes };
     let resolvedType: Type = applyGenericMap(fnType, genericMap);
-    let possibleFn = {
+    let possibleFn: FnResult = {
       fnReference: fn,
       name: fn.name,
       unit: fn.unit,
       resolvedType,
-      genericMap
-    }
+      genericMap,
+      mode: fn.mode
+    };
     if (isGeneric(fnType)) {
       possibleFns.push(possibleFn);
     }
@@ -700,6 +686,7 @@ function resolveImpl(
     return null
   }
   if (position != null) logError(position, 'unknown impl');
+  throw new Error();
   return null;
 }
 
@@ -747,7 +734,8 @@ function lookupFnInternal(
       name: fn.name,
       unit: fn.unit,
       resolvedType,
-      genericMap
+      genericMap,
+      mode: fn.mode
     });
   }
   return { possibleFns, wrongTypeFns };

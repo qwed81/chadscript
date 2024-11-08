@@ -37,10 +37,17 @@ fn next(&revRange r) *int
   ret thisIndex
 ##
 
+fn print(T val)
+  Fmt f = fmt()
+  format(f, val)
+  *char output = cstr({ base = f.base, len = f.len })
+  include
+    printf("%s\n", _output);
+
 fn alloc(int amt) *T
   *T output = nil
   include
-    _output = malloc(sizeof($(T)) * *_amt);
+    _output = malloc(sizeof($(T)) * _amt);
   ret output
 
 fn ptrCast(*S input) *E
@@ -64,7 +71,7 @@ fn str(Vec[T] l) str
   Fmt buf = fmt()
   buf ++= "["
   for i in 0:l.len
-    # buf ++= strImpl(l[i])
+    buf ++= l[i]
     if i != l.len - 1
       buf ++= ','
   buf ++= ']'
@@ -207,8 +214,23 @@ pri fn appendOne(&Fmt s, char c)
   s.base[s.len] = c
   s.len += 1
 
-impl append(&Fmt s, T val)
-  appendOne(s, 'h')
+decl format(&Fmt fmt, T val)
+
+impl format(&Fmt fmt, str s)
+  for i in 0:s.len
+    appendOne(fmt, s[i])
+
+impl format(&Fmt fmt, int val)
+  int len = 0
+  include
+    _len = snprintf(NULL, 0, "%ld", _val);
+
+  *char output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%ld", _val);
+
+  str newStr = { base = output, len = len }
+  fmt ++= newStr
 
 struct Map[K, V]
 
@@ -228,16 +250,6 @@ fn rand() f64
     return ((double)rand() / (double)RAND_MAX);
   ret 0.0
 
-fn str(int val) str
-  int len = 0
-  include
-    _len = snprintf(NULL, 0, "%ld", *_val);
-
-  *char output = alloc(len + 1)
-  include
-    snprintf(_output, _len + 1, "%ld", *_val);
-  ret { base = output, len = len }
-
 fn str(f64 val) str
   int len = 0
   include
@@ -247,19 +259,11 @@ fn str(f64 val) str
   include
     snprintf(_output, _len + 1, "%lf", *_val);
   ret { base = output, len = len }
-  
-fn print(T val, str(T) strImpl=str) 
-  *char printStr = cstr(strImpl(val))
-  include
-    printf("%s\n", _printStr);
 
 fn str(char val) str
   Fmt buf = fmt(1)
   buf[0] = val
   ret str(buf)
-
-fn str(i32 val) str
-  ret str(int(val))
 
 fn input(str output) int|err
   int val = 0

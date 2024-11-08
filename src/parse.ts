@@ -92,7 +92,7 @@ type Type = { tag: 'basic', val: string }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
 
-type FnMode = 'fn' | 'trait' | 'impl' | 'impl_trait'
+type FnMode = 'fn' | 'decl' | 'impl'
 
 interface Fn {
   type: FnType
@@ -285,7 +285,7 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
         }
         program.uses = uses;
       } else if (line.tokens[start].val == 'fn'
-        || line.tokens[start].val == 'trait'
+        || line.tokens[start].val == 'decl'
         || line.tokens[start].val == 'impl') {
         let fn = parseFn(line, body);
         if (fn == null) {
@@ -793,7 +793,7 @@ function parseFnHeader(
 
   let fnMode: FnMode = 'fn' 
   if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
-  else if (tokens[0].val == 'trait' || tokens[1].val == 'trait') fnMode = 'trait'
+  else if (tokens[0].val == 'decl' || tokens[1].val == 'decl') fnMode = 'decl'
   else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
 
   let paramStart = tokens.map(x => x.val).indexOf('(');

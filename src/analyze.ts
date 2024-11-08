@@ -117,7 +117,7 @@ type Mode = 'C' | 'none' | 'iter' | 'link';
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
   | { tag: 'var', val: string, mode: Mode, type: Type }
-  | { tag: 'fn', unit: string, name: string, type: Type }
+  | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode }
 
 function analyze(units: Parse.ProgramUnit[]): Program | null {
   let includes: Set<string> = new Set();
@@ -523,6 +523,10 @@ function analyzeInst(
       let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
       if (expr == null) return null;
 
+      if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+        return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
+      }
+
       let impl = resolveImpl(symbols, 'append', [refType(to.type), expr.type], NIL, inst.position);
       if (impl == null) return null;
       return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
@@ -731,7 +735,7 @@ function ensureFnCallValid(
     }
   }
 
-  let result = resolveFn(['fn', 'trait'], symbols, fnCall.fn.val, initialTypes, expectedReturn, position);
+  let result = resolveFn(['fn', 'decl'], symbols, fnCall.fn.val, initialTypes, expectedReturn, position);
   if (result == null || result.resolvedType.tag != 'fn') return null;
   let newTypes: Type[] = result.resolvedType.paramTypes;
   let resolvedExprs: Expr[] = []
@@ -751,6 +755,7 @@ function ensureFnCallValid(
         unit: result.unit,
         name: result.name,
         type: result.resolvedType,
+        mode: result.mode
       }
     }
   }
@@ -1245,10 +1250,6 @@ function ensureExprValid(
     for (let parseExpr of expr.val) {
       let fmtExpr: Expr | null = ensureExprValid(symbols, parseExpr, null, scope, position);
       if (fmtExpr == null) return null;
-
-      let fmtType: Type = { tag: 'link', val: FMT };
-      let fn = resolveImpl(symbols, 'writeStr', [fmtExpr.type, fmtType], NIL, position);
-      if (fn == null) return null;
       newExprs.push(fmtExpr);
     }
     computedExpr = { tag: 'fmt_str', val: newExprs, type: STR }
