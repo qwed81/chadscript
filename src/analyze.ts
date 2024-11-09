@@ -4,7 +4,9 @@ import {
   Type, Fn, UnitSymbols, loadUnits, resolveType, typeApplicable,
   NIL, INT, BOOL, resolveFn, FnResult, FMT, toStr,
   isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
-  RANGE, resolveImpl, refType, typeEq, createTypeUnion
+  RANGE, resolveImpl, refType, typeEq, createTypeUnion,
+  getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
+  getUnitSymbolsFromName, getUnitSymbolsFromAs
 } from './typeload'
 import * as Enum from './enum';
 
@@ -676,6 +678,22 @@ function ensureLeftExprValid(
     let changedType = v.type.tag == 'link' ? v.type.val : v.type;
     return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode };
   }
+  else if (leftExpr.tag == 'scope_unit') {
+    let newUnit = getIsolatedUnitSymbolsFromName(symbols, leftExpr.unit);
+    if (newUnit == null) {
+      if (position != null) logError(position, 'could not find unit');
+      return null;
+    }
+    return ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
+  }
+  else if (leftExpr.tag == 'scope_as') {
+    let newUnit = getIsolatedUnitSymbolsFromAs(symbols, leftExpr.as);
+    if (newUnit == null) {
+      if (position != null) logError(position, 'could not find as');
+      return null;
+    }
+    return ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
+  }
 
   return null;
 }
@@ -687,9 +705,35 @@ function ensureFnCallValid(
   scope: FnContext,
   position: Position | null
 ): Expr | null {
-  // for any function that is not global the type is known
-  if (fnCall.fn.tag != 'var' || getVar(scope, fnCall.fn.val) != null) {
-    let leftExpr = ensureLeftExprValid(symbols, fnCall.fn, scope, position);
+
+  // figure out which unit these belong to
+  let fnIsolatedSymbols: UnitSymbols = symbols;
+  let fnSymbols: UnitSymbols = symbols;
+  let isScoped = false;
+  let fn: Parse.LeftExpr = fnCall.fn;
+  if (fn.tag == 'scope_as') {
+    let innerSymbols = getUnitSymbolsFromAs(symbols, fn.as);
+    if (innerSymbols == null) return null;
+    fnSymbols = innerSymbols;
+    let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.as);
+    if (lookupUnit == null) return null;
+    fnIsolatedSymbols = lookupUnit;
+    isScoped = true;
+    fn = fn.inner;
+  }
+  else if (fn.tag == 'scope_unit') {
+    let innerSymbols = getUnitSymbolsFromAs(symbols, fn.unit);
+    if (innerSymbols == null) return null;
+    fnSymbols = innerSymbols;
+    let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.unit);
+    if (lookupUnit == null) return null;
+    fnIsolatedSymbols = lookupUnit;
+    isScoped = true;
+    fn = fn.inner;
+  }
+
+  if ((fn.tag != 'var' || getVar(scope, fn.val) != null) && !isScoped) {
+    let leftExpr = ensureLeftExprValid(symbols, fn, scope, position);
     if (leftExpr == null) return null;
     if (leftExpr.type.tag != 'fn') {
       if (position != null) logError(position, 'type is not callable');
@@ -735,7 +779,7 @@ function ensureFnCallValid(
     }
   }
 
-  let result = resolveFn(['fn', 'decl'], symbols, fnCall.fn.val, initialTypes, expectedReturn, position);
+  let result = resolveFn(['fn', 'decl'], fnIsolatedSymbols, (fn as any).val, initialTypes, expectedReturn, position);
   if (result == null || result.resolvedType.tag != 'fn') return null;
   let newTypes: Type[] = result.resolvedType.paramTypes;
   let resolvedExprs: Expr[] = []

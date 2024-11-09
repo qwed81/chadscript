@@ -7,7 +7,8 @@ export {
   CHAR, INT, I32, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
-  typeEq
+  typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
+  getUnitSymbolsFromAs, getUnitSymbolsFromName
 }
 
 type Modifier = 'pri' | 'pub';
@@ -51,7 +52,7 @@ interface Fn {
 interface UnitSymbols {
   name: string,
   useUnits: UnitSymbols[]
-  namedUnits: Map<string, UnitSymbols>
+  asUnits: Map<string, UnitSymbols>
   allUnits: UnitSymbols[]
   structs: Map<string, Struct>,
   fns: Map<string, Fn[]>
@@ -427,7 +428,7 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
       name: units[i].fullName,
       useUnits: [],
       allUnits: [],
-      namedUnits: new Map(),
+      asUnits: new Map(),
       fns: new Map(),
       structs: new Map()
     };
@@ -443,7 +444,7 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
         thisUnitSymbols.useUnits.push(otherUnitSymbols);
       }
       else {
-        thisUnitSymbols.namedUnits.set(use.as, otherUnitSymbols);
+        thisUnitSymbols.asUnits.set(use.as, otherUnitSymbols);
       }
     }
   }
@@ -558,6 +559,55 @@ function loadFns(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
         paramTypes
       });
     }
+  }
+}
+
+function getIsolatedUnitSymbolsFromName(base: UnitSymbols, unitName: string): UnitSymbols | null {
+  for (let unit of base.allUnits) {
+    if (unit.name != unitName) continue;
+    return {
+      name: unitName,
+      allUnits: base.allUnits,
+      fns: unit.fns,
+      structs: unit.structs,
+      asUnits: new Map(),
+      useUnits: []
+    }
+  }
+  return null;
+}
+
+function getUnitSymbolsFromName(base: UnitSymbols, unitName: string): UnitSymbols | null {
+  for (let unit of base.allUnits) {
+    if (unit.name != unitName) continue;
+    return unit;
+  }
+  return null;
+}
+
+function getIsolatedUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbols | null {
+  let unit: UnitSymbols | undefined = base.asUnits.get(as);
+  if (unit == undefined) return null;
+  return {
+    name: unit.name,
+    allUnits: base.allUnits,
+    fns: unit.fns,
+    structs: unit.structs,
+    asUnits: new Map(),
+    useUnits: []
+  }
+}
+
+function getUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbols | null {
+  let unit: UnitSymbols | undefined = base.asUnits.get(as);
+  if (unit == undefined) return null;
+  return {
+    name: unit.name,
+    allUnits: base.allUnits,
+    fns: unit.fns,
+    structs: unit.structs,
+    asUnits: new Map(),
+    useUnits: []
   }
 }
 
@@ -686,7 +736,6 @@ function resolveImpl(
     return null
   }
   if (position != null) logError(position, 'unknown impl');
-  throw new Error();
   return null;
 }
 

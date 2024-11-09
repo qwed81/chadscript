@@ -188,6 +188,8 @@ interface Index {
 type LeftExpr = { tag: 'dot', val: DotOp }
   | { tag: 'index', val: Index }
   | { tag: 'var', val: string }
+  | { tag: 'scope_as', as: string, inner: LeftExpr }
+  | { tag: 'scope_unit', unit: string, inner: LeftExpr }
 
 interface StructInitField {
   name: string
@@ -228,7 +230,7 @@ const MAPPING: [string, number][] = [
   ['&', 5],
   ['==', 6], ['!=', 6], ['<', 6], ['>', 6], ['>=', 6], ['<=', 6], ['is', 6],
   ['+',  7], ['-', 7],
-  ['/', 8], ['%', 8], ['*', 8]
+  ['/', 8], ['%', 8], ['*', 8],
 ]; 
 
 function positionRange(tokens: Token[]): Position {
@@ -1229,6 +1231,24 @@ function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null 
     return dot;
   }
 
+  let splits = balancedSplitTwo(tokens, '::');
+  if (splits.length > 1) {
+    if (splits[0].length != 1) {
+      return null;
+    }
+    let left = tryParseExpr(splits[0], position);
+    let right = tryParseLeftExpr(splits[1], position);
+    if (left == null || right == null) return null;
+
+    if (left.tag == 'str_const') {
+      return { tag: 'scope_unit', unit: left.val, inner: right }
+    }
+    else if (left.tag == 'left_expr' && left.val.tag == 'var') {
+      return { tag: 'scope_as', as: left.val.val, inner: right }
+    }
+    return null;
+  }
+
   return tryParseArrExpr(tokens);
 }
 
@@ -1237,10 +1257,7 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     return null;
   }
 
-  if (tokens[0].val == 'try' || tokens[0].val == 'assert' 
-    || tokens[0].val == 'cp' || tokens[0].val == 'mv'
-    || tokens[0].val == 'resolve'
-    || tokens[0].val == '&') {
+  if (tokens[0].val == 'try' || tokens[0].val == 'assert') {
     let parsed = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (parsed == null) {
       return null;
@@ -1249,28 +1266,22 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     if (tokens[0].val == 'try') {
       return { tag: 'try', val: parsed, position };
     }
-    else if (tokens[0].val == '&') {
-      return { tag: 'ptr', val: parsed, position }
-    }
-    else if (tokens[0].val == 'resolve') {
-      return { tag: 'resolve', val: parsed, position };
-    }
     else {
       return { tag: 'assert', val: parsed, position };
     }
   }
 
   // parse all bin expr
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < MAPPING.length; i++) {
     for (let props of MAPPING) {
       if (props[1] != i) {
         continue;
       }
 
       let binOp = tryParseBinOp(tokens, props[0], position);
-      if (binOp != null) {
-        return binOp;
-      }
+      if (binOp == null) continue;
+
+      return binOp;
     }
   }
 
@@ -1279,12 +1290,18 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
   }
 
   // parse not
-  if (tokens.length >= 2 && tokens[0].val == '!') {
+  if (tokens.length >= 2 && (tokens[0].val == '!' || tokens[0].val == '&')) {
     let expr = tryParseExpr(tokens.slice(1), { ...position, start: position.start + 1 });
     if (expr == null) {
       return null;
     }
-    return { tag: 'not', val: expr, position };
+
+    if (tokens[0].val == '!') {
+      return { tag: 'not', val: expr, position };
+    }
+    else if (tokens[0].val == '&') {
+      return { tag: 'ptr', val: expr, position };
+    }
   }
 
   let fnCall = tryParseFnCall(tokens);
@@ -1416,7 +1433,6 @@ function tryParseBinOp(tokens: Token[], op: string, position: Position): Expr | 
     if (right == null) {
       return null;
     }
-
     return { tag: 'is', val: left, right, position };
   }
 
@@ -1559,7 +1575,11 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
 
   // combine the tokens that should not have been split
   for (let i = tokens.length - 1; i >= 1; i--) {
-    if (tokens[i - 1].val == '!' && tokens[i].val == '=') {
+    if (tokens[i - 1].val == ':' && tokens[i].val == ':') {
+      tokens.splice(i, 1);
+      tokens[i - 1].val = '::';
+    }
+    else if (tokens[i - 1].val == '!' && tokens[i].val == '=') {
       tokens.splice(i, 1);
       tokens[i - 1].val = '!=';
     }
