@@ -85,10 +85,10 @@ interface FnType {
   paramTypes: Type[]
 }
 
-type Type = { tag: 'basic', val: string }
+type Type = { tag: 'basic', val: string, unitMode: 'as' | 'unit' | 'none', unit: string }
+  | { tag: 'generic', val: GenericType, unitMode: 'as' | 'unit' | 'none', unit: string }
   | { tag: 'ptr', val: Type }
   | { tag: 'type_union', val0: Type, val1: Type }
-  | { tag: 'generic', val: GenericType }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
 
@@ -630,7 +630,7 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
 
     // for nil in enum
     if (typeTokens.length == 0) {
-      structFields.push({ t: { tag: 'basic', val: 'nil'}, name, position: line.position, visibility, recursive });
+      structFields.push({ t: { tag: 'basic', val: 'nil', unit: '', unitMode: 'none' }, name, position: line.position, visibility, recursive });
     }
     else {
       let t = tryParseType(typeTokens);
@@ -703,21 +703,33 @@ function tryParseType(tokens: Token[]): Type | null {
     }
   }
 
-  let lastToken = tokens[tokens.length - 1].val; 
-  if (lastToken == '!' || lastToken == '?' || lastToken == '*') {
-    let innerType = tryParseType(tokens.slice(0, -1));
-    if (innerType == null) {
+  let unit = '';
+  let unitMode: 'as' | 'unit' | 'none' = 'none';
+  let unitSplit = balancedSplit(tokens, '::');
+  if (unitSplit.length == 2) {
+    let expr = tryParseExpr(unitSplit[0], { end: 0, start: 0, line: 0, document: '' });
+    if (expr == null) return null;
+    
+    if (expr.tag == 'str_const') {
+      unitMode = 'unit';
+      unit = expr.val;
+      tokens = unitSplit[1];
+    }
+    else if (expr.tag == 'left_expr' && expr.val.tag == 'var') {
+      unitMode = 'as'
+      unit = expr.val.val;
+      tokens = unitSplit[1];
+    } 
+    else {
       return null;
     }
-    if (lastToken == '!') {
-      return { tag: 'generic', val: { name: 'res', generics: [innerType] } };
-    }
-    else if (lastToken == '?') {
-      return { tag: 'generic', val: { name: 'opt', generics: [innerType] } };
-    } 
+  }
+  else if (unitSplit.length > 2) {
     return null;
   }
-  else if (lastToken == ')') { // parse fn
+
+  let lastToken = tokens[tokens.length - 1].val; 
+  if (lastToken == ')') { // parse fn
     let fnParamBegin = getFirstBalanceIndexFromEnd(tokens, '(', ')') + 1;
 
     if (fnParamBegin == 0) {
@@ -762,13 +774,13 @@ function tryParseType(tokens: Token[]): Type | null {
       generics.push(parseType);
     }
 
-    return { tag: 'generic', val: { name: tokens[0].val, generics } };
+    return { tag: 'generic', val: { name: tokens[0].val, generics }, unit, unitMode };
   }
 
   if (tokens.length != 1) {
     return null;
   }
-  return { tag: 'basic', val: tokens[0].val };
+  return { tag: 'basic', val: tokens[0].val, unit, unitMode };
 }
 
 function parseFnHeader(
@@ -845,7 +857,7 @@ function parseFnHeader(
   }
 
   let returnTokens = tokens.slice(paramEnd + 1);
-  let returnType: Type | null = { tag: 'basic', val: 'nil' };
+  let returnType: Type | null = { tag: 'basic', val: 'nil', unit: '', unitMode: 'none' };
   if (returnTokens.length != 0) {
     let possibleReturn: Type | null = null;
     // attempt to parse as named return

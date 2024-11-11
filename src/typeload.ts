@@ -850,11 +850,28 @@ function resolveTypeInternal(
 
     let name = parseType.tag == 'basic' ? parseType.val : parseType.val.name; 
     let allStructs: Struct[] = [];
-    let struct: Struct | undefined = unit.structs.get(name);
-    if (struct != undefined) allStructs.push(struct);
-    for (let useUnit of unit.useUnits) {
-      struct = useUnit.structs.get(name);
+
+    if (parseType.unitMode == 'none') {
+      let struct: Struct | undefined = unit.structs.get(name);
       if (struct != undefined) allStructs.push(struct);
+      for (let useUnit of unit.useUnits) {
+        struct = useUnit.structs.get(name);
+        if (struct != undefined) allStructs.push(struct);
+      }
+    }
+    else if (parseType.unitMode == 'as') {
+      let symbols = getIsolatedUnitSymbolsFromAs(unit, parseType.unit, position);
+      if (symbols == null) return null;
+      let struct: Struct | undefined = symbols.structs.get(name);
+      if (struct == undefined) return null;
+      allStructs = [struct];
+    }
+    else if (parseType.unitMode == 'unit') {
+      let symbols = getIsolatedUnitSymbolsFromName(unit, parseType.unit, position);
+      if (symbols == null) return null;
+      let struct: Struct | undefined = symbols.structs.get(name);
+      if (struct == undefined) return null;
+      allStructs = [struct];
     }
 
     for (let struct of allStructs) {
