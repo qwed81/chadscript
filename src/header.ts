@@ -1,11 +1,13 @@
-/*
 import fs from 'node:fs';
-import { Type, INT, VOID, CHAR, BOOL, Field } from './analyze/types';
+import { Type, INT, NIL, CHAR, BOOL, I32, I16, I8, U32, U64, U16, U8,
+  F32, F64,
+  UnitSymbols, Field, Struct 
+} from './typeload';
 import { execSync } from 'child_process';
 import { compilerError } from './util';
 
 export {
-  HeaderInclude, parseHeaderFile, ExternFn
+  HeaderInclude, loadHeaderFile, ExternFn
 }
 
 interface ExternFn {
@@ -49,7 +51,7 @@ interface ASTNode {
   type: ASTType
 }
 
-function parseHeaderFile(headerPath: string): HeaderInclude | null {
+function loadHeaderFile(headerPath: string): UnitSymbols | null {
   let astCommand = 'clang -Xclang -ast-dump=json -fsyntax-only ' + headerPath;
   let defCommand = 'clang -E -dM ' + headerPath;
   let astJson = execSync(astCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 10 });
@@ -58,13 +60,16 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
   let defs: string[] = defTexts.split('\n');
 
   let structTypeMap: Map<string, Type> = new Map();
-  let symbols: HeaderInclude = {
-    enumConsts: [],
-    fns: [],
-    defs: [],
-    vars: [],
-    typeDefs: [],
-    unitName: headerPath
+  let symbols: UnitSymbols = {
+    name: headerPath,
+    useUnits: [],
+    asUnits: new Map(),
+    allUnits: [],
+    structs: new Map(),
+    fns: new Map(),
+    // enumConsts: [],
+    // defs: [],
+    // vars: [],
   };
   if (ast.inner == undefined) {
     return null;
@@ -82,7 +87,7 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
         if (variant.name == undefined) {
           continue;
         }
-        symbols.enumConsts.push(variant.name);
+        // symbols.enumConsts.push(variant.name);
       }
     }
 
@@ -91,40 +96,54 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     }
 
     if (child.kind == 'VarDecl') {
+      /*
       let varType = parseCType(child.type.qualType, structTypeMap);
       symbols.vars.push({
         type: varType,
         name: child.name
       });
       alreadyAdded.add(child.name);
+      */
     }
     else if (child.kind == 'FunctionDecl') {
-      let fnType = parseCType(child.type.qualType, structTypeMap);
-      symbols.fns.push({
-        type: fnType,
+      let fnType = parseCType(child.type.qualType, headerPath, structTypeMap);
+      if (fnType.tag != 'fn') {
+        compilerError('expected fn');
+        continue;
+      }
+
+      let paramNames = fnType.paramTypes.map(_ => '');
+      symbols.fns.set(child.name, [{
         name: child.name,
-      });
+        unit: headerPath,
+        paramTypes: fnType.paramTypes,
+        paramNames,
+        returnType: fnType.returnType,
+        mode: 'fn'
+      }]);
       alreadyAdded.add(child.name);
     }
     else if (child.kind == 'RecordDecl') {
-      let recordType = parseCRecord(child, structTypeMap);
+      let recordType = parseCRecord(child, headerPath, structTypeMap);
       if (recordType == null) {
         continue;
       }
+      if (recordType.tag != 'struct') {
+        continue;
+      }
+
       structTypeMap.set(child.name, recordType);
-      symbols.typeDefs.push({
-        name: child.name,
-        type: recordType
-      });
+      symbols.structs.set(child.name, recordType.val);
       alreadyAdded.add(child.name);
     }
     else if (child.kind == 'TypedefDecl') {
-      let typeDefType = parseCType(child.type.qualType, structTypeMap);
+      let typeDefType = parseCType(child.type.qualType, headerPath, structTypeMap);
+      if (typeDefType.tag != 'struct') {
+        continue;
+      }
+
       structTypeMap.set(child.name, typeDefType);
-      symbols.typeDefs.push({
-        name: child.name,
-        type: typeDefType
-      });
+      symbols.structs.set(child.name, typeDefType.val);
       alreadyAdded.add(child.name);
     }
   }
@@ -138,17 +157,19 @@ function parseHeaderFile(headerPath: string): HeaderInclude | null {
     if (cExpr == null) {
       continue;
     }
+    /*
     symbols.defs.push({
       name: name,
       num: cExpr.val ,
       type: cExpr.type 
     });
+    */
   }
 
   return symbols;
 }
 
-function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | null {
+function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Type>): Type | null {
   let fields: Field[] = [];
   if (node.name == undefined) {
     compilerError('malformed c type');
@@ -160,9 +181,11 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
       tag: 'struct',
       val: {
         fields: [],
-        id: node.name,
+        name: node.name,
         generics: [],
-        unit: 'extern'
+        unit,
+        modifier: 'pub',
+        isEnum: false
       }
     }
   }
@@ -172,11 +195,10 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
       continue;
     }
 
-    let fieldType = parseCType(cField.type.qualType, structTypeMap);
+    let fieldType = parseCType(cField.type.qualType, unit, structTypeMap);
     fields.push({
-      visibility: 'pub',
+      modifier: 'pub',
       name: cField.name,
-      recursive: false,
       type: fieldType
     })
   }
@@ -186,8 +208,10 @@ function parseCRecord(node: ASTNode, structTypeMap: Map<string, Type>): Type | n
     val: {
       fields,
       generics: [],
-      id: node.name,
-      unit: 'extern'
+      name: node.name,
+      unit,
+      isEnum: false,
+      modifier: 'pub'
     }
   }
 };
@@ -206,7 +230,7 @@ function parseCExpr(val: string): CExpr | null {
     return { type: INT, val: result };
   }
   
-  return { type: { tag: 'primative', val: 'f64' }, val: result };
+  return { type: F64, val: result };
 }
 
 // splits to a(b) -> [a, b]
@@ -258,7 +282,7 @@ function splitComma(input: string): string[] {
   return output;
 }
 
-function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
+function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>): Type {
   type = type.trim();
 
   // parse function
@@ -267,44 +291,44 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
     let returnType = fnReturn[0];
     let paramTypesStr = fnReturn[1];
 
-    let retType = parseCType(returnType, structTypeMap);
+    let retType = parseCType(returnType, unit, structTypeMap);
     let params = splitComma(paramTypesStr);
 
     let paramTypes: Type[] = [];
     for (let paramTypeStr of params) {
-      let paramType = parseCType(paramTypeStr, structTypeMap);
+      let paramType = parseCType(paramTypeStr, unit, structTypeMap);
       paramTypes.push(paramType);
     }
 
-    if (paramTypes.length == 1 && paramTypes[0].tag == 'primative' && paramTypes[0].val == 'void') {
-      paramTypes = [];
+    // for fn(void)
+    if (paramTypes.length == 1) {
+      let t = paramTypes[0];
+      if (t.tag == 'struct' && t.val.name == 'nil') {
+         paramTypes = [];
+      }
     } 
-
-    let linkedParams: boolean[] = [];
-    for (let i = 0; i < paramTypes.length; i++) {
-      linkedParams.push(false)
-    }
 
     return {
       tag: 'fn',
-      val: {
-        returnType: retType,
-        paramTypes,
-        linkedParams
-      }
+      returnType: retType,
+      paramTypes,
     }
   }
 
   if (type.startsWith('const')) {
-    return parseCType(type.slice(6), structTypeMap);
+    return parseCType(type.slice(6), unit, structTypeMap);
   }
 
   if (type.startsWith('struct')) {
-    return parseCType(type.slice(7), structTypeMap);
+    return parseCType(type.slice(7), unit, structTypeMap);
+  }
+
+  if (type == 'void *') {
+    return { tag: 'ptr', val: { tag: 'generic', val: 'T' } }
   }
 
   if (type.endsWith('*')) {
-    let innerType = parseCType(type.slice(0, -1), structTypeMap);
+    let innerType = parseCType(type.slice(0, -1), unit, structTypeMap);
     return { tag: 'ptr', val: innerType };
   }
 
@@ -312,28 +336,31 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
     return INT;
   }
   else if (type == 'unsigned char') {
-    return { tag: 'primative', val: 'u8' };
+    return U8;
+  }
+  else if (type == 'unsigned long') {
+    return U32;
   }
   else if (type == '_Bool') {
     return BOOL;
   }
   else if (type == 'float') {
-    return { tag: 'primative', val: 'f32' };
+    return F32;
   }
   else if (type == 'double') {
-    return { tag: 'primative', val: 'f64' };
+    return F64;
   }
   else if (type == 'char') {
     return CHAR;
   }
   else if (type == 'uint8_t') {
-    return { tag: 'primative', val: 'u8' };
+    return U8;
   }
   else if (type == 'void') {
-    return VOID;
+    return NIL;
   }
   else if (type == 'size_t') {
-    return { tag: 'primative', val: 'u64' };
+    return U64;
   }
 
   let thisStruct: Type | undefined = structTypeMap.get(type);
@@ -341,15 +368,17 @@ function parseCType(type: string, structTypeMap: Map<string, Type>): Type {
     return thisStruct;
   }
 
+  // return a struct with no fields so it can be used
+  // without finding the proper definition
   return {
     tag: 'struct',
     val: {
       fields: [],
-      id: type,
-      unit: 'extern',
+      name: type,
+      unit,
+      isEnum: false,
+      modifier: 'pub',
       generics: []
     }
   }
 }
-
-*/

@@ -2,7 +2,7 @@ import * as Parse from './parse';
 import { logError, compilerError, Position } from './util';
 
 export {
-  UnitSymbols, loadUnits, resolveType, Type,
+  UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
   NIL, BOOL, ANY, resolveFn, Fn, FnResult, ERR,
   CHAR, INT, I32, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
@@ -420,7 +420,7 @@ function applyGenericMap(
   return input;
 }
 
-function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
+function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): UnitSymbols[] {
   // map all of the units so they can be referenced by other units
   let unitSymbolsMap: Map<string, UnitSymbols> = new Map();
   for (let i = 0; i < units.length; i++) {
@@ -435,11 +435,20 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
     unitSymbolsMap.set(units[i].fullName, unitSymbols);
   }
 
+  for (let i = 0; i < headerUnits.length; i++) {
+    unitSymbolsMap.set(headerUnits[i].name, headerUnits[i]);
+  }
+
   // set up the reference between units
   for (let i = 0; i < units.length; i++) {
     let thisUnitSymbols: UnitSymbols = unitSymbolsMap.get(units[i].fullName)!;
     for (let use of units[i].uses) {
-      let otherUnitSymbols = unitSymbolsMap.get(use.unitName)!;
+      let otherUnitSymbols = unitSymbolsMap.get(use.unitName);
+      if (otherUnitSymbols == undefined) {
+        logError({ end: 0, line: 0, start: 0, document: '' }, 'could not find unit');
+        return [];
+      }
+
       if (use.as == null) {
         thisUnitSymbols.useUnits.push(otherUnitSymbols);
       }
@@ -451,6 +460,10 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
 
   let symbols: UnitSymbols[] = [];
   for (let unitSymbols of unitSymbolsMap.values()) {
+    if (unitSymbols.name.endsWith('.h')) {
+      continue;
+    }
+
     symbols.push(unitSymbols);
     unitSymbols.allUnits = symbols;
   }
@@ -478,6 +491,10 @@ function loadUnits(units: Parse.ProgramUnit[]): UnitSymbols[] {
   loadFns(units, symbols);
   for (let i = 0; i < units.length; i++) {
     analyzeUnitDataTypes(symbols[i], units[i]);
+  }
+
+  for (let headerSymbols of headerUnits) {
+    symbols.push(headerSymbols);
   }
   return symbols;
 }
@@ -562,7 +579,11 @@ function loadFns(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
   }
 }
 
-function getIsolatedUnitSymbolsFromName(base: UnitSymbols, unitName: string): UnitSymbols | null {
+function getIsolatedUnitSymbolsFromName(
+  base: UnitSymbols,
+  unitName: string,
+  position: Position | null
+): UnitSymbols | null {
   for (let unit of base.allUnits) {
     if (unit.name != unitName) continue;
     return {
@@ -574,20 +595,33 @@ function getIsolatedUnitSymbolsFromName(base: UnitSymbols, unitName: string): Un
       useUnits: []
     }
   }
+  if (position != null) logError(position, 'could not find ' + unitName);
   return null;
 }
 
-function getUnitSymbolsFromName(base: UnitSymbols, unitName: string): UnitSymbols | null {
+function getUnitSymbolsFromName(
+  base: UnitSymbols,
+  unitName: string,
+  position: Position | null
+): UnitSymbols | null {
   for (let unit of base.allUnits) {
     if (unit.name != unitName) continue;
     return unit;
   }
+  if (position != null) logError(position, 'could not find ' + unitName);
   return null;
 }
 
-function getIsolatedUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbols | null {
+function getIsolatedUnitSymbolsFromAs(
+  base: UnitSymbols,
+  as: string,
+  position: Position | null
+): UnitSymbols | null {
   let unit: UnitSymbols | undefined = base.asUnits.get(as);
-  if (unit == undefined) return null;
+  if (unit == undefined) {
+    if (position != null) logError(position, 'could not find ' + as);
+    return null;
+  }
   return {
     name: unit.name,
     allUnits: base.allUnits,
@@ -598,9 +632,16 @@ function getIsolatedUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbol
   }
 }
 
-function getUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbols | null {
+function getUnitSymbolsFromAs(
+  base: UnitSymbols,
+  as: string,
+  position: Position | null
+): UnitSymbols | null {
   let unit: UnitSymbols | undefined = base.asUnits.get(as);
-  if (unit == undefined) return null;
+  if (unit == undefined) {
+    if (position != null) logError(position, 'could not find ' + as);
+    return null;
+  }
   return {
     name: unit.name,
     allUnits: base.allUnits,
@@ -612,13 +653,16 @@ function getUnitSymbolsFromAs(base: UnitSymbols, as: string): UnitSymbols | null
 }
 
 function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Position): Type | null {
+  if (unit.name == 'stdio.h') {
+    throw new Error();
+  }
   let types: Type[] | null = resolveTypeInternal(unit, parseType, position);
   // return with no message
   if (types == null) {
     return null;
   }
   if (types.length == 0) {
-    logError(position, 'could not find type');
+    logError(position, 'could not find type ');
     return null;
   }
   else if (types.length > 1) {

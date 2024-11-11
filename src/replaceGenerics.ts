@@ -11,7 +11,6 @@ export {
 }
 
 interface Program {
-  includes: string[]
   fns: FnImpl[]
   orderedTypes: Type[]
   entry: FnImpl
@@ -36,12 +35,12 @@ interface FnSet {
   symbols: UnitSymbols[]
 }
 
-function replaceGenerics(prog: AnalyzeProgram, mainFn: FnImpl): Program {
+function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: FnImpl): Program {
   let fnSet: FnSet = {
     fnTemplates: new Map(),
     types: new Map(),
     fns: new Map(),
-    symbols: prog.symbols
+    symbols
   };
 
   for (let i = 0; i < prog.fns.length; i++) {
@@ -58,7 +57,6 @@ function replaceGenerics(prog: AnalyzeProgram, mainFn: FnImpl): Program {
   let fns = Array.from(fnSet.fns.values());
   return {
     orderedTypes,
-    includes: prog.includes,
     fns,
     entry
   };
@@ -71,9 +69,24 @@ function shouldResolveFn(
   mode: FnMode,
   type: Type
 ): boolean {
-  let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
-  let key = JSON.stringify(keyProps);
-  return !set.fns.has(key);
+  let fnTemplates: FnImpl[] | undefined = set.fnTemplates.get(name); 
+  if (fnTemplates == undefined) {
+    return false;
+  }
+
+  for (let i = 0; i < fnTemplates.length; i++) {
+    let header = fnTemplates[i].header;
+    if (header.mode != mode) continue;
+    if (header.unit != unit) continue;
+    let fnType: Type = { tag: 'fn', paramTypes: header.paramTypes, returnType: header.returnType };
+    if (!typeApplicable(type, fnType, true)) continue;
+
+    let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
+    let key = JSON.stringify(keyProps);
+    return !set.fns.has(key);
+  }
+
+  return false;
 }
 
 function getFnTemplate(
@@ -294,14 +307,20 @@ function resolveExpr(
   if (expr.tag == 'bin') {
     let left = resolveExpr(expr.val.left, set, genericMap);
     let right = resolveExpr(expr.val.right, set, genericMap);
+
+    if ((expr.val.op == '==' || expr.val.op == '!=') && expr.val.left.type.tag == 'ptr') {
+      if (expr.val.right.tag == 'nil_const') {
+        return { tag: 'bin', val: { op: expr.val.op, left, right }, type: BOOL };
+      }
+    }
+
     if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type)) {
       let impl = implToExpr(set, 'eq', [left.type, right.type], BOOL, genericMap, [left, right]);
       if (expr.val.op == '!=') return { tag: 'not', val: impl, type: BOOL };
       return impl;
     }
 
-    let type = applyGenericMap(expr.type, genericMap);
-    return { tag: 'bin', val: { op: expr.val.op, left, right }, type };
+    return { tag: 'bin', val: { op: expr.val.op, left, right }, type: BOOL };
   }
   else if (expr.tag == 'is') {
     let left = resolveLeftExpr(expr.left, set, genericMap);

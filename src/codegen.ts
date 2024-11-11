@@ -28,15 +28,15 @@ interface OutputFile {
 }
 
 // generates the c output for the given program
-function codegen(prog: Program): OutputFile[] {
+function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   let chadDotH = '';
   let chadDotC = '';
   for (let include of includes) {
     chadDotH += '\n#include <' + include + '>';
   }
 
-  for (let i = 0; i < prog.includes.length; i++) {
-    chadDotC += '\n#include "../' + prog.includes[i] + '"';
+  for (let include of progIncludes) {
+    chadDotC += '\n#include "../' + include + '"';
   }
 
   chadDotC += '\n#include "chad.h"';
@@ -569,6 +569,10 @@ function typeAsName(type: Type): string {
 }
 
 function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Type[], returnType: Type): string {
+  if (unit.endsWith('.h')) {
+    return name;
+  }
+
   let paramTypesStr = '';
   for (let i = 0; i < paramTypes.length; i++) {
     paramTypesStr += typeAsName(paramTypes[i]) + '_';

@@ -52,8 +52,8 @@ fn alloc(int amt) *T
 
 fn ptrCast(*S input) *E
   include
-    ret ($(*E))(*_input);
-  ret ptrCast(input)
+    return ($(*E))(_input);
+  ret nil
 
 struct Vec[T]
   get *T base

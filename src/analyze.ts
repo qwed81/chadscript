@@ -21,9 +21,7 @@ interface FnImpl {
 }
 
 interface Program {
-  includes: string[]
   fns: FnImpl[]
-  symbols: UnitSymbols[]
 }
 
 interface CondBody {
@@ -121,23 +119,15 @@ type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'var', val: string, mode: Mode, type: Type }
   | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode }
 
-function analyze(units: Parse.ProgramUnit[]): Program | null {
-  let includes: Set<string> = new Set();
-  for (let unit of units) {
-    for (let include of unit.uses) {
-      if (include.unitName.endsWith('.h')) {
-        includes.add(include.unitName);
-      }
-    }
-  }
+function analyze(
+  units: Parse.ProgramUnit[],
+  symbols: UnitSymbols[]
+): Program | null {
 
   let validProgram: Program | null = {
-    includes: [...includes],
     fns: [],
-    symbols: []
   };
 
-  let symbols: UnitSymbols[] = loadUnits(units); 
   for (let i = 0; i < units.length; i++) {
     let unitFns: FnImpl[] | null = null;
     if (validProgram != null) {
@@ -153,7 +143,6 @@ function analyze(units: Parse.ProgramUnit[]): Program | null {
     }
   }
 
-  if (validProgram != null) validProgram.symbols = symbols;
   return validProgram;
 }
 
@@ -174,7 +163,9 @@ function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[]
 
     let scope = newScope(returnType, generics);
     let validFn = analyzeFn(symbols, fn, scope);
-    if (validFn == null) fns = null;
+    if (validFn == null) {
+      fns = null;
+    } 
     else if (fns != null) fns.push(validFn);
   }
 
@@ -679,7 +670,7 @@ function ensureLeftExprValid(
     return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode };
   }
   else if (leftExpr.tag == 'scope_unit') {
-    let newUnit = getIsolatedUnitSymbolsFromName(symbols, leftExpr.unit);
+    let newUnit = getIsolatedUnitSymbolsFromName(symbols, leftExpr.unit, position);
     if (newUnit == null) {
       if (position != null) logError(position, 'could not find unit');
       return null;
@@ -687,7 +678,7 @@ function ensureLeftExprValid(
     return ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
   }
   else if (leftExpr.tag == 'scope_as') {
-    let newUnit = getIsolatedUnitSymbolsFromAs(symbols, leftExpr.as);
+    let newUnit = getIsolatedUnitSymbolsFromAs(symbols, leftExpr.as, position);
     if (newUnit == null) {
       if (position != null) logError(position, 'could not find as');
       return null;
@@ -712,20 +703,20 @@ function ensureFnCallValid(
   let isScoped = false;
   let fn: Parse.LeftExpr = fnCall.fn;
   if (fn.tag == 'scope_as') {
-    let innerSymbols = getUnitSymbolsFromAs(symbols, fn.as);
+    let innerSymbols = getUnitSymbolsFromAs(symbols, fn.as, position);
     if (innerSymbols == null) return null;
     fnSymbols = innerSymbols;
-    let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.as);
+    let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.as, position);
     if (lookupUnit == null) return null;
     fnIsolatedSymbols = lookupUnit;
     isScoped = true;
     fn = fn.inner;
   }
   else if (fn.tag == 'scope_unit') {
-    let innerSymbols = getUnitSymbolsFromAs(symbols, fn.unit);
+    let innerSymbols = getUnitSymbolsFromName(symbols, fn.unit, position);
     if (innerSymbols == null) return null;
     fnSymbols = innerSymbols;
-    let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.unit);
+    let lookupUnit = getIsolatedUnitSymbolsFromName(symbols, fn.unit, position);
     if (lookupUnit == null) return null;
     fnIsolatedSymbols = lookupUnit;
     isScoped = true;
@@ -902,6 +893,9 @@ function ensureBinOpValid(
         outputType = BOOL;
       }
       computedExpr = { tag: 'bin', type: outputType, val: { left, op, right } };
+    }
+    else if (left.type.tag == 'ptr' && right.tag == 'nil_const' && op == '==' || op == '!=') {
+      computedExpr = { tag: 'bin', type: BOOL, val: { left, op, right } };
     }
     else {
       let trait: FnResult | null = null;
