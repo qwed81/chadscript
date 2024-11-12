@@ -208,7 +208,9 @@ function createVec(t1: Type): Type {
       modifier: 'pub',
       isEnum: true,
       fields: [
-        { name: 'val0', type: t1, modifier: 'pub' },
+        { name: 'base', type: { tag: 'ptr', val: t1 }, modifier: 'get' },
+        { name: 'len', type: INT, modifier: 'get' },
+        { name: 'capacity', type: INT, modifier: 'get' }
       ]
     }
   };
@@ -407,6 +409,9 @@ function applyGenericMap(
         modifier: input.val.modifier
       }
     };
+  }
+  else if (input.tag == 'link') {
+    return { tag: 'link', val: applyGenericMap(input.val, map, recursive) };
   }
   else if (input.tag == 'ptr') {
     return { tag: 'ptr', val: applyGenericMap(input.val, map, recursive) };

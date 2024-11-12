@@ -241,11 +241,20 @@ function resolveInst(
     let to = resolveLeftExpr(inst.val.to, set, genericMap);
     let expr = resolveExpr(inst.val.expr, set, genericMap);
 
-    if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+    if (inst.val.op == '++=') {
+      if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+        let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
+        return {
+          tag: 'expr',
+          val: implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr]),
+          position: inst.position
+        };
+      }
+
       let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
       return {
         tag: 'expr',
-        val: implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr , expr]),
+        val: implToExpr(set, 'append', [to.type, expr.type], NIL, genericMap, [toExpr, expr]),
         position: inst.position
       };
     }
@@ -277,6 +286,7 @@ function implToExpr(
     compilerError('always can resovle impl');
     return undefined!;
   }
+
   let fnExpr: LeftExpr = {
     tag: 'fn',
     unit: impl.unit,
@@ -286,6 +296,7 @@ function implToExpr(
   };
 
   fnExpr = resolveLeftExpr(fnExpr, set, genericMap);
+
   if (impl.resolvedType.tag != 'fn') {
     compilerError('should always be fn');
     return undefined!;
@@ -387,6 +398,10 @@ function resolveExpr(
 
     let type = applyGenericMap(expr.type, genericMap);
     return { tag: 'struct_init', val: inits, type: type }
+  }
+  else if (expr.tag == 'struct_zero') {
+    let type = applyGenericMap(expr.type, genericMap);
+    return { tag: 'struct_zero', type };
   }
   else if (expr.tag == 'enum_init') {
     let type = applyGenericMap(expr.type, genericMap);

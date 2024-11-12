@@ -416,6 +416,9 @@ function codeGenExpr(
     exprText = result.output;
     statements = result.statements;
   } 
+  else if (expr.tag == 'struct_zero') {
+    exprText = `(${codeGenType(expr.type)}){0}`;
+  }
   else if (expr.tag == 'list_init') {
     if (expr.type.tag != 'struct') {
       return undefined!;

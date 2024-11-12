@@ -96,6 +96,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type }
   | { tag: 'assert', val: Expr, type: Type }
   | { tag: 'fn_call', val: FnCall, type: Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type }
+  | { tag: 'struct_zero', type: Type }
   | { tag: 'list_init', val: Expr[], type: Type }
   | { tag: 'enum_init', fieldName: string, variantIndex: number, fieldExpr: Expr | null, type: Type }
   | { tag: 'cast', val: Expr, type: Type }
@@ -1267,6 +1268,10 @@ function ensureExprValid(
     if (retType.tag != 'struct') {
       if (position != null) logError(position, `expected ${toStr(retType)}`);
       return null;
+    }
+
+    if (expr.val.length == 0) {
+      return { tag: 'struct_zero', type: expectedReturn };
     }
 
     let exprFieldTypes = new Map<string, Type>();
