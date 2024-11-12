@@ -134,8 +134,8 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
       }
 
       structTypeMap.set(child.name, recordType);
-      symbols.structs.set(child.name, recordType.val);
       alreadyAdded.add(child.name);
+      symbols.structs.set(child.name, recordType.val);
     }
     else if (child.kind == 'TypedefDecl') {
       let typeDefType = parseCType(child.type.qualType, headerPath, structTypeMap);
@@ -144,8 +144,15 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
       }
 
       structTypeMap.set(child.name, typeDefType);
-      symbols.structs.set(child.name, typeDefType.val);
       alreadyAdded.add(child.name);
+      symbols.structs.set(child.name, {
+        fields: typeDefType.val.fields,
+        name: child.name,
+        unit: headerPath,
+        isEnum: false,
+        modifier: 'pub',
+        generics: []
+      });
     }
   }
 
@@ -333,40 +340,13 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
     return { tag: 'ptr', val: innerType };
   }
 
-  if (type == 'int' || type == 'long') {
-    return INT;
-  }
-  else if (type == 'unsigned char') {
-    return U8;
-  }
-  else if (type == 'unsigned long') {
-    return U32;
-  }
-  else if (type == '_Bool') {
-    return BOOL;
-  }
-  else if (type == 'float') {
-    return F32;
-  }
-  else if (type == 'double') {
-    return F64;
-  }
-  else if (type == 'char') {
-    return CHAR;
-  }
-  else if (type == 'uint8_t') {
-    return U8;
-  }
-  else if (type == 'void') {
-    return NIL;
-  }
-  else if (type == 'size_t') {
-    return U64;
-  }
+  let basic = cBasicMapping(type);
+  if (basic != null) return basic;
 
   let thisStruct: Type | undefined = structTypeMap.get(type);
-  if (thisStruct != undefined) {
-    return thisStruct;
+  let fields: Field[] = [];
+  if (thisStruct != undefined && thisStruct.tag == 'struct') {
+    fields = thisStruct.val.fields;
   }
 
   // return a struct with no fields so it can be used
@@ -374,7 +354,7 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
   return {
     tag: 'struct',
     val: {
-      fields: [],
+      fields: fields,
       name: type,
       unit,
       isEnum: false,
@@ -382,4 +362,27 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
       generics: []
     }
   }
+}
+
+function cBasicMapping(type: string): Type | null {
+  if (type == 'char') return CHAR;
+  if (type == 'bool' || type == '_Bool') return BOOL;
+  else if (type == 'void') return NIL;
+
+  if (type == 'long long' || type == 'int64_t') return INT;
+  if (type == 'int' || type == 'long'|| type == 'int32_t') return I32;
+  if (type == 'short' || type == 'int16_t') return I16;
+  if (type == 'int8_t') return I8;
+
+  if (type == 'unsigned long long' || type == 'uint64_t') return U64;
+  if (type == 'unsigned long' || type == 'unsigned int' || type == 'uint32_t') return U32
+  if (type == 'unsinged short' || type == 'uint16_t') return U16;
+  if (type == 'unsigned char' || type == 'uint8_t') return U8;
+
+  else if (type == 'float') return F32;
+  else if (type == 'double') return F64;
+
+  else if (type == 'size_t') return U64;
+
+  return null;
 }

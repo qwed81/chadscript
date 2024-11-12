@@ -359,7 +359,9 @@ function analyzeInstBody(
       inst = analyzeInst(symbols, body[i], scope);
     } 
 
-    if (inst == null) isValid = false;
+    if (inst == null) {
+      isValid = false;
+    } 
     else if (newBody != null) newBody.push(inst);
   }
 
@@ -529,7 +531,9 @@ function analyzeInst(
     setValToScope(scope, inst.val.name, declareType, true, 'none');
 
     let expr = ensureExprValid(symbols, inst.val.expr, declareType, scope, inst.position);
-    if (expr == null) return null;
+    if (expr == null) { 
+      return null;
+    }
 
     let leftExpr: LeftExpr = { tag: 'var', mode: 'none', unit: null, val: inst.val.name, type: declareType };
     Enum.remove(scope.variantScope, leftExpr);
@@ -1164,7 +1168,7 @@ function ensureExprValid(
       if (name == 'bool' || name == 'int' || name == 'char'
         || name == 'i8' || name == 'i16' || name == 'i32'
         || name == 'u8' || name == 'u16' || name == 'u32' || name == 'u64'
-        || name == 'f32' || name == 'f64') {
+        || name == 'f32' || name == 'f64' || name == 'ptr') {
 
         if (expr.val.exprs.length != 1) {
           if (position != null) logError(expr.position, 'ptr expects 1 argument');
@@ -1172,13 +1176,40 @@ function ensureExprValid(
         }
         let innerExpr = ensureExprValid(symbols, expr.val.exprs[0], null, scope, position);
         if (innerExpr == null) return null;
-        if (!isBasic(innerExpr.type)) return null;
 
-        computedExpr = { 
-          tag: 'cast',
-          val: innerExpr, 
-          type: basic(name)
-        };
+        if (innerExpr.type.tag == 'ptr' && name == 'ptr') {
+          if (expectedReturn == null) {
+            if (position != null) logError(position, 'pointer must be known');
+            return null;
+          }
+
+          computedExpr = { 
+            tag: 'cast',
+            val: innerExpr, 
+            type: expectedReturn
+          };
+        }
+
+        if (innerExpr.type.tag == 'ptr' && name == 'u64') {
+          computedExpr = { 
+            tag: 'cast',
+            val: innerExpr, 
+            type: basic(name)
+          };
+        }
+
+        if (computedExpr == null) {
+          if (!isBasic(innerExpr.type)) {
+            if (position != null) logError(position, 'can not cast');
+            return null;
+          }
+
+          computedExpr = { 
+            tag: 'cast',
+            val: innerExpr, 
+            type: basic(name)
+          };
+        }
       }
     }
 

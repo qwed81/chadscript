@@ -20,7 +20,7 @@ interface CodeGenExpr {
 }
 
 const includes = [
-  'stdio.h', 'stdlib.h', 'string.h', 'stdbool.h', 'stdint.h'
+  'stdio.h', 'stdlib.h', 'string.h', 'stdbool.h', 'stdint.h', 'stdalign.h'
 ]
 
 interface OutputFile {
@@ -46,7 +46,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
 
   // forward declare all structs for pointers
   for (let type of prog.orderedTypes) {
-    if (type.tag == 'struct' && !isBasic(type)) {
+    if (type.tag == 'struct' && !type.val.unit.endsWith('.h') && !isBasic(type)) {
       chadDotC += '\n' + codeGenType(type) + ';';
     }
     if (type.tag == 'fn') {
@@ -62,7 +62,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   }
 
   for (let struct of prog.orderedTypes) {
-    if (struct.tag != 'struct' || isBasic(struct)) continue;
+    if (struct.tag != 'struct' || struct.val.unit.endsWith('.h') || isBasic(struct)) continue;
     chadDotH += codeGenStructDef(struct);
   }
 
@@ -159,7 +159,7 @@ function codeGenType(type: Type): string {
     else if (type.val.name == 'i32') return 'int32_t';
     else if (type.val.name == 'i16') return 'int16_t';
     else if (type.val.name == 'i8') return 'int8_t';
-    else if (type.val.name == 'u64') return 'uint16_t';
+    else if (type.val.name == 'u64') return 'uint64_t';
     else if (type.val.name == 'u32') return 'uint32_t';
     else if (type.val.name == 'u16') return 'uint16_t';
     else if (type.val.name == 'u8') return 'uint8_t';
@@ -175,7 +175,7 @@ function codeGenType(type: Type): string {
   }
 
   let typeStr = toStr(type);
-  if (type.tag != 'struct' || type.val.unit != 'extern') {
+  if (type.tag != 'struct' || !type.val.unit.endsWith('.h')) {
     typeStr = '_' + typeStr;
   }
 
@@ -190,7 +190,10 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, '&', '*');
   typeStr = replaceAll(typeStr, ' ', '');
 
-  if (type.tag == 'struct') return 'struct ' + typeStr;
+  if (type.tag == 'struct' && !type.val.unit.endsWith('.h')) {
+    return 'struct ' + typeStr;
+  }
+
   return typeStr;
 }
 

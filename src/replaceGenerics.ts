@@ -32,6 +32,10 @@ interface FnSet {
   types: Map<string, Type>,
   // maps via json(FnKey)
   fns: Map<string, FnImpl>,
+
+  // maps via json(FnKey)
+  used: Set<string>
+
   // to be able to lookup impls
   symbols: UnitSymbols[]
 }
@@ -41,6 +45,7 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
     fnTemplates: new Map(),
     types: new Map(),
     fns: new Map(),
+    used: new Set(),
     symbols
   };
 
@@ -85,7 +90,7 @@ function shouldResolveFn(
 
     let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
     let key = JSON.stringify(keyProps);
-    return !set.fns.has(key);
+    return !(set.fns.has(key) || set.used.has(key));
   }
 
   return false;
@@ -476,7 +481,6 @@ function resolveLeftExpr(
   else if (leftExpr.tag == 'fn') {
     let shouldResolve = shouldResolveFn(set, leftExpr.name, leftExpr.unit, leftExpr.mode, leftExpr.type);
     let thisFnType = applyGenericMap(leftExpr.type, genericMap);
-
     let fnType: Type;
 
     if (shouldResolve) {
@@ -486,9 +490,26 @@ function resolveLeftExpr(
       if (!typeApplicableStateful(thisFnType, genericType, newFnGenericMap, true)) {
         compilerError('fn should be applicable');
       }
-      monomorphizeFn(genericFn, set, newFnGenericMap);
+
       let implType = applyGenericMap(genericType, newFnGenericMap);
       fnType = implType;
+
+      if (implType.tag != 'fn') {
+        compilerError('type should be fn');
+        return undefined!;
+      }
+
+      // prevent reuse of recursive functions
+      let keyProps: FnKey = {
+        name: leftExpr.name,
+        unit: leftExpr.unit,
+        type: serializeType({ tag: 'fn', returnType: implType.returnType, paramTypes: implType.paramTypes }) ,
+        mode: leftExpr.mode
+      };
+      let key = JSON.stringify(keyProps);
+      set.used.add(key)
+
+      monomorphizeFn(genericFn, set, newFnGenericMap);
     }
     else {
       fnType = leftExpr.type
@@ -527,7 +548,7 @@ function typeTreeRecur(
     output.push(type);
   }
 
-  if (type.tag == 'ptr') {
+  if (type.tag == 'ptr' || type.tag == 'link') {
     let typeKey = serializeType(type.val);
     if (alreadyGenned.has(typeKey)) return;
     queue.push(type.val);

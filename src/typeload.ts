@@ -1,5 +1,5 @@
 import * as Parse from './parse';
-import { logError, compilerError, Position } from './util';
+import { logError, compilerError, Position, logMultiError } from './util';
 
 export {
   UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
@@ -459,7 +459,7 @@ function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): Unit
     for (let use of units[i].uses) {
       let otherUnitSymbols = unitSymbolsMap.get(use.unitName);
       if (otherUnitSymbols == undefined) {
-        logError({ end: 0, line: 0, start: 0, document: '' }, 'could not find unit');
+        logError({ end: 0, line: 0, start: 0, document: '' }, 'could not find unit ' + use.unitName);
         return [];
       }
 
@@ -748,7 +748,21 @@ function resolveFn(
     return null
   }
   if (results.wrongTypeFns.length > 0) {
-    if (position != null) logError(position, 'function is wrong type');
+    let context: string[] = [];
+    for (let i = 0; i < results.wrongTypeFns.length; i++) {
+      let line: string = 'expected: ' + name + '(';
+      let t = results.wrongTypeFns[i];
+      for (let j = 0; j < t.paramTypes.length; j++) {
+        line += toStr(t.paramTypes[j]) + t.paramNames[j];
+        if (j != t.paramTypes.length - 1) line += ', '
+      }
+      line += ')'
+      if (t.returnType.tag != 'struct' || t.returnType.val.name != 'nil') {
+        line += ' ' + toStr(t.returnType);
+      }
+      context.push(line);
+    }
+    if (position != null) logMultiError(position, 'function is wrong type', context);
     return null
   }
   if (position != null) logError(position, 'unknown function');

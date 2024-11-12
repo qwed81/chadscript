@@ -20,6 +20,63 @@ impl next(&range r) *int
   r.start += 1
   ret &r.output
 
+struct bump
+  *u8 base
+  *u8 curr
+
+local bump bp = {}
+
+fn clear(&bump bp)
+  int start = int(u64(bp.base))
+  int end = int(u64(bp.curr))
+  for i in start:end
+    bp.base[i] = 0
+  bp.curr = bp.base
+
+fn alloc(&bump bp, int amt) *T
+  int allocSize = 0
+  include
+    _allocSize = _amt * sizeof($(T));
+
+  if bp.base == nil
+    bp.base = malloc(1024 * 1024 * 1024)
+    bp.curr = bp.base
+
+  *T newLoc = ptr(bp.curr)
+  newLoc = align(newLoc)
+
+  u64 diff = u64(newLoc) - u64(bp.base)
+  bp.curr = &bp.base[int(diff) + allocSize]
+  ret newLoc
+
+fn alloc(int amt) *T
+  ret alloc(bp, amt)
+
+fn align(*T p) *T
+  include
+    return ($(T)*)(((size_t)_p % alignof($(T))) + alignof($(T)) + _p);
+  ret nil
+
+fn malloc(int amt) *T
+  include
+    return malloc(_amt * sizeof($(T)));
+  ret nil
+
+fn free(*T mem)
+  include
+    free(_mem);
+  ret nil
+
+fn min(int a, int b) int
+  if b < a
+    ret b
+  ret a
+
+fn max(int a, int b) int
+  if b > a
+    ret b
+  ret a
+
 ##
 fn rev(range r) revRange
   ret { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
@@ -44,17 +101,6 @@ fn print(T val)
   include
     printf("%s\n", _output);
 
-fn alloc(int amt) *T
-  *T output = nil
-  include
-    _output = malloc(sizeof($(T)) * _amt);
-  ret output
-
-fn ptrCast(*S input) *E
-  include
-    return ($(*E))(_input);
-  ret nil
-
 struct Vec[T]
   get *T base
   get int capacity
@@ -67,15 +113,13 @@ impl index(&Vec[T] vec, int index) *T
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
 
-fn str(Vec[T] l) str
-  Fmt buf = fmt()
-  buf ++= "["
-  for i in 0:l.len
-    buf ++= l[i]
-    if i != l.len - 1
-      buf ++= ','
-  buf ++= ']'
-  ret str(buf)
+fn append(&Fmt f, Vec[T] vec)
+  f ++= "["
+  for i in 0:vec.len
+    f ++= vec[i]
+    if i != vec.len - 1
+      f ++= ','
+  f ++= ']'
 
 impl append(&Vec[T] l, T val)
   if l.len == l.capacity

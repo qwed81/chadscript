@@ -1,7 +1,7 @@
 import { ProgramUnit } from './parse';
 
 export {
-  logError, compilerError, Position
+  logError, compilerError, logMultiError, Position
 }
 
 interface Position {
@@ -14,6 +14,13 @@ interface Position {
 function compilerError(message: string) {
   console.error(message);
   process.exit(-1)
+}
+
+function logMultiError(position: Position, message: string, context: string[]) {
+  console.error(`error in '${position.document}.chad' line: ${position.line}: ${message}`);
+  for (let line of context) {
+    console.error('\t' + line);
+  }
 }
 
 function logError(position: Position, message: string) {
