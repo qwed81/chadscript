@@ -1,5 +1,5 @@
 import { FnMode } from './parse';
-import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram } from './analyze';
+import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl } from './analyze';
 import { compilerError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
@@ -12,6 +12,7 @@ export {
 
 interface Program {
   fns: FnImpl[]
+  globals: GlobalImpl[]
   orderedTypes: Type[]
   entry: FnImpl
 }
@@ -58,6 +59,7 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
   return {
     orderedTypes,
     fns,
+    globals: prog.globals,
     entry
   };
 }
@@ -454,7 +456,7 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type };
+    return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type, unit: leftExpr.unit };
   }
   else if (leftExpr.tag == 'fn') {
     let shouldResolve = shouldResolveFn(set, leftExpr.name, leftExpr.unit, leftExpr.mode, leftExpr.type);

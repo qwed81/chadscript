@@ -8,7 +8,7 @@ export {
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
-  getUnitSymbolsFromAs, getUnitSymbolsFromName
+  getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal
 }
 
 type Modifier = 'pri' | 'pub';
@@ -49,6 +49,13 @@ interface Fn {
   mode: Parse.FnMode
 }
 
+interface Global {
+  unit: string,
+  name: string,
+  type: Type,
+  mode: Parse.GlobalMode
+}
+
 interface UnitSymbols {
   name: string,
   useUnits: UnitSymbols[]
@@ -56,6 +63,7 @@ interface UnitSymbols {
   allUnits: UnitSymbols[]
   structs: Map<string, Struct>,
   fns: Map<string, Fn[]>
+  globals: Map<string, Global>
 }
 
 const NIL: Type = basic('nil');
@@ -430,7 +438,8 @@ function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): Unit
       allUnits: [],
       asUnits: new Map(),
       fns: new Map(),
-      structs: new Map()
+      structs: new Map(),
+      globals: new Map()
     };
     unitSymbolsMap.set(units[i].fullName, unitSymbols);
   }
@@ -488,6 +497,7 @@ function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): Unit
 
   loadStructs(units, symbols);
   loadFields(units, symbols);
+  loadGlobals(units, symbols);
   loadFns(units, symbols);
   for (let i = 0; i < units.length; i++) {
     analyzeUnitDataTypes(symbols[i], units[i]);
@@ -497,6 +507,23 @@ function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): Unit
     symbols.push(headerSymbols);
   }
   return symbols;
+}
+
+function loadGlobals(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
+  for (let i = 0; i < units.length; i++) {
+    let unit = units[i];
+    let symbols = to[i];
+    for (let global of unit.globals) {
+      let type = resolveType(symbols, global.type, global.position);
+      if (type == null) continue;
+      symbols.globals.set(global.name, {
+        unit: unit.fullName,
+        name: global.name,
+        type,
+        mode: global.mode
+      })
+    }
+  }
 }
 
 function loadStructs(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
@@ -591,8 +618,9 @@ function getIsolatedUnitSymbolsFromName(
       allUnits: base.allUnits,
       fns: unit.fns,
       structs: unit.structs,
+      globals: unit.globals,
       asUnits: new Map(),
-      useUnits: []
+      useUnits: [],
     }
   }
   if (position != null) logError(position, 'could not find ' + unitName);
@@ -627,6 +655,7 @@ function getIsolatedUnitSymbolsFromAs(
     allUnits: base.allUnits,
     fns: unit.fns,
     structs: unit.structs,
+    globals: unit.globals,
     asUnits: new Map(),
     useUnits: []
   }
@@ -647,9 +676,22 @@ function getUnitSymbolsFromAs(
     allUnits: base.allUnits,
     fns: unit.fns,
     structs: unit.structs,
+    globals: unit.globals,
     asUnits: new Map(),
     useUnits: []
   }
+}
+
+function resolveGlobal(unit: UnitSymbols, name: string, position: Position | null): Global | null {
+  let global: Global | undefined = unit.globals.get(name);
+  if (global != undefined) return global;
+  for (let useUnit of unit.useUnits) {
+    global = useUnit.globals.get(name);
+    if (global != undefined) return global;
+  }
+
+  if (position != null) logError(position, 'could not find global ' + name);
+  return null;
 }
 
 function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Position): Type | null {

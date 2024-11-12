@@ -1,7 +1,7 @@
 import { FnMode } from './parse';
-import { Position, compilerError, logError } from './util';
+import { Position, compilerError } from './util';
 import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, typeApplicable } from './typeload';
-import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl } from './analyze';
+import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
 
 export {
@@ -10,6 +10,7 @@ export {
 
 interface FnContext {
   returnType: Type
+  unit: string,
   amtReserved: number
 }
 
@@ -65,6 +66,10 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
     chadDotH += codeGenStructDef(struct);
   }
 
+  for (let global of prog.globals) {
+    chadDotC += codeGenGlobal(global) + ';';
+  }
+
   for (let fn of prog.fns) {
     chadDotH += codeGenFnHeader(fn.header) + ';';
   }
@@ -94,8 +99,32 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   ];
 }
 
+function codeGenGlobal(global: GlobalImpl): string {
+  let expr = '{0}';
+  if (global.expr.tag == 'int_const') {
+    expr = '' + global.expr.val;
+  }
+  else if (global.expr.tag == 'num_const') {
+    expr = '' + global.expr.val;
+  }
+  else if (global.expr.tag == 'str_const') {
+    expr = `{ ._base = "${global.expr.val}" , ._len = ${strLen(global.expr.val)}}`;
+  }
+
+  let mode = ''; 
+  if (global.header.mode == 'const') {
+    mode = 'const';
+  }
+  else if (global.header.mode == 'local') {
+    mode = '__thread';
+  }
+
+  let name = getGlobalUniqueId(global.header.unit, global.header.name)
+  return `${mode} ${codeGenType(global.header.type)} ${name} = ${expr}`;
+}
+
 function codeGenFn(fn: FnImpl) {
-  let ctx: FnContext = { returnType: fn.header.returnType, amtReserved: 0 };
+  let ctx: FnContext = { returnType: fn.header.returnType, amtReserved: 0, unit: fn.header.unit };
   let fnCode = codeGenFnHeader(fn.header) + ' {';
   let bodyStr = '\n';
 
@@ -426,7 +455,8 @@ function codeGenExpr(
           tag: 'var',
           val: fmtName,
           mode: 'none',
-          type: FMT
+          type: FMT,
+          unit: null
         },
         type: FMT
       };
@@ -553,11 +583,17 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
     if (leftExpr.mode == 'link') {
       leftExprText = `(*_${leftExpr.val})`;
     }
+    else if (leftExpr.mode == 'C') {
+      leftExprText = leftExpr.val;
+    }
     else if (leftExpr.mode == 'iter') {
       leftExprText = `(*_${leftExpr.val}_for)`;
     }
     else if (leftExpr.mode == 'none') {
       leftExprText = `_${leftExpr.val}`;
+    }
+    else if (leftExpr.mode == 'global') {
+      leftExprText = getGlobalUniqueId(leftExpr.unit!, leftExpr.val);
     }
   }
 
@@ -566,6 +602,13 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
 
 function typeAsName(type: Type): string {
   return replaceAll(replaceAll(codeGenType(type), ' ', '_'), '*', '_ptr');
+}
+
+function getGlobalUniqueId(unit: string, name: string): string {
+  if (unit.endsWith('.h')) {
+    return name;
+  }
+  return `_${replaceAll(unit, '/', '_')}_${name}`;
 }
 
 function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Type[], returnType: Type): string {
@@ -578,7 +621,7 @@ function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Typ
     paramTypesStr += typeAsName(paramTypes[i]) + '_';
   }
   let returnTypeStr = typeAsName(returnType);
-  return `_${unit.replace('/', '_')}_${mode}_${name}_${paramTypesStr}_${returnTypeStr}`;
+  return `_${replaceAll(unit, '/', '_')}_${mode}_${name}_${paramTypesStr}_${returnTypeStr}`;
 }
 
 function codeGenStructDef(struct: Type): string {

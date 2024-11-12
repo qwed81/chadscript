@@ -40,7 +40,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, Index, StructInitField,
-  BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode
+  BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode, GlobalMode
 }
 
 interface SourceLine {
@@ -54,12 +54,15 @@ interface Token {
   val: string
 }
 
-interface Const {
+type GlobalMode = 'none' | 'const' | 'local';
+
+interface Global {
   position: Position
   pub: boolean
   name: string
   type: Type
   expr: Expr
+  mode: GlobalMode
 }
 
 interface Use {
@@ -71,7 +74,7 @@ interface ProgramUnit {
   fullName: string
   uses: Use[]
   fns: Fn[]
-  consts: Const[]
+  globals: Global[]
   structs: Struct[]
 }
 
@@ -253,7 +256,7 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
 // returns the program, null if invalid syntax, and logs all errors to the console
 function parse(unitText: string, documentName: string): ProgramUnit | null {
   let lines = getLines(unitText, documentName);
-  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], consts: [] };
+  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], globals: [] };
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
@@ -295,8 +298,8 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
         }
         program.fns.push(fn);
       }
-      else if (line.tokens[start].val == 'const') {
-        let c = parseConst(line, pub);
+      else {
+        let c = parseGlobal(line, pub);
         if (body.length != 0) {
           logError(line.position, 'unexpected body');
           return null;
@@ -305,11 +308,7 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
         if (c == null) {
           return null
         }
-        program.consts.push(c);
-      }
-      else {
-        logError(line.position, 'unexepected statement');
-        return null;
+        program.globals.push(c);
       }
     }
   }
@@ -541,18 +540,25 @@ function parseUses(header: SourceLine): Use[] | null {
   return uses;
 } 
 
-function parseConst(header: SourceLine, pub: boolean): Const | null {
+function parseGlobal(header: SourceLine, pub: boolean): Global | null {
   if (header.tokens.length < 4) {
-    logError(header.position, 'constant and assignemnt');
+    logError(header.position, 'expected constant and assignemnt');
     return null;
   }
 
-  if (header.tokens[0].val != 'const') {
-    compilerError('expected const');
-    return null;
+  let tokens = header.tokens;
+  let first = header.tokens[0].val;
+  let mode: GlobalMode = 'none';
+  if (first == 'local') {
+    tokens = tokens.slice(1);
+    mode = 'local';
+  } 
+  else if (first == 'const') {
+    tokens = tokens.slice(1);
+    mode = 'const';
   }
 
-  let splitEq: Token[][] = balancedSplitTwo(header.tokens, '=');
+  let splitEq: Token[][] = balancedSplitTwo(tokens, '=');
   if (splitEq.length != 2) {
     logError(header.position, 'expected expression');
     return null;
@@ -560,7 +566,7 @@ function parseConst(header: SourceLine, pub: boolean): Const | null {
 
   let leftLen = splitEq[0].length;
   let name: string = splitEq[0][leftLen - 1].val;
-  let type: Type | null = tryParseType(splitEq[0].slice(1, leftLen - 1));
+  let type: Type | null = tryParseType(splitEq[0].slice(0, leftLen - 1));
   if (type == null) {
     logError(header.position, 'expected type');
     return null;
@@ -572,7 +578,7 @@ function parseConst(header: SourceLine, pub: boolean): Const | null {
     return null;
   }
 
-  return { position: header.position, pub, name, type, expr };
+  return { position: header.position, pub, name, type, expr, mode };
 }
 
 // returns the struct if it could valid parse from the header and the body, logs errors

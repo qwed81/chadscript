@@ -1,18 +1,18 @@
 import * as Parse from './parse';
 import { logError, compilerError, Position } from './util'
 import {
-  Type, Fn, UnitSymbols, loadUnits, resolveType, typeApplicable,
-  NIL, INT, BOOL, resolveFn, FnResult, FMT, toStr,
+  Type, Fn, UnitSymbols, resolveType, typeApplicable,
+  NIL, INT, BOOL, resolveFn, FnResult, toStr,
   isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
-  getUnitSymbolsFromName, getUnitSymbolsFromAs
+  getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal
 } from './typeload'
 import * as Enum from './enum';
 
 export {
   analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst,
-  StructInitField, FnCall, Expr, LeftExpr, Mode, FnImpl
+  StructInitField, FnCall, Expr, LeftExpr, Mode, FnImpl, GlobalImpl
 }
 
 interface FnImpl {
@@ -20,8 +20,15 @@ interface FnImpl {
   body: Inst[]
 }
 
+interface GlobalImpl {
+  header: Global,
+  expr: Expr
+  position: Position
+}
+
 interface Program {
   fns: FnImpl[]
+  globals: GlobalImpl[]
 }
 
 interface CondBody {
@@ -112,11 +119,11 @@ interface Index {
   index: Expr
 }
 
-type Mode = 'C' | 'none' | 'iter' | 'link'; 
+type Mode = 'C' | 'global' | 'none' | 'iter' | 'link'; 
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
-  | { tag: 'var', val: string, mode: Mode, type: Type }
+  | { tag: 'var', val: string, mode: Mode, unit: string | null, type: Type }
   | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode }
 
 function analyze(
@@ -126,24 +133,55 @@ function analyze(
 
   let validProgram: Program | null = {
     fns: [],
+    globals: []
   };
 
   for (let i = 0; i < units.length; i++) {
     let unitFns: FnImpl[] | null = null;
+    let unitGlobals: GlobalImpl[] | null = null;
+    if (validProgram != null) {
+      unitGlobals = analyzeUnitGlobals(symbols[i], units[i]);
+    }
+
     if (validProgram != null) {
       unitFns = analyzeUnitFns(symbols[i], units[i]); 
     }
-    if (unitFns == null) {
+
+    if (unitFns == null || unitGlobals == null) {
       validProgram = null;
     } 
     else if (validProgram != null) {
-      for (let j = 0; j < unitFns.length; j++) {
-        validProgram.fns.push(unitFns[j]);
-      }
+      validProgram.fns.push(...unitFns);
+      validProgram.globals.push(...unitGlobals);
     }
   }
 
   return validProgram;
+}
+
+function analyzeUnitGlobals(symbols: UnitSymbols, unit: Parse.ProgramUnit): GlobalImpl[] | null {
+  let nullScope: FnContext = {
+    returnType: NIL,
+    inLoop: false,
+    generics: new Set(),
+    typeScope: [],
+    variantScope: []
+  };
+
+  let output: GlobalImpl[] | null = [];
+  for (let global of unit.globals) {
+    let header = symbols.globals.get(global.name)!; 
+    let type = header.type;
+    let expr = ensureExprValid(symbols, global.expr, type, nullScope, global.position);
+    if (expr == null) {
+      output = null;
+      continue;
+    }
+    if (output != null) {
+      output.push({ header, expr, position: global.position });
+    }
+  }
+  return output;
 }
 
 function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[] | null {
@@ -492,7 +530,7 @@ function analyzeInst(
     let expr = ensureExprValid(symbols, inst.val.expr, declareType, scope, inst.position);
     if (expr == null) return null;
 
-    let leftExpr: LeftExpr = { tag: 'var', mode: 'none', val: inst.val.name, type: declareType };
+    let leftExpr: LeftExpr = { tag: 'var', mode: 'none', unit: null, val: inst.val.name, type: declareType };
     Enum.remove(scope.variantScope, leftExpr);
     if (expr != null) Enum.recursiveAddExpr(scope.variantScope, leftExpr, expr);
 
@@ -660,14 +698,14 @@ function ensureLeftExprValid(
     return { tag: 'index', val: { var: left, index, }, type: retType.val };
   }
   else if (leftExpr.tag == 'var') {
-    let v = getVar(scope, leftExpr.val);
+    let v = getVar(symbols, scope, leftExpr.val, null);
     if (v == null) {
       if (position != null) logError(position, `could not find ${leftExpr.val}`);
       return null;
     }
 
     let changedType = v.type.tag == 'link' ? v.type.val : v.type;
-    return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode };
+    return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode, unit: v.unit };
   }
   else if (leftExpr.tag == 'scope_unit') {
     let newUnit = getIsolatedUnitSymbolsFromName(symbols, leftExpr.unit, position);
@@ -699,13 +737,11 @@ function ensureFnCallValid(
 
   // figure out which unit these belong to
   let fnIsolatedSymbols: UnitSymbols = symbols;
-  let fnSymbols: UnitSymbols = symbols;
   let isScoped = false;
   let fn: Parse.LeftExpr = fnCall.fn;
   if (fn.tag == 'scope_as') {
     let innerSymbols = getUnitSymbolsFromAs(symbols, fn.as, position);
     if (innerSymbols == null) return null;
-    fnSymbols = innerSymbols;
     let lookupUnit = getIsolatedUnitSymbolsFromAs(symbols, fn.as, position);
     if (lookupUnit == null) return null;
     fnIsolatedSymbols = lookupUnit;
@@ -715,7 +751,6 @@ function ensureFnCallValid(
   else if (fn.tag == 'scope_unit') {
     let innerSymbols = getUnitSymbolsFromName(symbols, fn.unit, position);
     if (innerSymbols == null) return null;
-    fnSymbols = innerSymbols;
     let lookupUnit = getIsolatedUnitSymbolsFromName(symbols, fn.unit, position);
     if (lookupUnit == null) return null;
     fnIsolatedSymbols = lookupUnit;
@@ -723,8 +758,8 @@ function ensureFnCallValid(
     fn = fn.inner;
   }
 
-  if ((fn.tag != 'var' || getVar(scope, fn.val) != null) && !isScoped) {
-    let leftExpr = ensureLeftExprValid(symbols, fn, scope, position);
+  if ((fn.tag != 'var' || getVar(fnIsolatedSymbols, scope, fn.val, null) != null) && !isScoped) {
+    let leftExpr = ensureLeftExprValid(fnIsolatedSymbols, fn, scope, position);
     if (leftExpr == null) return null;
     if (leftExpr.type.tag != 'fn') {
       if (position != null) logError(position, 'type is not callable');
@@ -1378,6 +1413,7 @@ function ensureExprValid(
 }
 
 interface Var {
+  unit: string | null
   type: Type
   mode: Mode
   mut: boolean
@@ -1410,12 +1446,24 @@ function exitScope(scope: FnContext) {
 }
 
 function setValToScope(scope: FnContext, name: string, type: Type, mut: boolean, mode: Mode) {
-  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, mode });
+  scope.typeScope[scope.typeScope.length - 1].set(name, { type, mut, mode, unit: null });
 }
 
-function getVar(scope: FnContext, name: string): Var | null {
+function getVar(
+  symbols: UnitSymbols,
+  scope: FnContext,
+  name: string,
+  position: Position | null
+): Var | null {
   for (let i = scope.typeScope.length - 1; i >= 0; i--) {
     if (scope.typeScope[i].has(name)) return scope.typeScope[i].get(name)!;
   }
-  return null;
+  let global: Global | null = resolveGlobal(symbols, name, position);
+  if (global == null) return null;
+  return {
+    type: global.type,
+    mode: symbols.name.endsWith('.h') ? 'C' : 'global',
+    mut: true,
+    unit: global.unit
+  }
 }
