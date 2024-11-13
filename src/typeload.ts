@@ -753,7 +753,7 @@ function resolveFn(
       let line: string = 'expected: ' + name + '(';
       let t = results.wrongTypeFns[i];
       for (let j = 0; j < t.paramTypes.length; j++) {
-        line += toStr(t.paramTypes[j]) + t.paramNames[j];
+        line += toStr(t.paramTypes[j]) + ' ' + t.paramNames[j];
         if (j != t.paramTypes.length - 1) line += ', '
       }
       line += ')'

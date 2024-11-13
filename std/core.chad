@@ -27,11 +27,13 @@ struct bump
 local bump bp = {}
 
 fn clear(&bump bp)
-  int start = int(u64(bp.base))
-  int end = int(u64(bp.curr))
-  for i in start:end
-    bp.base[i] = 0
+  int diff = int(u64(bp.curr) - u64(bp.base))
+  memset(bp.base, u8(0), diff)
   bp.curr = bp.base
+
+fn memset(*u8 mem, u8 val, int num)
+  include
+    memset(_mem, _val, _num);
 
 fn alloc(&bump bp, int amt) *T
   int allocSize = 0
@@ -44,9 +46,7 @@ fn alloc(&bump bp, int amt) *T
 
   *T newLoc = ptr(bp.curr)
   newLoc = align(newLoc)
-
-  u64 diff = u64(newLoc) - u64(bp.base)
-  bp.curr = &bp.base[int(diff) + allocSize]
+  bp.curr = ptr(&newLoc[amt])
   ret newLoc
 
 fn alloc(int amt) *T
@@ -54,7 +54,9 @@ fn alloc(int amt) *T
 
 fn align(*T p) *T
   include
-    return ($(T)*)(((size_t)_p % alignof($(T))) + alignof($(T)) + _p);
+    size_t loc = (size_t)_p & ~alignof($(T));
+    if (loc == (size_t)_p) return _p;
+    return ($(T)*)(loc + sizeof($(T)));
   ret nil
 
 fn malloc(int amt) *T
@@ -113,22 +115,14 @@ impl index(&Vec[T] vec, int index) *T
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
 
-fn append(&Fmt f, Vec[T] vec)
-  f ++= "["
-  for i in 0:vec.len
-    f ++= vec[i]
-    if i != vec.len - 1
-      f ++= ','
-  f ++= ']'
-
 impl append(&Vec[T] l, T val)
   if l.len == l.capacity
-    *T newAlloc = alloc(l.capacity * 2)
+    *T newAlloc = alloc(max(l.capacity * 2, 4))
 
     for i in 0:l.len
       newAlloc[i] = l.base[i]
     l.base = newAlloc
-    l.capacity = l.capacity * 2
+    l.capacity = max(l.capacity * 2, 4)
 
   l.base[l.len] = val
   l.len += 1
@@ -248,12 +242,12 @@ fn str(Fmt buf) str
 
 pri fn appendOne(&Fmt s, char c)
   if s.len == s.capacity
-    *char newAlloc = alloc(s.capacity * 2)
+    *char newAlloc = alloc(max(s.capacity * 2, 4))
 
     for i in 0:s.len
       newAlloc[i] = s.base[i]
     s.base = newAlloc
-    s.capacity = s.capacity * 2
+    s.capacity = max(s.capacity * 2, 4)
 
   s.base[s.len] = c
   s.len += 1
@@ -275,6 +269,17 @@ impl format(&Fmt fmt, int val)
 
   str newStr = { base = output, len = len }
   fmt ++= newStr
+
+impl format(&Fmt f, Vec[int] vec)
+  f ++= '['
+  for i in 0:vec.len
+    f ++= vec[i]
+    if i != vec.len - 1
+      f ++= ", "
+  f ++= ']'
+
+impl format(&Fmt f, char c)
+  appendOne(f, c)
 
 struct Map[K, V]
 

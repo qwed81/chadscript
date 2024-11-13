@@ -391,6 +391,25 @@ function resolveExpr(
       exprs.push(res);
     }
 
+    if (expr.type.tag != 'struct') {
+      compilerError('expected list');
+      return undefined!;
+    }
+
+    // list init needs alloc to be available
+    let allocExpr: LeftExpr = {
+      tag: 'fn',
+      type: { tag: 'fn', paramTypes: [INT], returnType: expr.type.val.fields[0].type },
+      name: 'alloc',
+      unit: 'std/core',
+      mode: 'fn'
+    }
+    resolveLeftExpr(
+      allocExpr,
+      set,
+      genericMap
+    );
+
     let type = applyGenericMap(expr.type, genericMap);
     return { tag: 'list_init', val: exprs, type: type }
   }

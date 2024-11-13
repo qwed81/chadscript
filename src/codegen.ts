@@ -1,6 +1,6 @@
 import { FnMode } from './parse';
 import { Position, compilerError } from './util';
-import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, typeApplicable } from './typeload';
+import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, INT, typeApplicable } from './typeload';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
 
@@ -436,7 +436,9 @@ function codeGenExpr(
     let type = codeGenType(ptrType.val);
     let ptr = uniqueVarName(ctx);
     let typedPtr = uniqueVarName(ctx);
-    statements.push(`void *${ptr} = malloc(${expr.val.length} * sizeof(${type}));`);
+    let allocName = getFnUniqueId('std/core', 'alloc', 'fn', [INT], ptrType);
+
+    statements.push(`void *${ptr} = ${allocName}(${expr.val.length});`);
     statements.push(`${type} *${typedPtr} = (${type}*)(${ptr});`);
     for (let i = 0; i < expr.val.length; i++) {
       let innerExpr = codeGenExpr(expr.val[i], ctx, position);
