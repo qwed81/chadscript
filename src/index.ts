@@ -1,79 +1,87 @@
-import { parseFile, ProgramUnit } from './parse';
+import { parseFile, parse, ProgramUnit } from './parse';
 import { analyze } from './analyze';
 import { codegen, OutputFile } from './codegen';
-import { replaceGenerics } from './replaceGenerics';
+import { replaceGenerics, Program } from './replaceGenerics';
 import { loadUnits, UnitSymbols } from './typeload';
 import { loadHeaderFile } from './header';
 import path from 'node:path';
 import { execSync } from 'node:child_process'
 import * as Util from './util';
 import fs from 'node:fs';
+import * as Lsp from './lsp';
 
-// gets all of the parse units according to the file structure
-/*
-function parseUnitsRecur(basePath: string, moduleName: string, outParseUnits: ProgramUnit[]) {
-  let subPaths = readdirSync(basePath);
-  for (let subPath of subPaths) {
-    let fullPath = path.join(basePath, subPath);
+export {
+  analyzeProgram, getFilesRecur
+}
 
-    let stats = fs.statSync(fullPath);
-    if (stats.isDirectory()) {
-      let modBaseName = path.basename(fullPath);
-      let nextModName = `${moduleName}.${modBaseName}`;
-      parseUnitsRecur(fullPath, nextModName, outParseUnits);
-    }
-    else if (subPath.endsWith('.chad')) {
-      let unitBaseName = path.basename(fullPath).slice(0, -5);
-      let unitName = `${moduleName}.${unitBaseName}`;
-      if (moduleName == '') {
-        unitName = unitBaseName;
-      }
-
-      let parseUnit = parseFile(fullPath, unitName);
-      if (parseUnit != null) {
-        outParseUnits.push(parseUnit);
-      }
-    }
+let chadPaths: string[] = [];
+let headerPaths: string[] = [];
+for (let i = 2; i < process.argv.length; i++) {
+  let fileName = process.argv[i]; 
+  if (fileName.endsWith('.h')) {
+    headerPaths.push(fileName);
+  }
+  else if (fileName.endsWith('.chad')) {
+    chadPaths.push(fileName);
   }
 }
-*/
 
-compileProgram()
-function compileProgram() {
+if (process.argv.includes('--lsp')) {
+  Lsp.startServer(chadPaths, headerPaths);
+}
+else {
+  let program = analyzeProgram(chadPaths, headerPaths, new Map())
+  if (program != null) {
+    compileProgram(program, headerPaths);
+  }
+  else {
+    console.log('could not finish build');
+  }
+}
+
+function analyzeProgram(
+  chadPaths: string[],
+  headerPaths: string[],
+  replaceFile: Map<string, string>
+): Program | null {
   let programUnits: ProgramUnit[] = [];
-  let headerPaths: string[] = [];
   let symbols: UnitSymbols[] = [];
-  for (let i = 2; i < process.argv.length; i++) {
-    let filePath = process.argv[i];
-    if (filePath.endsWith('.chad')) {
-      let fileName = filePath.slice(0, -5);
-      let progUnit = parseFile(filePath, fileName);
-      if (progUnit == null) {
-        continue;
-      }
+  for (let filePath of chadPaths) {
+    let fileName = filePath.slice(0, -5);
+    if (replaceFile.has(filePath)) {
+      let progUnit = parse(replaceFile.get(filePath)!, fileName);
+      if (progUnit == null) continue;
       programUnits.push(progUnit);
     }
-    else if (filePath.endsWith('.h')) {
-      let headerUnit = loadHeaderFile(filePath);
-      if (headerUnit == null) {
-        continue;
-      }
-      symbols.push(headerUnit);
+    else {
+      let progUnit = parseFile(filePath, fileName);
+      if (progUnit == null) continue;
+      programUnits.push(progUnit);
     }
+  }
+
+  for (let filePath of headerPaths) {
+    let headerUnit = loadHeaderFile(filePath);
+    if (headerUnit == null) {
+      continue;
+    }
+    symbols.push(headerUnit);
   }
 
   symbols = loadUnits(programUnits, symbols)
 
   let program = analyze(programUnits, symbols);
   if (program == null) {
-    console.log('could not finish build');
-    return;
+    return null;
   } 
 
   let mainFn = program.fns.find(x => x.header.name == 'main');
-  if (mainFn == undefined) return;
-  let implProgram = replaceGenerics(program, symbols, mainFn);
-  let outputFiles: OutputFile[] = codegen(implProgram, new Set(headerPaths));
+  if (mainFn == undefined) return null;
+  return replaceGenerics(program, symbols, mainFn);
+}
+
+function compileProgram(program: Program, headerPaths: string[]) {
+  let outputFiles: OutputFile[] = codegen(program, new Set(headerPaths));
 
   let fileNames: string[]= [];
   for (let file of outputFiles) {
@@ -106,12 +114,30 @@ function compileProgram() {
     }
   }
 
-  let libuvPath = path.join(__dirname, 'libuv.so');
-  let asyncPath = path.join(__dirname, 'async.o');
-  let asmPath = path.join(__dirname, 'asm.o');
-
   let outputPath = path.join('build', 'output');
   try {
-    execSync(`clang ${asyncPath} ${asmPath} ${libuvPath} ${objPaths} ${libPaths} -o ${outputPath}`);
+    execSync(`clang ${objPaths} ${libPaths} -o ${outputPath}`);
   } catch {}
 }
+
+// gets all of the parse units according to the file structure
+function getFilesRecur(filePath: string, namePath: string, chadPaths: string[], headerPaths: string[]) {
+  let subPaths = fs.readdirSync(filePath);
+
+  for (let subPath of subPaths) {
+    let fullPath = path.join(filePath, subPath);
+    let newNamePath = namePath + '/' + subPath;
+
+    let stats = fs.statSync(fullPath);
+    if (stats.isDirectory()) {
+      getFilesRecur(fullPath, newNamePath, chadPaths, headerPaths);
+    }
+    else if (subPath.endsWith('.chad')) {
+      headerPaths.push(namePath)
+    }
+    else if (subPath.endsWith('.h')) {
+      headerPaths.push(namePath);
+    }
+  }
+}
+
