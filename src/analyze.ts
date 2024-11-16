@@ -2,17 +2,19 @@ import * as Parse from './parse';
 import { logError, compilerError, Position } from './util'
 import {
   Type, Fn, UnitSymbols, resolveType, typeApplicable,
-  NIL, INT, BOOL, resolveFn, FnResult, toStr,
+  NIL, INT, BOOL, resolveFnOrDecl, FnResult, toStr,
   isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
-  getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal
+  getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
+  resolveMacro
 } from './typeload'
 import * as Enum from './enum';
 
 export {
   analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst,
-  StructInitField, FnCall, Expr, LeftExpr, Mode, FnImpl, GlobalImpl
+  StructInitField, FnCall, Expr, LeftExpr, Mode, FnImpl, GlobalImpl,
+  MacroArg
 }
 
 interface FnImpl {
@@ -83,6 +85,14 @@ interface StructInitField {
   expr: Expr
 }
 
+type MacroArg = { tag: 'type', val: Type }
+  | { tag: 'expr', val: Expr };
+
+interface MacroCall {
+  name: string,
+  args: MacroArg[]
+}
+
 interface BinExpr {
   left: Expr
   right: Expr
@@ -95,6 +105,7 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type }
   | { tag: 'try', val: Expr, type: Type }
   | { tag: 'assert', val: Expr, type: Type }
   | { tag: 'fn_call', val: FnCall, type: Type }
+  | { tag: 'macro_call', val: MacroCall, type: Type }
   | { tag: 'struct_init', val: StructInitField[], type: Type }
   | { tag: 'struct_zero', type: Type }
   | { tag: 'list_init', val: Expr[], type: Type }
@@ -201,6 +212,8 @@ function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[]
     }
 
     let scope = newScope(returnType, generics);
+
+    if (fn.mode == 'macro') continue;
     let validFn = analyzeFn(symbols, fn, scope);
     if (validFn == null) {
       fns = null;
@@ -810,7 +823,7 @@ function ensureFnCallValid(
     }
   }
 
-  let result = resolveFn(['fn', 'decl'], fnIsolatedSymbols, (fn as any).val, initialTypes, expectedReturn, position);
+  let result = resolveFnOrDecl(fnIsolatedSymbols, (fn as any).val, initialTypes, expectedReturn, position);
   if (result == null || result.resolvedType.tag != 'fn') return null;
   let newTypes: Type[] = result.resolvedType.paramTypes;
   let resolvedExprs: Expr[] = []
@@ -1160,6 +1173,41 @@ function ensureExprValid(
     if (exprTuple == null) return null;
     computedExpr = { tag: 'not', val: exprTuple, type: BOOL };
   } 
+
+  if (expr.tag == 'macro_call') {
+    let macro = resolveMacro(symbols, expr.val.name, position);
+    if (macro == null) return null;
+
+    let args: MacroArg[] = [];
+    for (let i = 0; i < macro.paramTypes.length; i++) {
+      let paramType = macro.paramTypes[i];
+
+      if (paramType.tag == 'struct' && paramType.val.name == 'type' && paramType.val.unit == 'std/core') {
+        let argType = expr.val.args[i].type;
+        if (argType == null) {
+          if (position != null) logError(position, 'expected type');
+          return null;
+        }
+
+        let type = resolveType(symbols, argType, position);
+        if (type == null) return null;
+        args.push({ tag: 'type', val: type });
+      }
+      else {
+        let argExpr = expr.val.args[i].expr;
+        if (argExpr == null) {
+          if (position != null) logError(position, 'expected expr');
+          continue;
+        }
+
+        let validExpr = ensureExprValid(symbols, argExpr, null, scope, position);
+        if (validExpr == null) return null;
+        args.push({ tag: 'expr', val: validExpr }); 
+      }
+    }
+
+    computedExpr = { tag: 'macro_call', val: { name: macro.name, args }, type: macro.returnType };
+  }
 
   if (expr.tag == 'fn_call') {
     // check if builtin function

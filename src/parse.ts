@@ -95,7 +95,7 @@ type Type = { tag: 'basic', val: string, unitMode: 'as' | 'unit' | 'none', unit:
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
 
-type FnMode = 'fn' | 'decl' | 'impl'
+type FnMode = 'fn' | 'decl' | 'impl' | 'macro'
 
 interface Fn {
   type: FnType
@@ -164,6 +164,12 @@ interface Include {
   types: Type[]
 }
 
+interface MacroArg {
+  type: Type | null,
+  expr: Expr | null,
+  str: string | null
+}
+
 type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'elif', val: CondBody, position: Position }
   | { tag: 'else', val: Inst[], position: Position }
@@ -199,6 +205,11 @@ interface StructInitField {
   expr: Expr
 }
 
+interface MacroCall {
+  name: string
+  args: MacroArg[]
+}
+
 interface BinExpr {
   left: Expr
   right: Expr
@@ -212,6 +223,7 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'resolve', val: Expr , position: Position }
   | { tag: 'assert', val: Expr, position: Position }
   | { tag: 'fn_call', val: FnCall, position: Position }
+  | { tag: 'macro_call', val: MacroCall, position: Position }
   | { tag: 'struct_init', val: StructInitField[], position: Position }
   | { tag: 'list_init', val: Expr[], position: Position }
   | { tag: 'str_const', val: string, position: Position }
@@ -291,7 +303,8 @@ function parse(unitText: string, documentName: string): ProgramUnit | null {
         program.uses = uses;
       } else if (line.tokens[start].val == 'fn'
         || line.tokens[start].val == 'decl'
-        || line.tokens[start].val == 'impl') {
+        || line.tokens[start].val == 'impl'
+        || line.tokens[start].val == 'macro') {
         let fn = parseFn(line, body);
         if (fn == null) {
           return null;
@@ -815,6 +828,7 @@ function parseFnHeader(
   if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
   else if (tokens[0].val == 'decl' || tokens[1].val == 'decl') fnMode = 'decl'
   else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
+  else if (tokens[0].val == 'macro' || tokens[1].val == 'macro') fnMode = 'macro'
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {
@@ -927,6 +941,35 @@ function parseInstBody(lines: SourceLine[]): Inst[] | null {
   } else {
     return insts;
   }
+}
+
+function tryParseMacroCall(tokens: Token[]): MacroCall | null {
+  if (tokens.length < 4 || tokens[tokens.length - 1].val != ')') {
+    return null;
+  }
+
+  let paramStart = getFirstBalanceIndexFromEnd(tokens, '(', ')');
+  if (tokens[0].val != '@') {
+    return null;
+  }
+  let name = tokens[1].val;
+
+  let paramArgs = balancedSplit(tokens.slice(paramStart + 1, -1), ',');
+  let args: MacroArg[] = [];
+  if (tokens.length - paramStart != 2) {
+    for (let paramTokens of paramArgs) {
+      let expr = tryParseExpr(paramTokens, positionRange(paramTokens));
+      let type = tryParseType(paramTokens);
+
+      args.push({
+        expr,
+        type,
+        str: ''
+      });
+    }
+  }
+
+  return { name, args }
 }
 
 function tryParseFnCall(tokens: Token[]): FnCall | null {
@@ -1320,6 +1363,11 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     else if (tokens[0].val == '&') {
       return { tag: 'ptr', val: expr, position };
     }
+  }
+
+  let macroCall = tryParseMacroCall(tokens);
+  if (macroCall != null) {
+    return { tag: 'macro_call', val: macroCall, position };
   }
 
   let fnCall = tryParseFnCall(tokens);

@@ -3,12 +3,13 @@ import { logError, compilerError, Position, logMultiError } from './util';
 
 export {
   UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
-  NIL, BOOL, ANY, resolveFn, Fn, FnResult, ERR,
+  NIL, BOOL, ANY, resolveFnOrDecl, Fn, FnResult, ERR,
   CHAR, INT, I32, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
-  getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal
+  getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
+  resolveMacro
 }
 
 type Modifier = 'pri' | 'pub';
@@ -63,6 +64,7 @@ interface UnitSymbols {
   allUnits: UnitSymbols[]
   structs: Map<string, Struct>,
   fns: Map<string, Fn[]>
+  macros: Map<string, Fn>,
   globals: Map<string, Global>
 }
 
@@ -170,15 +172,6 @@ function refType(type: Type): Type {
 
 function serializeType(type: Type): string {
   return toStr(type);
-}
-
-function isInt(type: Type) {
-  if (type.tag == 'struct') {
-    let name = type.val.name;
-    return name == 'i8' || name == 'i16' || name == 'i32' || name == 'int'
-      || name == 'u8' || name == 'u16' || name == 'u32' || name == 'u64'
-  }
-  return false;
 }
 
 function createTypeUnion(t1: Type, t2: Type): Type {
@@ -444,7 +437,8 @@ function loadUnits(units: Parse.ProgramUnit[], headerUnits: UnitSymbols[]): Unit
       asUnits: new Map(),
       fns: new Map(),
       structs: new Map(),
-      globals: new Map()
+      globals: new Map(),
+      macros: new Map()
     };
     unitSymbolsMap.set(units[i].fullName, unitSymbols);
   }
@@ -598,6 +592,19 @@ function loadFns(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
       }
       let returnType = resolveType(symbols, fn.type.returnType, fn.position);
       if (returnType == null) continue;
+
+      if (fn.mode == 'macro') {
+        symbols.macros.set(fn.name, {
+          mode: fn.mode,
+          name: fn.name,
+          unit: unit.fullName,
+          paramNames: fn.paramNames,
+          returnType,
+          paramTypes
+        });
+        continue;
+      }
+
       if (!symbols.fns.has(fn.name)) symbols.fns.set(fn.name, []);
       symbols.fns.get(fn.name)!.push({
         mode: fn.mode,
@@ -622,6 +629,7 @@ function getIsolatedUnitSymbolsFromName(
       name: unitName,
       allUnits: base.allUnits,
       fns: unit.fns,
+      macros: new Map(),
       structs: unit.structs,
       globals: unit.globals,
       asUnits: new Map(),
@@ -659,6 +667,7 @@ function getIsolatedUnitSymbolsFromAs(
     name: unit.name,
     allUnits: base.allUnits,
     fns: unit.fns,
+    macros: new Map(),
     structs: unit.structs,
     globals: unit.globals,
     asUnits: new Map(),
@@ -680,6 +689,7 @@ function getUnitSymbolsFromAs(
     name: unit.name,
     allUnits: base.allUnits,
     fns: unit.fns,
+    macros: new Map(),
     structs: unit.structs,
     globals: unit.globals,
     asUnits: new Map(),
@@ -699,7 +709,7 @@ function resolveGlobal(unit: UnitSymbols, name: string, position: Position | nul
   return null;
 }
 
-function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Position): Type | null {
+function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Position | null): Type | null {
   if (unit.name == 'stdio.h') {
     throw new Error();
   }
@@ -709,14 +719,30 @@ function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Positio
     return null;
   }
   if (types.length == 0) {
-    logError(position, 'could not find type ');
+    if (position != null) logError(position, 'could not find type ');
     return null;
   }
   else if (types.length > 1) {
-    logError(position, 'type is ambiguous');
+    if (position != null) logError(position, 'type is ambiguous');
     return null;
   }
   return types[0];
+}
+
+function resolveMacro(
+  unit: UnitSymbols,
+  name: string,
+  position: Position | null
+): Fn | null {
+  let macro: Fn | undefined = unit.macros.get(name);
+  if (macro != undefined) return macro
+  for (let symbols of unit.useUnits) {
+    macro = symbols.macros.get(name);
+    if (macro != undefined) return macro;
+  }
+
+  if (position != null) logError(position, 'could not find macro ' + name);
+  return null;
 }
 
 interface FnResult {
@@ -733,15 +759,14 @@ interface FnLookupResult {
   wrongTypeFns: Fn[]
 }
 
-function resolveFn(
-  modeFilter: string[],
+function resolveFnOrDecl(
   unit: UnitSymbols,
   name: string,
   paramTypes: (Type | null)[],
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
-  let results = lookupFnInternal(modeFilter, unit, name, paramTypes, retType);
+  let results = lookupFnInternal(['fn', 'decl'], unit, name, paramTypes, retType);
   if (results.possibleFns.length == 1) return results.possibleFns[0];
   if (results.possibleFns.length > 1) {
     if (position != null) logError(position, 'function is ambiguous');
@@ -899,7 +924,7 @@ function lookupFnInternal(
 function resolveTypeInternal(
   unit: UnitSymbols,
   parseType: Parse.Type,
-  position: Position
+  position: Position | null
 ): Type[] | null {
   if (parseType.tag == 'basic' && parseType.val.length == 1 
     && parseType.val[0] >= 'A' && parseType.val[0] <= 'Z'

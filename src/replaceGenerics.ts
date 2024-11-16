@@ -1,5 +1,5 @@
 import { FnMode } from './parse';
-import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl } from './analyze';
+import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl, MacroArg } from './analyze';
 import { compilerError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
@@ -363,6 +363,22 @@ function resolveExpr(
   }
   else if (expr.tag == 'nil_const') {
     return { tag: 'nil_const', type: NIL };
+  }
+  else if (expr.tag == 'macro_call') {
+    let args: MacroArg[] = [];
+    for (let arg of expr.val.args) {
+      if (arg.tag == 'type') {
+        let t = applyGenericMap(arg.val, genericMap);
+        args.push({ tag: 'type', val: t });
+      }
+      else if (arg.tag == 'expr') {
+        let argExpr = resolveExpr(arg.val, set, genericMap);
+        args.push({ tag: 'expr', val: argExpr });
+      }
+    }
+
+    let returnType = applyGenericMap(expr.type, genericMap);
+    return { tag: 'macro_call', val: { name: expr.val.name, args }, type: returnType };
   }
   else if (expr.tag == 'fn_call') {
     let fn = resolveLeftExpr(expr.val.fn, set, genericMap);

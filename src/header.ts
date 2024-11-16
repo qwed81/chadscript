@@ -65,6 +65,7 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
     useUnits: [],
     asUnits: new Map(),
     allUnits: [],
+    macros: new Map(),
     structs: new Map(),
     fns: new Map(),
     globals: new Map()

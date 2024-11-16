@@ -422,6 +422,11 @@ function codeGenExpr(
   else if (expr.tag == 'struct_zero') {
     exprText = `(${codeGenType(expr.type)}){0}`;
   }
+  else if (expr.tag == 'macro_call') {
+    let macro = codeGenMacroCall(expr, ctx, position);
+    exprText = macro.output;
+    statements = macro.statements;
+  }
   else if (expr.tag == 'list_init') {
     if (expr.type.tag != 'struct') {
       return undefined!;
@@ -527,8 +532,40 @@ function codeGenExpr(
   return { output: exprText, statements };
 }
 
+function codeGenMacroCall(expr: Expr, ctx: FnContext, position: Position): CodeGenExpr {
+  if (expr.tag != 'macro_call') {
+    compilerError('expected macro call');
+    return undefined!;
+  }
+
+  if (expr.val.name == 'sizeOf') {
+    let arg = expr.val.args[0];
+    if (arg.tag != 'type') {
+      compilerError('should always be type');
+      return undefined!;
+    }
+    return { output: `sizeof(${codeGenType(arg.val)})`, statements: [] };
+  }
+
+  if (expr.val.name == 'alignOf') {
+    let arg = expr.val.args[0];
+    if (arg.tag != 'type') {
+      compilerError('should always be type');
+      return undefined!;
+    }
+    return { output: `alignof(${codeGenType(arg.val)})`, statements: [] };
+  }
+
+  if (expr.val.name == 'mapFields') {
+
+  }
+
+  return { output: '', statements: [] }
+}
+
 function codeGenStructInit(expr: Expr, ctx: FnContext, position: Position): CodeGenExpr {
   if (expr.tag != 'struct_init') {
+    compilerError('expected struct init');
     return undefined!;
   }
 
