@@ -316,9 +316,11 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let iterExpr = codeGenExpr(inst.val.iter, ctx, inst.position);
     statements.push(...iterExpr.statements);
 
-    let itemType = inst.val.nextFn.returnType;
+    let itemType = inst.val.nextFn!.returnType;
     let itemTypeStr = codeGenType(itemType);
-    let paramTypes = inst.val.nextFn.paramTypes;
+    let paramTypes = inst.val.nextFn!.paramTypes;
+
+    if (inst.val.nextFn == null) { compilerError('nextFn should not be null'); return undefined!; };
     let nextFnName = getFnUniqueId(inst.val.nextFn.unit, inst.val.nextFn.name, inst.val.nextFn.mode, paramTypes, itemType);
 
     let iterSaved = uniqueVarName(ctx);
@@ -639,6 +641,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
     }
     else if (leftExpr.mode == 'global') {
       leftExprText = getGlobalUniqueId(leftExpr.unit!, leftExpr.val);
+    }
+    else if (leftExpr.mode == 'field_iter') {
+      leftExprText = `(${codeGenType(STR)}){ ._base = "${leftExpr.val}", ._len = strLen(${leftExpr.val}) }`;
     }
   }
 

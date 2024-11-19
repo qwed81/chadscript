@@ -247,9 +247,36 @@ function isGeneric(a: Type): boolean {
   return false;
 }
 
-function typeEq(t1: Type, t2: Type) {
-  return typeApplicableStateful(t1, t2, new Map(), true) 
-    && typeApplicableStateful(t2, t1, new Map(), true);
+function typeEq(t1: Type, t2: Type): boolean {
+  if (t1.tag == 'link') {
+    return typeEq(t1.val, t2);
+  }
+  if (t2.tag == 'link') {
+    return typeEq(t1, t2.val);
+  }
+
+  if (t1.tag != t2.tag) return false;
+  if (t1.tag == 'struct' && t2.tag == 'struct') {
+    return t1.val.name == t2.val.name && t1.val.unit == t2.val.unit;
+  }
+
+  if (t1.tag == 'ptr' && t2.tag == 'ptr') {
+    return typeEq(t1.val, t2.val);
+  }
+
+  if (t1.tag == 'generic' && t2.tag == 'generic') {
+    return t1.val == t2.val;
+  }
+
+  if (t1.tag == 'fn' && t2.tag == 'fn') {
+    if (t1.paramTypes.length != t2.paramTypes.length) return false;
+    for (let i = 0; i < t1.paramTypes.length; i++) {
+      if (!typeEq(t1.paramTypes[i], t2.paramTypes[i])) return false;
+    }
+    return typeEq(t1.returnType, t2.returnType);
+  }
+
+  return false;
 }
 
 // fnHeader field is used to calculate whether a generic should accept any type
@@ -267,10 +294,12 @@ function typeApplicableStateful(
   }
 
   if (supa.tag == 'generic') {
-    if (!fnHeader && supa.tag != sub.tag) return false;
-    if (sub.tag == 'generic') return true;
-    else if (genericMap.has(supa.val)) {
-      return typeApplicableStateful(sub, genericMap.get(supa.val)!, genericMap, fnHeader);
+    if (!fnHeader) {
+      return sub.tag == 'generic' && supa.val == sub.val;
+    } 
+
+    if (genericMap.has(supa.val)) {
+      return typeEq(sub, genericMap.get(supa.val)!);
     }
     genericMap.set(supa.val, sub);
     return true;
@@ -363,13 +392,7 @@ function toStr(t: Type | null): string {
 function applyGenericMap(
   input: Type,
   map: Map<string, Type>,
-  recursive: Set<Type> = new Set()
 ): Type {
-  if (recursive.has(input)) {
-    return input;
-  }
-  recursive.add(input);
-
   if (input.tag == 'generic') {
     if (map.has(input.val)) {
       return map.get(input.val)!;
@@ -383,13 +406,12 @@ function applyGenericMap(
     let newGenerics: Type[] = [];
     let newFields: Field[] = [];
 
-    let copySet = new Set(recursive);
     for (let field of input.val.fields) {
-      let fieldType = applyGenericMap(field.type, map, copySet);
+      let fieldType = applyGenericMap(field.type, map);
       newFields.push({ name: field.name, type: fieldType, modifier: field.modifier });
     }
     for (let generic of input.val.generics) {
-      newGenerics.push(applyGenericMap(generic, map, recursive));
+      newGenerics.push(applyGenericMap(generic, map));
     }
     return {
       tag: input.tag,
@@ -404,16 +426,16 @@ function applyGenericMap(
     };
   }
   else if (input.tag == 'link') {
-    return { tag: 'link', val: applyGenericMap(input.val, map, recursive) };
+    return { tag: 'link', val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'ptr') {
-    return { tag: 'ptr', val: applyGenericMap(input.val, map, recursive) };
+    return { tag: 'ptr', val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'fn') {
-    let newReturnType: Type = applyGenericMap(input.returnType, map, recursive);
+    let newReturnType: Type = applyGenericMap(input.returnType, map);
     let newParamTypes: Type[] = []
     for (let paramType of input.paramTypes) {
-      let newParamType = applyGenericMap(paramType, map, recursive);
+      let newParamType = applyGenericMap(paramType, map);
       newParamTypes.push(newParamType);
     }
     return {

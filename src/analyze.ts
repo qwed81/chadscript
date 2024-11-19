@@ -54,7 +54,7 @@ interface ForIn {
   varName: string,
   iter: Expr
   body: Inst[]
-  nextFn: Fn
+  nextFn: Fn | null
 }
 
 interface Include {
@@ -131,7 +131,7 @@ interface Index {
   index: Expr
 }
 
-type Mode = 'C' | 'global' | 'none' | 'iter' | 'link'; 
+type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter'; 
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
@@ -461,21 +461,26 @@ function analyzeInst(
     let iterExpr = ensureExprValid(symbols, inst.val.iter, null, scope, inst.position);
     if (iterExpr == null) return null;
 
-    let fnResult = resolveImpl(symbols, 'next', [refType(iterExpr.type)], null, inst.position);
-    if (fnResult == null || fnResult.resolvedType.tag != 'fn') {
-      logError(inst.position, 'value is not an iterator');
-      return null;
+    let iterType: Type = NIL;
+    let nextFn: Fn | null = null;
+    if (inst.val.varName != 'field') {
+      let fnResult = resolveImpl(symbols, 'next', [refType(iterExpr.type)], null, inst.position);
+      if (fnResult == null || fnResult.resolvedType.tag != 'fn') {
+        logError(inst.position, 'value is not an iterator');
+        return null;
+      }
+      let returnType = fnResult.resolvedType.returnType;
+      if (returnType.tag != 'ptr') {
+        logError(inst.position, 'expected pointer in "next"');
+        return null;
+      }
+      iterType = returnType.val;
+      nextFn = fnResult.fnReference;
     }
 
-    let returnType = fnResult.resolvedType.returnType;
-    if (returnType.tag != 'ptr') {
-      logError(inst.position, 'expected pointer in "next"');
-      return null;
-    }
-    let iterType = returnType.val;
     scope.inLoop = true;
     enterScope(scope);
-    setValToScope(scope, inst.val.varName, iterType, false, 'iter');
+    setValToScope(scope, inst.val.varName, iterType, false, inst.val.varName == 'field' ? 'field_iter' : 'iter');
     let body = analyzeInstBody(symbols, inst.val.body, scope);
     exitScope(scope);
     if (body == null) return null;
@@ -486,7 +491,7 @@ function analyzeInst(
         varName: inst.val.varName,
         iter: iterExpr,
         body: body,
-        nextFn: fnResult.fnReference
+        nextFn
       },
       position: inst.position
     };
@@ -682,6 +687,16 @@ function ensureLeftExprValid(
   if (leftExpr.tag == 'dot') {
     let left = ensureExprValid(symbols, leftExpr.val.left, null, scope, position);
     if (left == null) return null;
+
+    // for iter field
+    if (left.tag == 'left_expr' && left.val.tag == 'var' && left.val.mode == 'field_iter') {
+      if (leftExpr.val.varName == 'name') {
+        return { tag: 'dot', val: { left, varName: 'name' }, type: STR };
+      }
+      else if (leftExpr.val.varName == 'val') {
+        return { tag: 'dot', val: { left, varName: 'val' }, type: { tag: 'generic', val: 'val' } };
+      }
+    }
 
     let leftType = left.type;
     if (leftType.tag != 'struct') {
