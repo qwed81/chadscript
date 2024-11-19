@@ -1455,6 +1455,7 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'left_expr') {
+
     // see if it is constant enum initialization of a void type
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
@@ -1475,9 +1476,40 @@ function ensureExprValid(
     } 
 
     if (computedExpr == null) {
-      let exprTuple = ensureLeftExprValid(symbols, expr.val, scope, position);
-      if (exprTuple == null) return null;
-      computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
+      let exprTuple = ensureLeftExprValid(symbols, expr.val, scope, null);
+      if (exprTuple == null) {
+        if (expr.val.tag != 'var') {
+          ensureLeftExprValid(symbols, expr.val, scope, position); // log proper error
+          return null;
+        }
+
+        let paramTypes: (Type | null)[] | null = null; 
+        let retType: Type | null = null; 
+        if (expectedReturn != null && expectedReturn.tag == 'fn') {
+          paramTypes = expectedReturn.paramTypes;
+          retType = expectedReturn.returnType;
+        }
+        let fn = resolveFnOrDecl(symbols, expr.val.val, paramTypes, retType, position);
+        if (fn == null) {
+          ensureLeftExprValid(symbols, expr.val, scope, position); // log proper error
+          return null;
+        } 
+
+        computedExpr = {
+          tag: 'left_expr',
+          val: {
+            tag: 'fn',
+            unit: fn.unit,
+            name: fn.name,
+            type: fn.resolvedType,
+            mode: fn.mode,
+          },
+          type: fn.resolvedType 
+        };
+      }
+      else {
+        computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
+      }
     }
   }
 

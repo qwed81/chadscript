@@ -52,7 +52,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
     if (type.tag == 'fn') {
       chadDotH += `\ntypedef ${codeGenType(type.returnType)} (*${codeGenType(type)})(`;
       for (let i = 0; i < type.paramTypes.length; i++) {
-        chadDotH += `${codeGenType(type.paramTypes[i])}*`;
+        chadDotH += `${codeGenType(type.paramTypes[i])}`;
         if (i != type.paramTypes.length - 1) {
           chadDotH += ', ';
         }

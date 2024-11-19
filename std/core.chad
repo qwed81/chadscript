@@ -1,3 +1,11 @@
+struct type
+
+macro alignOf(type t) int
+  ret 0
+
+macro sizeOf(type t) int
+  ret 0
+
 struct err
   str message
 

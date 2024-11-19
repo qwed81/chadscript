@@ -762,7 +762,7 @@ interface FnLookupResult {
 function resolveFnOrDecl(
   unit: UnitSymbols,
   name: string,
-  paramTypes: (Type | null)[],
+  paramTypes: (Type | null)[] | null,
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
@@ -873,7 +873,7 @@ function lookupFnInternal(
   modeFilter: string[],
   unit: UnitSymbols,
   name: string,
-  paramTypes: (Type | null)[],
+  paramTypes: (Type | null)[] | null,
   retType: Type | null,
 ): FnLookupResult {
   let fns: Fn[] = [];
@@ -889,13 +889,16 @@ function lookupFnInternal(
   fnLoop: for (let fn of fns) {
     if (!modeFilter.includes(fn.mode)) continue;
     let genericMap: Map<string, Type> = new Map();
-    if (fn.paramTypes.length != paramTypes.length) continue;
-    for (let i = 0; i < paramTypes.length; i++) {
-      let pType = paramTypes[i];
-      if (pType == null) continue;
-      if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true)) {
-        wrongTypeFns.push(fn);
-        continue fnLoop;
+
+    if (paramTypes != null) {
+      if (fn.paramTypes.length != paramTypes.length) continue;
+      for (let i = 0; i < paramTypes.length; i++) {
+        let pType = paramTypes[i];
+        if (pType == null) continue;
+        if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true)) {
+          wrongTypeFns.push(fn);
+          continue fnLoop;
+        }
       }
     }
 

@@ -690,6 +690,10 @@ function parseFn(header: SourceLine, body: SourceLine[]): Fn | null {
 }
 
 function tryParseType(tokens: Token[]): Type | null {
+  if (tokens.length > 2 && tokens[0].val == '(' && tokens[tokens.length - 1].val == ')') {
+    return tryParseType(tokens.slice(1, -1));
+  }
+
   if (tokens.length == 0) {
     return null;
   }
@@ -747,21 +751,22 @@ function tryParseType(tokens: Token[]): Type | null {
     return null;
   }
 
-  let lastToken = tokens[tokens.length - 1].val; 
-  if (lastToken == ')') { // parse fn
-    let fnParamBegin = getFirstBalanceIndexFromEnd(tokens, '(', ')') + 1;
-
-    if (fnParamBegin == 0) {
-      return null;
+  if (tokens[0].val == 'fn') { // parse fn
+    let returnType: Type = { tag: 'basic', val: 'nil', unitMode: 'none', unit: 'std/core' };
+    let retTypeSplit = balancedSplitTwo(tokens, '=>');
+    if (retTypeSplit.length == 2) {
+      let rType = tryParseType(retTypeSplit[1]);
+      if (rType == null) return null;
+      returnType = rType;
     }
 
-    let returnType = tryParseType(tokens.slice(0, fnParamBegin - 1));
-    if (returnType == null) {
+    let paramsTokens = retTypeSplit[0].slice(1);
+    if (paramsTokens.length < 2 || paramsTokens[0].val != '(' || paramsTokens[paramsTokens.length - 1].val != ')') {
       return null;
     }
+    paramsTokens = paramsTokens.slice(1, -1);
 
-    let paramsStr = tokens.slice(fnParamBegin, -1);
-    let splits = balancedSplit(paramsStr, ',');
+    let splits = balancedSplit(paramsTokens, ',');
     let paramTypes = [];
     if (splits[0].length > 0) {
       for (let split of splits) {
@@ -1657,6 +1662,11 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
       || tokens[i - 1].val == '+' || tokens[i - 1].val == '-' || tokens[i - 1].val == '=')) {
       tokens[i - 1].val = tokens[i - 1].val + tokens[i].val;
       tokens.splice(i, 1);
+    }
+    else if (tokens[i - 1].val == '=' && tokens[i].val == '>') {
+      tokens.splice(i, 1);
+      tokens[i - 1].val = '=>';
+      tokens[i - 1].position.end += 1;
     }
     else if (tokens[i - 1].val == '&' && tokens[i].val == '&') {
       tokens.splice(i, 1);
