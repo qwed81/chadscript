@@ -4,15 +4,17 @@
   "main": "codegen.js",
   "scripts": {
     "start": "npx tsc && NODE_OPTIONS=--enable-source-maps node build/index.js",
-    "build": "npx tsc && NODE_OPTIONS=--enable-source-maps && node build.js"
+    "build": "npx tsc && NODE_OPTIONS=--enable-source-maps && node build.js",
+    "lsp": "npx tsc && NODE_OPTIONS=--enable-source-maps && node lsp.js"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "arg": "^5.0.2",
-    "vscode-languageserver": "^9.0.1",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "vscode-languageserver": "8.1.0",
+    "vscode-languageserver-textdocument": "1.0.11",
+    "vscode-uri": "^3.0.8"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",

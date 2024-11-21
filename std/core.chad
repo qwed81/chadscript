@@ -260,11 +260,36 @@ pri fn appendOne(&Fmt s, char c)
   s.base[s.len] = c
   s.len += 1
 
-decl format(&Fmt fmt, T val)
+decl impl format(&Fmt fmt, T input)
+  fmt ++= "( "
+  bool usedField = false
+  for field in input
+    usedField = true
+    format(fmt, field.name)
+    fmt ++= ": "
+    format(fmt, field.val)
+    fmt ++= ", "
+
+  if usedField
+    fmt.len -= 2
+
+  fmt ++= " )"
 
 impl format(&Fmt fmt, str s)
   for i in 0:s.len
     appendOne(fmt, s[i])
+
+impl format(&Fmt fmt, u64 val)
+  int len = 0
+  include
+    _len = snprintf(NULL, 0, "%lu", _val);
+
+  *char output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%lu", _val);
+
+  str newStr = { base = output, len = len }
+  fmt ++= newStr
 
 impl format(&Fmt fmt, int val)
   int len = 0
@@ -278,7 +303,7 @@ impl format(&Fmt fmt, int val)
   str newStr = { base = output, len = len }
   fmt ++= newStr
 
-impl format(&Fmt f, Vec[int] vec)
+impl format(&Fmt f, Vec[T] vec)
   f ++= '['
   for i in 0:vec.len
     f ++= vec[i]
