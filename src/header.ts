@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { Type, INT, NIL, CHAR, BOOL, I32, I16, I8, U32, U64, U16, U8,
+import { Type, INT, NIL, CHAR, BOOL, I64, I16, I8, U32, U64, U16, U8,
   F32, F64,
   UnitSymbols, Field, Struct 
 } from './typeload';
@@ -370,8 +370,8 @@ function cBasicMapping(type: string): Type | null {
   if (type == 'bool' || type == '_Bool') return BOOL;
   else if (type == 'void') return NIL;
 
-  if (type == 'long long' || type == 'int64_t') return INT;
-  if (type == 'int' || type == 'long'|| type == 'int32_t') return I32;
+  if (type == 'long long' || type == 'int64_t') return I64;
+  if (type == 'int' || type == 'long'|| type == 'int32_t') return INT;
   if (type == 'short' || type == 'int16_t') return I16;
   if (type == 'int8_t') return I8;
 

@@ -4,7 +4,7 @@ import { logError, compilerError, Position, logMultiError } from './util';
 export {
   UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
   NIL, BOOL, ANY, resolveFnOrDecl, Fn, FnResult, ERR,
-  CHAR, INT, I32, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
+  CHAR, INT, I64, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
@@ -74,7 +74,7 @@ const F32: Type = basic('f32');
 const F64: Type = basic('f64');
 const CHAR: Type = basic('char');
 const INT: Type = basic('int');
-const I32: Type = basic('i32');
+const I64: Type = basic('i64');
 const I16: Type = basic('i16'); 
 const I8: Type = basic('i8');
 const U64: Type =  basic('u64');
@@ -153,7 +153,7 @@ const RANGE: Type = {
 const BASICS: Struct[] = [
   { name: 'i8', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
   { name: 'i16', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'i32', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
+  { name: 'i64', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
   { name: 'int', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
   { name: 'u8', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
   { name: 'u16', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },

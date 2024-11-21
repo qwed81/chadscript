@@ -84,12 +84,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   chadDotC +=
   `
   int main(int argc, char** argv) {
-  int64_t argcCast = argc;
-  ${ codeGenType(createTypeUnion(NIL, ERR)) } result = ${entryName}(argcCast, argv);
-  if (result.tag == 1) {
-    fprintf(stderr, "%s\\n", result._val1._message._base);
-  }
-  return result.tag;
+    return ${entryName}(argc, argv);
   }
   `;
 
@@ -154,9 +149,9 @@ function replaceAll(s: string, find: string, replace: string) {
 // TODO
 function codeGenType(type: Type): string {
   if (type.tag == 'struct' && isBasic(type)) {
-    if (type.val.name == 'int') return 'int64_t';
+    if (type.val.name == 'int') return 'int32_t';
     else if (type.val.name == 'nil') return 'int';
-    else if (type.val.name == 'i32') return 'int32_t';
+    else if (type.val.name == 'i64') return 'int64_t';
     else if (type.val.name == 'i16') return 'int16_t';
     else if (type.val.name == 'i8') return 'int8_t';
     else if (type.val.name == 'u64') return 'uint64_t';
