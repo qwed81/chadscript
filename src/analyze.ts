@@ -78,6 +78,7 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
 interface FnCall {
   fn: LeftExpr
   exprs: Expr[],
+  position: Position
 }
 
 interface StructInitField {
@@ -136,7 +137,7 @@ type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter';
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
   | { tag: 'var', val: string, mode: Mode, unit: string | null, type: Type }
-  | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode }
+  | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode, isGeneric: boolean }
 
 function analyze(
   units: Parse.ProgramUnit[],
@@ -762,11 +763,16 @@ function ensureLeftExprValid(
 
 function ensureFnCallValid(
   symbols: UnitSymbols,
-  fnCall: Parse.FnCall,
+  expr: Parse.Expr,
   expectedReturn: Type | null,
   scope: FnContext,
   position: Position | null
 ): Expr | null {
+  if (expr.tag != 'fn_call') {
+    compilerError('should always be fn call');
+    return null;
+  }
+  let fnCall = expr.val
 
   // figure out which unit these belong to
   let fnIsolatedSymbols: UnitSymbols = symbols;
@@ -819,7 +825,7 @@ function ensureFnCallValid(
     return {
       tag: 'fn_call',
       type: leftExpr.type.returnType,
-      val: { exprs, fn: leftExpr }
+      val: { exprs, fn: leftExpr, position: expr.position }
     }
   }
 
@@ -858,8 +864,10 @@ function ensureFnCallValid(
         unit: result.unit,
         name: result.name,
         type: result.resolvedType,
-        mode: result.mode
-      }
+        mode: result.mode,
+        isGeneric: result.isGeneric
+      },
+      position: expr.position
     }
   }
 }
@@ -1304,7 +1312,7 @@ function ensureExprValid(
 
     // if there was no enum variant treat it as a normal function call
     if (computedExpr == null) {
-      let fnExpr = ensureFnCallValid(symbols, expr.val, expectedReturn, scope, position);
+      let fnExpr = ensureFnCallValid(symbols, expr, expectedReturn, scope, position);
       if (fnExpr == null) return null;
       computedExpr = fnExpr;
     }
@@ -1518,6 +1526,7 @@ function ensureExprValid(
             name: fn.name,
             type: fn.resolvedType,
             mode: fn.mode,
+            isGeneric: fn.isGeneric
           },
           type: fn.resolvedType 
         };

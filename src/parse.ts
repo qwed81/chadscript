@@ -95,7 +95,7 @@ type Type = { tag: 'basic', val: string, unitMode: 'as' | 'unit' | 'none', unit:
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
 
-type FnMode = 'fn' | 'decl' | 'impl' | 'macro'
+type FnMode = 'fn' | 'decl' | 'impl' | 'macro' | 'declImpl'
 
 interface Fn {
   type: FnType
@@ -820,20 +820,38 @@ function parseFnHeader(
 } | null 
 {
   let tokens = header.tokens;
-  if (tokens.length == 0) {
+  if (tokens.length < 4) {
     return null;
   }
 
+  let i = 0;
   let pub: boolean = true;
-  if (tokens[0].val == 'pri') {
+  if (tokens[i].val == 'pri') {
     pub = false;
+    i += 1;
   }
 
   let fnMode: FnMode = 'fn' 
-  if (tokens[0].val == 'fn' || tokens[1].val == 'fn') fnMode = 'fn';
-  else if (tokens[0].val == 'decl' || tokens[1].val == 'decl') fnMode = 'decl'
-  else if (tokens[0].val == 'impl' || tokens[1].val == 'impl') fnMode = 'impl'
-  else if (tokens[0].val == 'macro' || tokens[1].val == 'macro') fnMode = 'macro'
+  if (tokens[i].val == 'fn') {
+    fnMode = 'fn';
+    i += 1;
+  } 
+  else if (tokens[i].val == 'macro') {
+    fnMode = 'macro'
+    i += 1;
+  }
+  else if (tokens[i].val == 'decl') {
+    fnMode = 'decl'
+    i += 1;
+    if (tokens[i].val == 'impl') {
+      i += 1;
+      fnMode = 'declImpl'
+    }
+  }
+  else if (tokens[i].val == 'impl') { 
+    fnMode = 'impl'
+    i += 1;
+  }
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
   if (paramStart == -1) {

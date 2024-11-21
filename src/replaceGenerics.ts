@@ -1,9 +1,10 @@
 import { FnMode } from './parse';
 import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl, MacroArg } from './analyze';
-import { compilerError } from './util';
+import { compilerError, Position, logError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
-  NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR
+  NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
+  isGeneric
 } from './typeload';
 
 export {
@@ -39,6 +40,8 @@ interface FnSet {
   // to be able to lookup impls
   symbols: UnitSymbols[],
 
+  firstGenericCall: Position | null,
+
   currentFieldName: string,
   currentFieldType: Type,
   currentFieldExpr: Expr,
@@ -51,6 +54,7 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
     fns: new Map(),
     used: new Set(),
     symbols,
+    firstGenericCall: null,
     currentFieldName: '',
     currentFieldExpr: { tag: 'nil_const', type: NIL },
     currentFieldType: NIL
@@ -194,6 +198,7 @@ function resolveInstBody(
   let resolvedBody: Inst[] = [];
   for (let inst of body) {
     let resolvedInst = resolveInst(inst, set, genericMap);
+    if (resolvedInst == null) continue;
     resolvedBody.push(...resolvedInst);
   }
   return resolvedBody;
@@ -203,10 +208,11 @@ function resolveInst(
   inst: Inst,
   set: FnSet,
   genericMap: Map<string, Type>,
-): Inst[] {
+): Inst[] | null {
   if (inst.tag == 'if' || inst.tag == 'elif' || inst.tag == 'while') {
     let cond = resolveExpr(inst.val.cond, set, genericMap);
     let body = resolveInstBody(inst.val.body, set, genericMap);
+    if (cond == null) return null;
     return [{ tag: inst.tag, val: { cond, body }, position: inst.position }];
   }
   else if (inst.tag == 'else') {
@@ -215,6 +221,7 @@ function resolveInst(
   }
   else if (inst.tag == 'for_in') {
     let iter = resolveExpr(inst.val.iter, set, genericMap);
+    if (iter == null) return null;
     if (inst.val.varName == 'field') {
       let output: Inst[] = [];
       if (iter.type.tag == 'struct') {
@@ -238,6 +245,7 @@ function resolveInst(
       unit: nf.unit,
       name: nf.name,
       mode: nf.mode,
+      isGeneric: true,
       type
     };
     addType(set, RANGE); 
@@ -253,6 +261,7 @@ function resolveInst(
   }
   else if (inst.tag == 'expr') {
     let val = resolveExpr(inst.val, set, genericMap);
+    if (val == null) return null;
     return [{ tag: 'expr', val, position: inst.position }];
   }
   else if (inst.tag == 'break' || inst.tag == 'continue') {
@@ -262,26 +271,32 @@ function resolveInst(
     let type = applyGenericMap(inst.val.type, genericMap);
     addType(set, type);
     let expr = resolveExpr(inst.val.expr, set, genericMap);
+    if (expr == null) return null;
     return [{ tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }]
   }
   else if (inst.tag == 'assign') {
     let to = resolveLeftExpr(inst.val.to, set, genericMap);
     let expr = resolveExpr(inst.val.expr, set, genericMap);
+    if (to == null || expr == null) return null;
 
     if (inst.val.op == '++=') {
       if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
         let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
+        let impl = implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr]);
+        if (impl == null) return [];
         return [{
           tag: 'expr',
-          val: implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr]),
+          val: impl,
           position: inst.position
         }];
       }
 
       let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
+      let impl = implToExpr(set, 'append', [to.type, expr.type], NIL, genericMap, [toExpr, expr]);
+      if (impl == null) return [];
       return [{
         tag: 'expr',
-        val: implToExpr(set, 'append', [to.type, expr.type], NIL, genericMap, [toExpr, expr]),
+        val: impl,
         position: inst.position
       }];
     }
@@ -307,33 +322,41 @@ function implToExpr(
   returnType: Type | null,
   genericMap: Map<string, Type>,
   exprs: Expr[]
-): Expr {
+): Expr | null {
   let impl = resolveImpl(set.symbols[0], name, paramTypes, returnType, null);
   if (impl == null) {
-    compilerError('always can resovle impl');
-    return undefined!;
+    if (set.firstGenericCall == null) {
+      compilerError('should always be generic if no impl');
+      return null;
+    }
+
+    logError(set.firstGenericCall, 'no valid implementation for ' + name);
+    return null;
   }
 
-  let fnExpr: LeftExpr = {
+  let fnExpr: LeftExpr | null = {
     tag: 'fn',
     unit: impl.unit,
     name: impl.name,
     type: impl.resolvedType,
-    mode: impl.mode
+    mode: impl.mode,
+    isGeneric: impl.isGeneric
   };
 
   fnExpr = resolveLeftExpr(fnExpr, set, genericMap);
+  if (fnExpr == null) return null;
 
   if (impl.resolvedType.tag != 'fn') {
     compilerError('should always be fn');
-    return undefined!;
+    return null;
   }
 
   return {
     tag: 'fn_call',
     val: {
       fn: fnExpr,
-      exprs 
+      exprs,
+      position: { start: 0, end: 0, line: 0, document: '' }
     }, 
     type: impl.resolvedType.returnType 
   };
@@ -343,10 +366,11 @@ function resolveExpr(
   expr: Expr,
   set: FnSet,
   genericMap: Map<string, Type>,
-): Expr {
+): Expr | null {
   if (expr.tag == 'bin') {
     let left = resolveExpr(expr.val.left, set, genericMap);
     let right = resolveExpr(expr.val.right, set, genericMap);
+    if (left == null || right == null) return null;
 
     if ((expr.val.op == '==' || expr.val.op == '!=') && expr.val.left.type.tag == 'ptr') {
       if (expr.val.right.tag == 'nil_const') {
@@ -356,6 +380,7 @@ function resolveExpr(
 
     if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type)) {
       let impl = implToExpr(set, 'eq', [left.type, right.type], BOOL, genericMap, [left, right]);
+      if (impl == null) return null;
       if (expr.val.op == '!=') return { tag: 'not', val: impl, type: BOOL };
       return impl;
     }
@@ -364,12 +389,13 @@ function resolveExpr(
   }
   else if (expr.tag == 'is') {
     let left = resolveLeftExpr(expr.left, set, genericMap);
+    if (left == null) return null;
     return { tag: 'is', left, variant: expr.variant, variantIndex: expr.variantIndex, type: expr.type };
   }
   else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert' || expr.tag == 'cast') {
-
     let inner = resolveExpr(expr.val, set, genericMap);
     let type = applyGenericMap(expr.type, genericMap);
+    if (inner == null) return null;
     if (expr.tag == 'not') {
       return { tag: expr.tag, val: inner, type };
     }
@@ -395,6 +421,7 @@ function resolveExpr(
       }
       else if (arg.tag == 'expr') {
         let argExpr = resolveExpr(arg.val, set, genericMap);
+        if (argExpr == null) return null;
         args.push({ tag: 'expr', val: argExpr });
       }
     }
@@ -403,16 +430,24 @@ function resolveExpr(
     return { tag: 'macro_call', val: { name: expr.val.name, args }, type: returnType };
   }
   else if (expr.tag == 'fn_call') {
-    let fn = resolveLeftExpr(expr.val.fn, set, genericMap);
     let exprs: Expr[] = [];
     for (let param of expr.val.exprs) {
-      exprs.push(resolveExpr(param, set, genericMap));
+      let expr = resolveExpr(param, set, genericMap);
+      if (expr == null) return null;
+      exprs.push(expr);
     }
 
-    if (fn.tag == 'fn' && fn.mode == 'decl') {
+    if (expr.val.fn.tag == 'fn' && expr.val.fn.isGeneric && !isGeneric(expr.val.fn.type)) {
+      set.firstGenericCall = expr.val.position;
+    }
+
+    let fn = resolveLeftExpr(expr.val.fn, set, genericMap);
+    if (fn == null) return null;
+
+    if (fn.tag == 'fn' && (fn.mode == 'decl' || fn.mode == 'declImpl')) {
       if (fn.type.tag != 'fn') {
         compilerError('should always be fn')
-        return undefined!;
+        return null;
       }
 
       let paramTypes = exprs.map(x => x.type);
@@ -420,18 +455,19 @@ function resolveExpr(
     }
 
     let returnType = applyGenericMap(expr.type, genericMap);
-    return { tag: 'fn_call', val: { fn, exprs }, type: returnType };
+    return { tag: 'fn_call', val: { fn, exprs, position: expr.val.position }, type: returnType };
   }
   else if (expr.tag == 'list_init') {
     let exprs: Expr[] = [];
     for (let e of expr.val) {
       let res = resolveExpr(e, set, genericMap);
+      if (res == null) return null;
       exprs.push(res);
     }
 
     if (expr.type.tag != 'struct') {
       compilerError('expected list');
-      return undefined!;
+      return null;
     }
 
     // list init needs alloc to be available
@@ -440,7 +476,8 @@ function resolveExpr(
       type: { tag: 'fn', paramTypes: [INT], returnType: expr.type.val.fields[0].type },
       name: 'alloc',
       unit: 'std/core',
-      mode: 'fn'
+      mode: 'fn',
+      isGeneric: false
     }
     resolveLeftExpr(
       allocExpr,
@@ -455,6 +492,7 @@ function resolveExpr(
     let inits = [];
     for (let init of expr.val) {
       let initExpr = resolveExpr(init.expr, set, genericMap);
+      if (initExpr == null) return null;
       inits.push({ name: init.name, expr: initExpr });
     }
 
@@ -499,14 +537,17 @@ function resolveExpr(
     }
 
     let val = resolveLeftExpr(expr.val, set, genericMap);
+    if (val == null) return null;
     return { tag: 'left_expr', val, type: val.type };
   }
   else if (expr.tag == 'fmt_str') {
     let resolvedExprs: Expr[] = [];
     for (let innerExpr of expr.val) {
       let resolvedExpr = resolveExpr(innerExpr, set, genericMap);
-      let fnCall = implToExpr(set, 'format', [FMT, resolvedExpr.type], null, genericMap, [undefined!, resolvedExpr]);
-      resolvedExprs.push(fnCall);
+      if (resolvedExpr == null) return null;
+      let impl = implToExpr(set, 'format', [FMT, resolvedExpr.type], null, genericMap, [undefined!, resolvedExpr]);
+      if (impl == null) return null;
+      resolvedExprs.push(impl);
     }
     return { tag: 'fmt_str', val: resolvedExprs, type: expr.type };
   }
@@ -520,6 +561,7 @@ function resolveExpr(
   }
   else if (expr.tag == 'ptr') {
     let val = resolveLeftExpr(expr.val, set, genericMap);
+    if (val == null) return null;
     return { tag: 'ptr', val, type: { tag: 'ptr', val: val.type } };
   }
 
@@ -531,20 +573,24 @@ function resolveLeftExpr(
   leftExpr: LeftExpr,
   set: FnSet,
   genericMap: Map<string, Type>,
-): LeftExpr {
+): LeftExpr | null {
   if (leftExpr.tag == 'dot') {
     let resolvedLeft = resolveExpr(leftExpr.val.left, set, genericMap);
+    if (resolvedLeft == null) return null;
     let type = applyGenericMap(leftExpr.type, genericMap);
     return { tag: 'dot', val: { left: resolvedLeft, varName: leftExpr.val.varName }, type };
   }
   else if (leftExpr.tag == 'index') {
     let index = resolveExpr(leftExpr.val.index, set, genericMap);
     let v = resolveExpr(leftExpr.val.var, set, genericMap);
+    if (index == null || v == null) return null;
+
     if (leftExpr.val.var.type.tag != 'ptr') {
       let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index]);
+      if (inner == null) return null;
       if (inner.type.tag != 'ptr') {
         compilerError('should always be pointer');
-        return undefined!;
+        return null;
       }
 
       return {
@@ -608,7 +654,8 @@ function resolveLeftExpr(
       type: fnType,
       name: leftExpr.name,
       unit: leftExpr.unit,
-      mode: leftExpr.mode
+      mode: leftExpr.mode,
+      isGeneric: leftExpr.isGeneric
     };
 
     return newLeftExpr;

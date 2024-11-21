@@ -9,7 +9,7 @@ export {
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
-  resolveMacro
+  resolveMacro, isGeneric
 }
 
 type Modifier = 'pri' | 'pub';
@@ -772,7 +772,8 @@ interface FnResult {
   unit: string,
   mode: Parse.FnMode,
   resolvedType: Type
-  fnReference: Fn
+  fnReference: Fn,
+  isGeneric: boolean,
   genericMap: Map<string, Type>
 }
 
@@ -788,7 +789,7 @@ function resolveFnOrDecl(
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
-  let results = lookupFnInternal(['fn', 'decl'], unit, name, paramTypes, retType);
+  let results = lookupFnInternal(['fn', 'decl', 'declImpl'], unit, name, paramTypes, retType);
   if (results.possibleFns.length == 1) return results.possibleFns[0];
   if (results.possibleFns.length > 1) {
     if (position != null) logError(position, 'function is ambiguous');
@@ -836,7 +837,7 @@ function resolveImpl(
   let possibleFns: FnResult[] = [];
   let nonGenericPossibleFns: FnResult[] = [];
   fnLoop: for (let fn of lookupFns) {
-    if (fn.mode != 'impl') continue;
+    if (fn.mode != 'impl' && fn.mode != 'declImpl') continue;
     if (fn.paramTypes.length != paramTypes.length) continue;
     let genericMap: Map<string, Type> = new Map();
     for (let i = 0; i < paramTypes.length; i++) {
@@ -862,7 +863,8 @@ function resolveImpl(
       unit: fn.unit,
       resolvedType,
       genericMap,
-      mode: fn.mode
+      mode: fn.mode,
+      isGeneric: genericMap.size != 0
     };
     if (isGeneric(fnType)) {
       possibleFns.push(possibleFn);
@@ -939,7 +941,8 @@ function lookupFnInternal(
       unit: fn.unit,
       resolvedType,
       genericMap,
-      mode: fn.mode
+      mode: fn.mode,
+      isGeneric: true
     });
   }
   return { possibleFns, wrongTypeFns };
