@@ -575,15 +575,21 @@ function analyzeInst(
 
     Enum.remove(scope.variantScope, to);
     if (inst.val.op == '++=') {
-      let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
-      if (expr == null) return null;
-
       if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+        let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
+        if (expr == null) return null;
         return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
       }
 
-      let impl = resolveImpl(symbols, 'append', [refType(to.type), expr.type], NIL, inst.position);
+      let impl = resolveImpl(symbols, 'append', [refType(to.type), null], NIL, inst.position);
       if (impl == null) return null;
+      if (impl.resolvedType.tag != 'fn' || impl.resolvedType.paramTypes.length != 2) {
+        compilerError('expected valid append fn');
+        return null;
+      }
+      let expr = ensureExprValid(symbols, inst.val.expr, impl.resolvedType.paramTypes[1], scope, inst.position);
+      if (expr == null) return null;
+
       return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
     }
     else if (inst.val.op == '+=' || inst.val.op == '-=') {
@@ -685,6 +691,8 @@ function ensureLeftExprValid(
   scope: FnContext,
   position: Position | null,
 ): LeftExpr | null {
+  let computedExpr: LeftExpr | null = null;
+
   if (leftExpr.tag == 'dot') {
     let left = ensureExprValid(symbols, leftExpr.val.left, null, scope, position);
     if (left == null) return null;
@@ -692,10 +700,10 @@ function ensureLeftExprValid(
     // for iter field
     if (left.tag == 'left_expr' && left.val.tag == 'var' && left.val.mode == 'field_iter') {
       if (leftExpr.val.varName == 'name') {
-        return { tag: 'dot', val: { left, varName: 'name' }, type: STR };
+        computedExpr = { tag: 'dot', val: { left, varName: 'name' }, type: STR };
       }
       else if (leftExpr.val.varName == 'val') {
-        return { tag: 'dot', val: { left, varName: 'val' }, type: { tag: 'generic', val: 'val' } };
+        computedExpr = { tag: 'dot', val: { left, varName: 'val' }, type: { tag: 'generic', val: 'val' } };
       }
     }
 
@@ -706,10 +714,13 @@ function ensureLeftExprValid(
     }
     for (let i = 0; i < leftType.val.fields.length; i++) {
       if (leftType.val.fields[i].name != leftExpr.val.varName) continue;
-      return { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type: leftType.val.fields[i].type }
+      computedExpr = { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type: leftType.val.fields[i].type }
     }
-    if (position != null) logError(position, 'field does not exist on type');
-    return null;
+
+    if (computedExpr == null) {
+      if (position != null) logError(position, `field does not exist on type ${toStr(left.type)}`);
+      return null;
+    }
   }
   else if (leftExpr.tag == 'index') {
     let left = ensureExprValid(symbols, leftExpr.val.var, null, scope, position);
@@ -717,19 +728,19 @@ function ensureLeftExprValid(
     let index = ensureExprValid(symbols, leftExpr.val.index, null, scope, position);
     if (index == null) return null;
     if (left.type.tag == 'ptr') {
-      return { tag: 'index', val: { var: left, index, }, type: left.type.val };
+      computedExpr = { tag: 'index', val: { var: left, index, }, type: left.type.val };
     }
+    else {
+      let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
+      if (trait == null || trait.resolvedType.tag != 'fn') return null;
 
-    let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
-    if (trait == null) return null;
-    if (trait.resolvedType.tag != 'fn') return null;
-
-    let retType = trait.resolvedType.returnType;
-    if (retType.tag != 'ptr') {
-      if (position != null) logError(position, 'index should return a pointer');
-      return null;
-    };
-    return { tag: 'index', val: { var: left, index, }, type: retType.val };
+      let retType = trait.resolvedType.returnType;
+      if (retType.tag != 'ptr') {
+        if (position != null) logError(position, 'index should return a pointer');
+        return null;
+      };
+      computedExpr = { tag: 'index', val: { var: left, index, }, type: retType.val };
+    }
   }
   else if (leftExpr.tag == 'var') {
     let v = getVar(symbols, scope, leftExpr.val, null);
@@ -739,7 +750,7 @@ function ensureLeftExprValid(
     }
 
     let changedType = v.type.tag == 'link' ? v.type.val : v.type;
-    return { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode, unit: v.unit };
+    computedExpr = { tag: 'var', type: changedType, val: leftExpr.val, mode: v.mode, unit: v.unit };
   }
   else if (leftExpr.tag == 'scope_unit') {
     let newUnit = getIsolatedUnitSymbolsFromName(symbols, leftExpr.unit, position);
@@ -747,7 +758,7 @@ function ensureLeftExprValid(
       if (position != null) logError(position, 'could not find unit');
       return null;
     }
-    return ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
+    computedExpr = ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
   }
   else if (leftExpr.tag == 'scope_as') {
     let newUnit = getIsolatedUnitSymbolsFromAs(symbols, leftExpr.as, position);
@@ -755,10 +766,29 @@ function ensureLeftExprValid(
       if (position != null) logError(position, 'could not find as');
       return null;
     }
-    return ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
+    computedExpr = ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
   }
 
-  return null;
+  if (computedExpr != null 
+    && computedExpr.type.tag == 'struct'
+    && computedExpr.type.val.name == 'TypeUnion'
+    && computedExpr.type.val.unit == 'std/core'
+  ) {
+    let possible = Enum.getVariantPossibilities(scope.variantScope, computedExpr);
+    if (possible.length == 1) {
+      let fieldIndex = possible[0] == 'val0' ? 0 : 1;
+      return {
+        tag: 'dot',
+        type: computedExpr.type.val.fields[fieldIndex].type,
+        val: {
+          left: { tag: 'left_expr', val: computedExpr, type: computedExpr.type },
+          varName: possible[0]
+        }
+      };
+    }
+  }
+
+  return computedExpr;
 }
 
 function ensureFnCallValid(
@@ -950,14 +980,14 @@ function ensureBinOpValid(
       && right.type.tag == 'struct' && isBasic(right.type)
       && left.type.val.name == right.type.val.name) {
       let t = right.type.val.name;
-      if (op == '+' || op == '-' || op == '*' || op == '/' || op == '%'
+      if (op == '+' || op == '-' || op == '*' || op == '/'
         || op == '<' || op == '>' || op == '<=' || op == '>=') {
         if (t == 'bool' || t == 'nil') {
           if (position != null) logError(position, `can not ${op} on '${t}'`);
           return null;
         }
       }
-      else if (op == '|' || op == '&' || op == '^') {
+      else if (op == '|' || op == '&' || op == '^' || op == '%') {
         if (t == 'bool' || t == 'nil' || t == 'f32' || t == 'f64') {
           if (position != null) logError(position, `can not ${op} on '${t}'`);
           return null;

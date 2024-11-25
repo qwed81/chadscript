@@ -104,7 +104,10 @@ const STR: Type = {
     unit: 'std/core',
     modifier: 'pub',
     isEnum: false,
-    fields: [] 
+    fields: [
+      { name: 'base', type: { tag: 'ptr', val: CHAR }, modifier: 'get' },
+      { name: 'len', type: INT, modifier: 'get' }
+    ] 
   }
 };
 
@@ -822,7 +825,7 @@ function resolveFnOrDecl(
 function resolveImpl(
   symbols: UnitSymbols,
   name: string,
-  paramTypes: Type[],
+  paramTypes: (Type | null)[],
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
@@ -889,7 +892,7 @@ function resolveImpl(
     if (position != null) logError(position, 'impl is wrong type');
     return null
   }
-  if (position != null) logError(position, 'unknown impl');
+  if (position != null) logError(position, 'unknown impl ' + name);
   return null;
 }
 

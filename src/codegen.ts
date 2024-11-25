@@ -573,8 +573,13 @@ function codeGenStructInit(expr: Expr, ctx: FnContext, position: Position): Code
     let initField = structInit[i];
     let innerExpr = codeGenExpr(initField.expr, ctx, position);
     statements.push(...innerExpr.statements);
+    if (expr.type.tag == 'struct' && expr.type.val.unit.endsWith('.h')) {
+      output += `.${initField.name} = ${innerExpr.output}`;
+    }
+    else {
+      output += `._${initField.name} = ${innerExpr.output}`;
+    }
 
-    output += `._${initField.name} = ${innerExpr.output}`;
     if (i != structInit.length - 1) {
       output += ', ';
     }
@@ -608,7 +613,13 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
   if (leftExpr.tag == 'dot') {
     let innerExpr = codeGenExpr(leftExpr.val.left, ctx, position);
     statements = innerExpr.statements;
-    leftExprText = `${innerExpr.output}._${leftExpr.val.varName}`;
+    let leftType = leftExpr.val.left.type;
+    if (leftType.tag == 'struct' && leftType.val.unit.endsWith('.h')) {
+      leftExprText = `${innerExpr.output}.${leftExpr.val.varName}`;
+    }
+    else {
+      leftExprText = `${innerExpr.output}._${leftExpr.val.varName}`;
+    }
   } 
   else if (leftExpr.tag == 'index') {
     let leftName = codeGenExpr(leftExpr.val.var, ctx, position);

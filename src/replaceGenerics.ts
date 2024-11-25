@@ -68,6 +68,12 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
     fnSet.fnTemplates.get(fnName)!.push(prog.fns[i]);
   }
 
+  for (let i = 0; i < prog.globals.length; i++) {
+    addType(fnSet, prog.globals[i].header.type);
+  }
+
+  addType(fnSet, STR);
+
   let entry = monomorphizeFn(mainFn, fnSet, new Map());
   let orderedTypes = orderTypes(Array.from(fnSet.types.values()));
 
@@ -556,7 +562,6 @@ function resolveExpr(
     || expr.tag =='bool_const'
     || expr.tag == 'num_const'
     || expr.tag == 'str_const') {
-
     return expr;
   }
   else if (expr.tag == 'ptr') {

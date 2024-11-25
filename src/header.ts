@@ -69,9 +69,6 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
     structs: new Map(),
     fns: new Map(),
     globals: new Map()
-    // enumConsts: [],
-    // defs: [],
-    // vars: [],
   };
   if (ast.inner == undefined) {
     return null;
@@ -89,7 +86,12 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
         if (variant.name == undefined) {
           continue;
         }
-        // symbols.enumConsts.push(variant.name);
+        symbols.globals.set(variant.name, {
+          name: variant.name,
+          mode: 'const',
+          unit: headerPath,
+          type: INT,
+        });
       }
     }
 
@@ -98,14 +100,14 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
     }
 
     if (child.kind == 'VarDecl') {
-      /*
-      let varType = parseCType(child.type.qualType, structTypeMap);
-      symbols.vars.push({
+      let varType = parseCType(child.type.qualType, headerPath, structTypeMap);
+      symbols.globals.set(child.name, {
+        unit: headerPath,
+        mode: 'none',
         type: varType,
         name: child.name
       });
       alreadyAdded.add(child.name);
-      */
     }
     else if (child.kind == 'FunctionDecl') {
       let fnType = parseCType(child.type.qualType, headerPath, structTypeMap);
@@ -166,13 +168,13 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
     if (cExpr == null) {
       continue;
     }
-    /*
-    symbols.defs.push({
+
+    symbols.globals.set(name, {
       name: name,
-      num: cExpr.val ,
-      type: cExpr.type 
+      unit: headerPath,
+      type: cExpr.type,
+      mode: 'const'
     });
-    */
   }
 
   return symbols;
