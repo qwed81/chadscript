@@ -4,6 +4,7 @@ import { compilerError, Position, logError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
   NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
+  F64,
   isGeneric
 } from './typeload';
 
@@ -329,7 +330,15 @@ function implToExpr(
   genericMap: Map<string, Type>,
   exprs: Expr[]
 ): Expr | null {
-  let impl = resolveImpl(set.symbols[0], name, paramTypes, returnType, null);
+  let newParamTypes: Type[] = [];
+  for (let i = 0; i < paramTypes.length; i++) {
+    let t = paramTypes[i];
+    if (t.tag == 'ambig_int') t = INT;
+    else if (t.tag == 'ambig_float') t = F64;
+    newParamTypes.push(t);
+  }
+
+  let impl = resolveImpl(set.symbols[0], name, newParamTypes, returnType, null);
   if (impl == null) {
     if (set.firstGenericCall == null) {
       compilerError('should always be generic if no impl');
@@ -384,7 +393,7 @@ function resolveExpr(
       }
     }
 
-    if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type)) {
+    if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type) && expr.val.left.type.tag != 'ambig_int' && expr.val.left.type.tag != 'ambig_float') {
       let impl = implToExpr(set, 'eq', [left.type, right.type], BOOL, genericMap, [left, right]);
       if (impl == null) return null;
       if (expr.val.op == '!=') return { tag: 'not', val: impl, type: BOOL };
@@ -627,7 +636,7 @@ function resolveLeftExpr(
       let newFnGenericMap: Map<string, Type> = new Map();
 
       if (!typeApplicableStateful(thisFnType, genericType, newFnGenericMap, true)) {
-        compilerError('fn should be applicable');
+        compilerError('fn should be applicable ' + leftExpr.name);
       }
 
       let implType = applyGenericMap(genericType, newFnGenericMap);

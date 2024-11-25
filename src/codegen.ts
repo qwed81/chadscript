@@ -162,6 +162,8 @@ function codeGenType(type: Type): string {
     else if (type.val.name == 'f32') return 'float';
     return type.val.name;
   }
+  if (type.tag == 'ambig_int') return 'int32_t';
+  if (type.tag == 'ambig_float') return 'double';
   if (type.tag == 'ptr') {
     return codeGenType(type.val) + '*';
   }

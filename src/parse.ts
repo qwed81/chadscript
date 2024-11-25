@@ -1409,15 +1409,10 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
   }
 
   if (tokens.length == 3 && tokens.find(x => x.val == '.')) {
-    if (tokens[0].val[0] >= '0' && tokens[0].val[0] <= '9' && tokens[1].val == '.'
-      && tokens[2].val[0] >= '0' && tokens[2].val[0] <= '9') {
-
-      let num;
-      num = parseFloat(`${tokens[0].val}.${tokens[2].val}`) 
-      if (Number.isNaN(num)) {
-        logError(positionRange(tokens), 'could not parse number');
-        return null;
-      }
+    let left = parseInt(tokens[0].val);
+    let right = parseInt(tokens[2].val);
+    if (!Number.isNaN(left) && !Number.isNaN(right) && tokens[1].val == '.') {
+      let num = parseFloat(`${left}.${right}`); 
       return { tag: 'num_const', val: num, position };
     }
   }

@@ -3,8 +3,9 @@ import { logError, compilerError, Position, logMultiError } from './util';
 
 export {
   UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
-  NIL, BOOL, ANY, resolveFnOrDecl, Fn, FnResult, ERR,
+  NIL, BOOL, resolveFnOrDecl, Fn, FnResult, ERR,
   CHAR, INT, I64, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
+  AMBIG_INT, AMBIG_FLOAT,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
@@ -34,12 +35,9 @@ type Type = { tag: 'generic', val: string }
   | { tag: 'ptr', val: Type }
   | { tag: 'link', val: Type }
   | { tag: 'struct', val: Struct }
+  | { tag: 'ambig_int' }
+  | { tag: 'ambig_float' }
   | { tag: 'fn', returnType: Type, paramTypes: Type[] }
-
-const ANY = {
-  default: null,
-  options: []
-}
 
 interface Fn {
   name: string
@@ -67,6 +65,9 @@ interface UnitSymbols {
   macros: Map<string, Fn>,
   globals: Map<string, Global>
 }
+
+const AMBIG_INT: Type = { tag: 'ambig_int' }
+const AMBIG_FLOAT: Type = { tag: 'ambig_float' }
 
 const NIL: Type = basic('nil');
 const BOOL: Type = basic('bool');
@@ -258,6 +259,14 @@ function typeEq(t1: Type, t2: Type): boolean {
     return typeEq(t1, t2.val);
   }
 
+  if (t1.tag == 'ambig_int' && t2.tag == 'ambig_int') {
+    return true;
+  }
+
+  if (t1.tag == 'ambig_float' && t2.tag == 'ambig_float') {
+    return true;
+  }
+
   if (t1.tag != t2.tag) return false;
   if (t1.tag == 'struct' && t2.tag == 'struct') {
     return t1.val.name == t2.val.name && t1.val.unit == t2.val.unit;
@@ -294,6 +303,20 @@ function typeApplicableStateful(
   }
   if (supa.tag == 'link') {
     return typeApplicableStateful(sub, supa.val, genericMap, fnHeader);
+  }
+
+  if (sub.tag == 'ambig_float') {
+    if (supa.tag == 'ambig_float') return true;
+    if (supa.tag == 'struct' && (supa.val.name == 'f32' || supa.val.name == 'f64') && supa.val.unit == 'std/core') return true;
+  }
+
+  if (sub.tag == 'ambig_int') {
+    if (supa.tag == 'ambig_float' || supa.tag == 'ambig_int') return true;
+    if (supa.tag == 'struct' && (supa.val.name == 'f32' || supa.val.name == 'f64') && supa.val.unit == 'std/core') return true;
+    if (supa.tag == 'struct' && supa.val.unit == 'std/core' && (
+      supa.val.name == 'i64' || supa.val.name == 'int' || supa.val.name == 'i16' || supa.val.name == 'i8'
+      || supa.val.name == 'u64' || supa.val.name == 'u32' || supa.val.name == 'u16' || supa.val.name == 'u8'
+    )) return true;
   }
 
   if (supa.tag == 'generic') {
@@ -361,6 +384,9 @@ function toStr(t: Type | null): string {
   if (t.tag == 'generic') return t.val;
   if (t.tag == 'ptr') return '*' + toStr(t.val);
   if (t.tag == 'link') return '&' + toStr(t.val);
+  if (t.tag == 'ambig_int') return 'int';
+  if (t.tag == 'ambig_float') return 'f64';
+
   if (t.tag == 'struct') {
     let generics: string = '[';
     for (let i = 0; i < t.val.generics.length; i++) {

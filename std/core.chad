@@ -36,7 +36,7 @@ local bump bp = {}
 
 fn clear(&bump bp)
   int diff = int(u64(bp.curr) - u64(bp.base))
-  memset(bp.base, u8(0), diff)
+  memset(bp.base, 0, diff)
   bp.curr = bp.base
 
 fn memset(*u8 mem, u8 val, int num)
@@ -87,6 +87,11 @@ fn max(int a, int b) int
     ret b
   ret a
 
+fn abs(f32 a) f32
+  if a < 0.0
+    ret a * f32(-1)
+  ret a
+
 ##
 fn rev(range r) revRange
   ret { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
@@ -123,7 +128,7 @@ impl index(&Vec[T] vec, int index) *T
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
 
-impl append(&Vec[T] l, T val)
+fn append(&Vec[T] l, T val)
   if l.len == l.capacity
     *T newAlloc = alloc(max(l.capacity * 2, 4))
 
@@ -134,10 +139,6 @@ impl append(&Vec[T] l, T val)
 
   l.base[l.len] = val
   l.len += 1
-
-impl append(&Vec[T] to, Vec[T] from)
-  for i in 0:from.len
-    to ++= from[i]
 
 struct str
   get *char base
@@ -183,10 +184,10 @@ fn split(str s, char c) Vec[str]
     if end >= s.len 
       break
     if s[end] == c
-      output ++= s[start:end]
+      append(output, s[start:end])
       start = end + 1
     end += 1
-  output ++= s[start:s.len]
+  append(output, s[start:s.len])
   ret output
 
 fn trim(str s) str
@@ -294,11 +295,11 @@ impl format(&Fmt fmt, u64 val)
 impl format(&Fmt fmt, int val)
   int len = 0
   include
-    _len = snprintf(NULL, 0, "%ld", _val);
+    _len = snprintf(NULL, 0, "%d", _val);
 
   *char output = alloc(len + 1)
   include
-    snprintf(_output, _len + 1, "%ld", _val);
+    snprintf(_output, _len + 1, "%d", _val);
 
   str newStr = { base = output, len = len }
   fmt ++= newStr
@@ -324,7 +325,7 @@ struct BST[T]
 
 fn rand(int start, int end) int
   include
-    return (*_end - *_start) * ((double)rand() / (double)RAND_MAX) + *_start;
+    return (_end - _start) * ((double)rand() / (double)RAND_MAX) + _start;
   ret 0
 
 fn rand() f64

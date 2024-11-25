@@ -7,7 +7,7 @@ import {
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
-  resolveMacro
+  resolveMacro, AMBIG_INT, AMBIG_FLOAT
 } from './typeload'
 import * as Enum from './enum';
 
@@ -596,9 +596,16 @@ function analyzeInst(
       let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
       if (expr == null) return null;
 
+      let exprType = expr.type;
+      if (expr.type.tag == 'ambig_int' || expr.type.tag == 'ambig_float') {
+        if (typeApplicable(expr.type, to.type, false)) {
+          exprType = to.type;
+        } 
+      }
+
       if (to.type.tag == 'struct' && isBasic(to.type)
-        && expr.type.tag == 'struct' && isBasic(expr.type)
-        && to.type.val.name == expr.type.val.name) {
+        && exprType.tag == 'struct' && isBasic(exprType)
+        && to.type.val.name == exprType.val.name) {
         let name = to.type.val.name;
         if (name == 'bool' || name == 'nil') {
           logError(inst.position, `can not apply ${inst.val.op} to ${name}`);
@@ -975,21 +982,14 @@ function ensureBinOpValid(
     if (right == null) return null;
     let op = expr.op;
 
-    // determine with the builtin operators
-    if (left.type.tag == 'struct' && isBasic(left.type)
-      && right.type.tag == 'struct' && isBasic(right.type)
-      && left.type.val.name == right.type.val.name) {
-      let t = right.type.val.name;
-      if (op == '+' || op == '-' || op == '*' || op == '/'
-        || op == '<' || op == '>' || op == '<=' || op == '>=') {
-        if (t == 'bool' || t == 'nil') {
-          if (position != null) logError(position, `can not ${op} on '${t}'`);
-          return null;
-        }
-      }
-      else if (op == '|' || op == '&' || op == '^' || op == '%') {
-        if (t == 'bool' || t == 'nil' || t == 'f32' || t == 'f64') {
-          if (position != null) logError(position, `can not ${op} on '${t}'`);
+    let leftType = left.type;
+    let rightType = right.type;
+    if ((left.type.tag == 'ambig_float' || left.type.tag == 'ambig_int')
+      && (right.type.tag == 'ambig_int' || right.type.tag == 'ambig_float')) {
+
+      if (op == '|' || op == '&' || op == '^' || op == '%') {
+        if (left.type.tag == 'ambig_float' || right.type.tag == 'ambig_float') {
+          if (position != null) logError(position, `can not ${op}'`);
           return null;
         }
       }
@@ -1000,26 +1000,60 @@ function ensureBinOpValid(
       }
       computedExpr = { tag: 'bin', type: outputType, val: { left, op, right } };
     }
-    else if (left.type.tag == 'ptr' && right.tag == 'nil_const' && op == '==' || op == '!=') {
-      computedExpr = { tag: 'bin', type: BOOL, val: { left, op, right } };
+    else if (left.type.tag == 'ambig_float' || left.type.tag == 'ambig_int') {
+      if (typeApplicable(left.type, right.type, false)) leftType = rightType;
     }
-    else {
-      let trait: FnResult | null = null;
-      if (op == '+' || op == '-' || op == '*' || op == '/') {
-        trait = resolveImpl(symbols, 'math', [left.type, right.type], expectedReturn, position);
+    else if (right.type.tag == 'ambig_float' || right.type.tag == 'ambig_int') {
+      if (typeApplicable(right.type, left.type, false)) rightType = leftType;
+    }
+
+    if (computedExpr == null) {
+      if (leftType.tag == 'struct' && isBasic(leftType)
+        && rightType.tag == 'struct' && isBasic(rightType)
+        && leftType.val.name == rightType.val.name) {
+        let t = rightType.val.name;
+        if (op == '+' || op == '-' || op == '*' || op == '/'
+          || op == '<' || op == '>' || op == '<=' || op == '>=') {
+          if (t == 'bool' || t == 'nil') {
+            if (position != null) logError(position, `can not ${op} on '${t}'`);
+            return null;
+          }
+        }
+        else if (op == '|' || op == '&' || op == '^' || op == '%') {
+          if (t == 'bool' || t == 'nil' || t == 'f32' || t == 'f64') {
+            if (position != null) logError(position, `can not ${op} on '${t}'`);
+            return null;
+          }
+        }
+
+        let outputType: Type = left.type;
+        if (op == '<' || op == '>' || op == '<=' || op == '>=' || op == '==' || op == '!=') {
+          outputType = BOOL;
+        }
+        computedExpr = { tag: 'bin', type: outputType, val: { left, op, right } };
       }
-      else if (op == '<' || op == '>' || op == '<=' || op == '>=') {
-        trait = resolveImpl(symbols, 'cmp', [left.type, right.type], BOOL, position);
+      else if (left.type.tag == 'ptr' && right.tag == 'nil_const' && op == '==' || op == '!=') {
+        computedExpr = { tag: 'bin', type: BOOL, val: { left, op, right } };
       }
-      else if (op == '==' || op == '!=') {
-        trait = resolveImpl(symbols, 'eq', [left.type, right.type], BOOL, position);
-      }
-      else if (op == '|' || op == '&' || op == '^') {
-        trait = resolveImpl(symbols, 'bitwise', [left.type, right.type], expectedReturn, position);
+      else {
+        let trait: FnResult | null = null;
+        if (op == '+' || op == '-' || op == '*' || op == '/') {
+          trait = resolveImpl(symbols, 'math', [left.type, right.type], expectedReturn, position);
+        }
+        else if (op == '<' || op == '>' || op == '<=' || op == '>=') {
+          trait = resolveImpl(symbols, 'cmp', [left.type, right.type], BOOL, position);
+        }
+        else if (op == '==' || op == '!=') {
+          trait = resolveImpl(symbols, 'eq', [left.type, right.type], BOOL, position);
+        }
+        else if (op == '|' || op == '&' || op == '^') {
+          trait = resolveImpl(symbols, 'bitwise', [left.type, right.type], expectedReturn, position);
+        }
+
+        if (trait == null || trait.resolvedType.tag != 'fn') return null;
+        computedExpr = { tag: 'bin', type: trait.resolvedType.returnType, val: { left, op, right } };
       }
 
-      if (trait == null || trait.resolvedType.tag != 'fn') return null;
-      computedExpr = { tag: 'bin', type: trait.resolvedType.returnType, val: { left, op, right } };
     }
   }
 
@@ -1300,7 +1334,7 @@ function ensureExprValid(
         }
 
         if (computedExpr == null) {
-          if (!isBasic(innerExpr.type)) {
+          if (!isBasic(innerExpr.type) && innerExpr.type.tag != 'ambig_int' && innerExpr.type.tag != 'ambig_float') {
             if (position != null) logError(position, 'can not cast');
             return null;
           }
@@ -1478,15 +1512,7 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'int_const') {
-    if (expectedReturn != null && expectedReturn.tag == 'struct') {
-      let t = expectedReturn.val.name;
-      if (t == 'i32' || t == 'i16' || t == 'i8' || t == 'u64' || t == 'u32'
-        || t == 'u16' || t == 'u8' || t == 'f32' || t == 'f64') {
-        computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
-      }
-    }
-
-    if (computedExpr == null) computedExpr = { tag: 'int_const', val: expr.val, type: INT };
+    computedExpr = { tag: 'int_const', val: expr.val, type: AMBIG_INT };
   } 
 
   if (expr.tag == 'nil_const') {
@@ -1499,12 +1525,7 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'num_const') {
-    if (expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.name == 'f32') {
-      computedExpr = { tag: 'num_const', val: expr.val, type: F32 };
-    }
-    else {
-      computedExpr = { tag: 'num_const', val: expr.val, type: F64 };
-    }
+    computedExpr = { tag: 'num_const', val: expr.val, type: AMBIG_FLOAT };
   }
 
   if (expr.tag == 'left_expr') {
