@@ -7,7 +7,7 @@ import {
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
-  resolveMacro, AMBIG_INT, AMBIG_FLOAT
+  resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields
 } from './typeload'
 import * as Enum from './enum';
 
@@ -575,7 +575,7 @@ function analyzeInst(
 
     Enum.remove(scope.variantScope, to);
     if (inst.val.op == '++=') {
-      if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+      if (to.type.tag == 'struct' && to.type.val.template.name == 'Fmt' && to.type.val.template.unit == 'std/core') {
         let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
         if (expr == null) return null;
         return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
@@ -605,8 +605,8 @@ function analyzeInst(
 
       if (to.type.tag == 'struct' && isBasic(to.type)
         && exprType.tag == 'struct' && isBasic(exprType)
-        && to.type.val.name == exprType.val.name) {
-        let name = to.type.val.name;
+        && to.type.val.template.name == exprType.val.template.name) {
+        let name = to.type.val.template.name;
         if (name == 'bool' || name == 'nil') {
           logError(inst.position, `can not apply ${inst.val.op} to ${name}`);
           return null;
@@ -719,9 +719,11 @@ function ensureLeftExprValid(
       if (position != null) logError(position, '');
       return null;
     }
-    for (let i = 0; i < leftType.val.fields.length; i++) {
-      if (leftType.val.fields[i].name != leftExpr.val.varName) continue;
-      computedExpr = { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type: leftType.val.fields[i].type }
+
+    let fields = getFields(leftType);
+    for (let i = 0; i < fields.length; i++) {
+      if (fields[i].name != leftExpr.val.varName) continue;
+      computedExpr = { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type: fields[i].type }
     }
 
     if (computedExpr == null) {
@@ -778,15 +780,15 @@ function ensureLeftExprValid(
 
   if (computedExpr != null 
     && computedExpr.type.tag == 'struct'
-    && computedExpr.type.val.name == 'TypeUnion'
-    && computedExpr.type.val.unit == 'std/core'
+    && computedExpr.type.val.template.name == 'TypeUnion'
+    && computedExpr.type.val.template.unit == 'std/core'
   ) {
     let possible = Enum.getVariantPossibilities(scope.variantScope, computedExpr);
     if (possible.length == 1) {
       let fieldIndex = possible[0] == 'val0' ? 0 : 1;
       return {
         tag: 'dot',
-        type: computedExpr.type.val.fields[fieldIndex].type,
+        type: getFields(computedExpr.type)[fieldIndex].type,
         val: {
           left: { tag: 'left_expr', val: computedExpr, type: computedExpr.type },
           varName: possible[0]
@@ -1010,8 +1012,8 @@ function ensureBinOpValid(
     if (computedExpr == null) {
       if (leftType.tag == 'struct' && isBasic(leftType)
         && rightType.tag == 'struct' && isBasic(rightType)
-        && leftType.val.name == rightType.val.name) {
-        let t = rightType.val.name;
+        && leftType.val.template.name == rightType.val.template.name) {
+        let t = rightType.val.template.name;
         if (op == '+' || op == '-' || op == '*' || op == '/'
           || op == '<' || op == '>' || op == '<=' || op == '>=') {
           if (t == 'bool' || t == 'nil') {
@@ -1084,10 +1086,10 @@ function ensureExprValid(
 
   if (expectedReturn != null
     && expectedReturn.tag == 'struct' 
-    && expectedReturn.val.name == 'TypeUnion'
-    && expectedReturn.val.unit == 'std/core') {
+    && expectedReturn.val.template.name == 'TypeUnion'
+    && expectedReturn.val.template.unit == 'std/core') {
 
-    let fields = expectedReturn.val.fields;
+    let fields = getFields(expectedReturn);
     let first = ensureExprValid(symbols, expr, fields[0].type, scope, null);
     if (first != null) {
       return {
@@ -1130,7 +1132,7 @@ function ensureExprValid(
     if (exprLeft == null) return null;
 
     // if T|K is a known, should still be able to use 'is'
-    if (exprLeft.type.tag != 'struct' || !exprLeft.type.val.isEnum) {
+    if (exprLeft.type.tag != 'struct' || !exprLeft.type.val.template.isEnum) {
       if (position == null) {
         compilerError('can not use is with null position');
         return null;
@@ -1156,13 +1158,13 @@ function ensureExprValid(
       }
     }
 
-    if (exprLeft.type.tag == 'struct' && exprLeft.type.val.isEnum && expr.right.tag == 'basic') {
+    if (exprLeft.type.tag == 'struct' && exprLeft.type.val.template.isEnum && expr.right.tag == 'basic') {
       let fieldName: string = expr.right.val;
-      if (exprLeft.type.val.name == 'TypeUnion' && exprLeft.type.val.unit == 'std/core') {
-        let fields = exprLeft.type.val.fields;
+      if (exprLeft.type.val.template.name == 'TypeUnion' && exprLeft.type.val.template.unit == 'std/core') {
+        let fields = getFields(exprLeft.type);
         for (let i = 0; i < fields.length; i++) {
           let t = fields[i].type;
-          if (t.tag == 'struct' && t.val.generics.length == 0 && t.val.name == fieldName) {
+          if (t.tag == 'struct' && t.val.generics.length == 0 && t.val.template.name == fieldName) {
             computedExpr = {
               tag: 'is',
               left: exprLeft,
@@ -1175,7 +1177,7 @@ function ensureExprValid(
       }
 
       if (computedExpr == null) {
-        if (exprLeft.type.val.fields.map(f => f.name).includes(fieldName) == false) {
+        if (getFields(exprLeft.type).map(f => f.name).includes(fieldName) == false) {
           if (position != null) logError(position, `${fieldName} does not exist on enum ${toStr(exprLeft.type)}`);
           return null;
         }
@@ -1191,7 +1193,7 @@ function ensureExprValid(
     }
 
     if (exprLeft.type.tag == 'struct' && expr.right.tag != 'basic') {
-      if (exprLeft.type.val.name != 'TypeUnion' || exprLeft.type.val.unit != 'std/core') {
+      if (exprLeft.type.val.template.name != 'TypeUnion' || exprLeft.type.val.template.unit != 'std/core') {
         if (position != null) logError(position, 'expected enum variant');
         return null;
       }
@@ -1204,7 +1206,7 @@ function ensureExprValid(
       let t = resolveType(symbols, expr.right, position);
       if (t == null) return null;
 
-      let fields = exprLeft.type.val.fields;
+      let fields = getFields(exprLeft.type);
       for (let i = 0; i < fields.length; i++) {
         if (typeApplicable(t, fields[i].type, false) && typeApplicable(fields[i].type, t, false)) {
           computedExpr = {
@@ -1233,9 +1235,9 @@ function ensureExprValid(
     let errorType: Type | null = null;
     if (expr.tag == 'try') {
       if (scope.returnType.tag == 'struct' 
-        && scope.returnType.val.name == 'TypeUnion'
-        && scope.returnType.val.unit == 'std/core') {
-        errorType = scope.returnType.val.fields[1].type;
+        && scope.returnType.val.template.name == 'TypeUnion'
+        && scope.returnType.val.template.unit == 'std/core') {
+        errorType = getFields(scope.returnType)[1].type;
       }
     }
     if (errorType == null) return null;
@@ -1269,7 +1271,7 @@ function ensureExprValid(
     for (let i = 0; i < macro.paramTypes.length; i++) {
       let paramType = macro.paramTypes[i];
 
-      if (paramType.tag == 'struct' && paramType.val.name == 'type' && paramType.val.unit == 'std/core') {
+      if (paramType.tag == 'struct' && paramType.val.template.name == 'type' && paramType.val.template.unit == 'std/core') {
         let argType = expr.val.args[i].type;
         if (argType == null) {
           if (position != null) logError(position, 'expected type');
@@ -1351,15 +1353,15 @@ function ensureExprValid(
     // check if initialization of enum
     if (expectedReturn != null
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.isEnum
+      && expectedReturn.val.template.isEnum
       && expr.val.fn.tag == 'var' 
       && expr.val.exprs.length == 1
     ) {
-
-      let fieldIndex = expectedReturn.val.fields.map(f => f.name).indexOf(expr.val.fn.val);
+      let fields = getFields(expectedReturn);
+      let fieldIndex = fields.map(f => f.name).indexOf(expr.val.fn.val);
       if (fieldIndex != -1) {
-        let fieldType: Type = expectedReturn.val.fields[fieldIndex].type;
-        let fieldName: string = expectedReturn.val.fields[fieldIndex].name;
+        let fieldType: Type = fields[fieldIndex].type;
+        let fieldName: string = fields[fieldIndex].name;
 
         let fieldExpr = ensureExprValid(symbols, expr.val.exprs[0], fieldType, scope, position);
         if (fieldExpr == null) return null;
@@ -1386,9 +1388,9 @@ function ensureExprValid(
     let exprType: Type | null = null;
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.name == 'Vec'
-      && expectedReturn.val.unit == 'std/core') {
-      let ptrType = expectedReturn.val.fields[0].type;
+      && expectedReturn.val.template.name == 'Vec'
+      && expectedReturn.val.template.unit == 'std/core') {
+      let ptrType = getFields(expectedReturn)[0].type;
       if (ptrType.tag != 'ptr') {
         compilerError('expected ptr field');
         return null;
@@ -1442,8 +1444,9 @@ function ensureExprValid(
 
     let exprFieldTypes = new Map<string, Type>();
     let exprFieldExprs: Map<string, Expr> = new Map();
+    let fields = getFields(retType);
     for (let initField of expr.val) {
-      let matchingFields = retType.val.fields.filter(x => x.name == initField.name);
+      let matchingFields = fields.filter(x => x.name == initField.name);
       if (matchingFields.length == 0) {
         if (position != null) logError(initField.expr.position, `field ${initField.name} does not exist on type`);
         return null;
@@ -1462,12 +1465,12 @@ function ensureExprValid(
       exprFieldExprs.set(initField.name, expr);
     }
 
-    if (exprFieldTypes.size != retType.val.fields.length) {
+    if (exprFieldTypes.size != fields.length) {
       if (position != null) logError(position, 'missing fields');
       return null;
     }
 
-    for (let field of retType.val.fields) {
+    for (let field of fields) {
       if (!exprFieldTypes.has(field.name)) {
         if (position != null) logError(position, `required field ${field.name}`);
         return null;
@@ -1533,12 +1536,13 @@ function ensureExprValid(
     // see if it is constant enum initialization of a void type
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.isEnum
+      && expectedReturn.val.template.isEnum
       && expr.val.tag == 'var'
     ) {
+      let fields = getFields(expectedReturn);
       let fieldIndex = getFieldIndex(expectedReturn, expr.val.val);
-      if (fieldIndex != -1 && typeApplicable(expectedReturn.val.fields[fieldIndex].type, NIL, false)) {
-        let fieldName = expectedReturn.val.fields[fieldIndex].name;
+      if (fieldIndex != -1 && typeApplicable(fields[fieldIndex].type, NIL, false)) {
+        let fieldName = fields[fieldIndex].name;
         computedExpr = {
           tag: 'enum_init',
           variantIndex: getFieldIndex(expectedReturn, fieldName),

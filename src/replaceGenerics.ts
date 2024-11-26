@@ -4,7 +4,7 @@ import { compilerError, Position, logError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
   NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
-  F64,
+  F64, getFields,
   isGeneric
 } from './typeload';
 
@@ -28,6 +28,12 @@ interface FnKey {
   mode: FnMode
 }
 
+interface CurrentField {
+  currentFieldName: string,
+  currentFieldType: Type,
+  currentFieldExpr: Expr,
+}
+
 interface FnSet {
   fnTemplates: Map<string, FnImpl[]>
   // maps via serializeType(type)
@@ -41,11 +47,11 @@ interface FnSet {
   // to be able to lookup impls
   symbols: UnitSymbols[],
 
-  firstGenericCall: Position | null,
+  // for field in iter
+  fieldStack: CurrentField[]
 
-  currentFieldName: string,
-  currentFieldType: Type,
-  currentFieldExpr: Expr,
+  // to determine position of impl
+  genericCallStack: (Position | null)[]
 }
 
 function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: FnImpl): Program {
@@ -55,10 +61,8 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
     fns: new Map(),
     used: new Set(),
     symbols,
-    firstGenericCall: null,
-    currentFieldName: '',
-    currentFieldExpr: { tag: 'nil_const', type: NIL },
-    currentFieldType: NIL
+    fieldStack: [],
+    genericCallStack: []
   };
 
   for (let i = 0; i < prog.fns.length; i++) {
@@ -145,9 +149,10 @@ function addType(set: FnSet, type: Type) {
     return;
   }
   set.types.set(key, type);
+  let fields = getFields(type);
   if (type.tag == 'struct') {
-    for (let i = 0; i < type.val.fields.length; i++) {
-      addType(set, type.val.fields[i].type);
+    for (let i = 0; i < fields.length; i++) {
+      addType(set, fields[i].type);
     }
   }
   else if (type.tag == 'fn') {
@@ -232,13 +237,17 @@ function resolveInst(
     if (inst.val.varName == 'field') {
       let output: Inst[] = [];
       if (iter.type.tag == 'struct') {
-        for (let i = 0; i < iter.type.val.fields.length; i++) {
-          set.currentFieldName = iter.type.val.fields[i].name;
-          set.currentFieldType = iter.type.val.fields[i].type;
-          set.currentFieldExpr = iter;
-          genericMap.set('val', set.currentFieldType);
+        let fields = getFields(iter.type);
+        for (let i = 0; i < fields.length; i++) {
+          set.fieldStack.push({
+            currentFieldName: fields[i].name,
+            currentFieldType: fields[i].type,
+            currentFieldExpr: iter,
+          })
+          genericMap.set('val', fields[i].type);
           let body = resolveInstBody(inst.val.body, set, genericMap);
           output.push(...body);
+          set.fieldStack.pop();
         }
       }
       return output;
@@ -287,7 +296,7 @@ function resolveInst(
     if (to == null || expr == null) return null;
 
     if (inst.val.op == '++=') {
-      if (to.type.tag == 'struct' && to.type.val.name == 'Fmt' && to.type.val.unit == 'std/core') {
+      if (to.type.tag == 'struct' && to.type.val.template.name == 'Fmt' && to.type.val.template.unit == 'std/core') {
         let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
         let impl = implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr]);
         if (impl == null) return [];
@@ -340,12 +349,13 @@ function implToExpr(
 
   let impl = resolveImpl(set.symbols[0], name, newParamTypes, returnType, null);
   if (impl == null) {
-    if (set.firstGenericCall == null) {
+    let pos = set.genericCallStack[set.genericCallStack.length - 1] || null;
+    if (pos == null) {
       compilerError('should always be generic if no impl');
       return null;
     }
 
-    logError(set.firstGenericCall, 'no valid implementation for ' + name);
+    logError(pos, 'no valid implementation for ' + name);
     return null;
   }
 
@@ -452,11 +462,17 @@ function resolveExpr(
       exprs.push(expr);
     }
 
-    if (expr.val.fn.tag == 'fn' && expr.val.fn.isGeneric && !isGeneric(expr.val.fn.type)) {
-      set.firstGenericCall = expr.val.position;
+    let genericCall = expr.val.fn.tag == 'fn' && expr.val.fn.isGeneric && !isGeneric(expr.val.fn.type);
+    if (genericCall) {
+      set.genericCallStack.push(expr.val.position);
     }
 
     let fn = resolveLeftExpr(expr.val.fn, set, genericMap);
+
+    if (genericCall) {
+      set.genericCallStack.pop();
+    }
+
     if (fn == null) return null;
 
     if (fn.tag == 'fn' && (fn.mode == 'decl' || fn.mode == 'declImpl')) {
@@ -488,7 +504,7 @@ function resolveExpr(
     // list init needs alloc to be available
     let allocExpr: LeftExpr = {
       tag: 'fn',
-      type: { tag: 'fn', paramTypes: [INT], returnType: expr.type.val.fields[0].type },
+      type: { tag: 'fn', paramTypes: [INT], returnType: getFields(expr.type)[0].type },
       name: 'alloc',
       unit: 'std/core',
       mode: 'fn',
@@ -530,9 +546,11 @@ function resolveExpr(
     if (expr.val.tag == 'dot') {
       let left = expr.val.val.left;
       let name = expr.val.val.varName;
+      let field = set.fieldStack[set.fieldStack.length - 1];
+
       if (left.tag == 'left_expr' && left.val.tag == 'var' && left.val.mode == 'field_iter') {
         if (name == 'name') {
-          return { tag: 'str_const', val: set.currentFieldName, type: STR };
+          return { tag: 'str_const', val: field.currentFieldName, type: STR };
         }
         else if (name == 'val') {
           return {
@@ -540,12 +558,12 @@ function resolveExpr(
             val: {
               tag: 'dot',
               val: {
-                varName: set.currentFieldName,
-                left: set.currentFieldExpr
+                varName: field.currentFieldName,
+                left: field.currentFieldExpr
               },
-              type: set.currentFieldType 
+              type: field.currentFieldType 
             },
-            type: set.currentFieldType 
+            type: field.currentFieldType 
           };
         }
       }
@@ -715,15 +733,16 @@ function typeTreeRecur(
   if (alreadyGenned.has(typeKey)) return;
   alreadyGenned.add(typeKey);
 
+  let fields = getFields(type);
   inStack.add(typeKey);
-  for (let field of type.val.fields) {
+  for (let field of fields) {
     typeTreeRecur(field.type, inStack, alreadyGenned, output, queue);
   }
   inStack.delete(typeKey);
 
   let fieldTypes: Type[] = [];
   let fieldNames: string[] = [];
-  for (let field of type.val.fields) {
+  for (let field of fields) {
     fieldTypes.push(field.type);
     fieldNames.push(field.name);
   }

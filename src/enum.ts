@@ -1,6 +1,6 @@
 import { LeftExpr,  Expr } from './analyze';
 import { compilerError } from './util';
-import { getFieldIndex } from './typeload';
+import { getFieldIndex, getFields } from './typeload';
 
 export {
   PossibleVariants, getVariantPossibilities, applyCond, applyInverseCond,
@@ -173,8 +173,8 @@ function getVariantPossibilities(scope: VariantScope, leftExpr: LeftExpr): strin
     }
   }
 
-  if (leftExpr.type.tag == 'struct' && leftExpr.type.val.isEnum) {
-    return leftExpr.type.val.fields.map(x => x.name);
+  if (leftExpr.type.tag == 'struct' && leftExpr.type.val.template.isEnum) {
+    return getFields(leftExpr.type).map(x => x.name);
   } else {
     return [];
   }
@@ -223,10 +223,10 @@ function getInverseExprSet(expr: Expr): PossibleVariants {
     return intersectingUnion(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'struct' && expr.left.type.val.isEnum) {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.isEnum) {
       let key = expr.left;
       let newSet: PossibleVariants = [];
-      let possible = expr.left.type.val.fields.map(x => x.name);
+      let possible = getFields(expr.left.type).map(x => x.name);
       let current: string[] = possible.filter(x => x != expr.variant);
       add(newSet, key, current, possible);
       return newSet;
@@ -258,10 +258,10 @@ function getExprSet(expr: Expr): PossibleVariants {
     return unionsIntersection(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'struct' && expr.left.type.val.isEnum) {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.isEnum) {
       let key = expr.left;
       let newSet: PossibleVariants = [];
-      let possible = expr.left.type.val.fields.map(x => x.name);
+      let possible = getFields(expr.left.type).map(x => x.name);
       add(newSet, key, [expr.variant], possible);
       return newSet;
     }
@@ -322,8 +322,8 @@ function applyInverseCond(
 
 function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
   let set = scope[scope.length - 1];
-  if (expr.tag == 'enum_init' && expr.type.tag == 'struct' && expr.type.val.isEnum) {
-    let possible = expr.type.val.fields.map(x => x.name);
+  if (expr.tag == 'enum_init' && expr.type.tag == 'struct' && expr.type.val.template.isEnum) {
+    let possible = getFields(expr.type).map(x => x.name);
     add(set, leftExpr, [expr.fieldName], possible);
     if (expr.fieldExpr != null) {
       let newLeftExpr: LeftExpr = {

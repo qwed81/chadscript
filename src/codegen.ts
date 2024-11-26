@@ -1,6 +1,6 @@
 import { FnMode } from './parse';
 import { Position, compilerError, logError } from './util';
-import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, INT, typeApplicable } from './typeload';
+import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, INT, typeApplicable, getFields } from './typeload';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
 
@@ -46,7 +46,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
 
   // forward declare all structs for pointers
   for (let type of prog.orderedTypes) {
-    if (type.tag == 'struct' && !type.val.unit.endsWith('.h') && !isBasic(type)) {
+    if (type.tag == 'struct' && !type.val.template.unit.endsWith('.h') && !isBasic(type)) {
       chadDotC += '\n' + codeGenType(type) + ';';
     }
     if (type.tag == 'fn') {
@@ -62,7 +62,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   }
 
   for (let struct of prog.orderedTypes) {
-    if (struct.tag != 'struct' || struct.val.unit.endsWith('.h') || isBasic(struct)) continue;
+    if (struct.tag != 'struct' || struct.val.template.unit.endsWith('.h') || isBasic(struct)) continue;
     chadDotH += codeGenStructDef(struct);
   }
 
@@ -127,7 +127,7 @@ function codeGenFn(fn: FnImpl) {
   }
 
   let retType = fn.header.returnType;
-  if (retType.tag == 'struct' && retType.val.name == 'nil') {
+  if (retType.tag == 'struct' && retType.val.template.name == 'nil') {
     bodyStr += '\n\treturn 0;'
   }
   else if (typeApplicable(NIL, retType, false)) {
@@ -148,18 +148,19 @@ function replaceAll(s: string, find: string, replace: string) {
 // TODO
 function codeGenType(type: Type): string {
   if (type.tag == 'struct' && isBasic(type)) {
-    if (type.val.name == 'int') return 'int32_t';
-    else if (type.val.name == 'nil') return 'int';
-    else if (type.val.name == 'i64') return 'int64_t';
-    else if (type.val.name == 'i16') return 'int16_t';
-    else if (type.val.name == 'i8') return 'int8_t';
-    else if (type.val.name == 'u64') return 'uint64_t';
-    else if (type.val.name == 'u32') return 'uint32_t';
-    else if (type.val.name == 'u16') return 'uint16_t';
-    else if (type.val.name == 'u8') return 'uint8_t';
-    else if (type.val.name == 'f64') return 'double';
-    else if (type.val.name == 'f32') return 'float';
-    return type.val.name;
+    let name = type.val.template.name;
+    if (name == 'int') return 'int32_t';
+    else if (name == 'nil') return 'int';
+    else if (name == 'i64') return 'int64_t';
+    else if (name == 'i16') return 'int16_t';
+    else if (name == 'i8') return 'int8_t';
+    else if (name == 'u64') return 'uint64_t';
+    else if (name == 'u32') return 'uint32_t';
+    else if (name == 'u16') return 'uint16_t';
+    else if (name == 'u8') return 'uint8_t';
+    else if (name == 'f64') return 'double';
+    else if (name == 'f32') return 'float';
+    return name;
   }
   if (type.tag == 'ambig_int') return 'int32_t';
   if (type.tag == 'ambig_float') return 'double';
@@ -171,7 +172,7 @@ function codeGenType(type: Type): string {
   }
 
   let typeStr = toStr(type);
-  if (type.tag != 'struct' || !type.val.unit.endsWith('.h')) {
+  if (type.tag != 'struct' || !type.val.template.unit.endsWith('.h')) {
     typeStr = '_' + typeStr;
   }
 
@@ -186,7 +187,7 @@ function codeGenType(type: Type): string {
   typeStr = replaceAll(typeStr, '&', '*');
   typeStr = replaceAll(typeStr, ' ', '');
 
-  if (type.tag == 'struct' && !type.val.unit.endsWith('.h')) {
+  if (type.tag == 'struct' && !type.val.template.unit.endsWith('.h')) {
     return 'struct ' + typeStr;
   }
 
@@ -397,7 +398,7 @@ function codeGenExpr(
     statements = innerExpr.statements;
     statements.push(`if (${innerExpr.output}.tag == 1) return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${innerExpr.output}._val1 };`);
     // because this is a leftExpr, it shouldn't save the value to the stack
-    if (expr.type.tag == 'struct' && expr.type.val.name == 'nil') {
+    if (expr.type.tag == 'struct' && expr.type.val.template.name == 'nil') {
       return { statements , output: '' };
     }
     return { statements, output: `${innerExpr.output}._val0` };
@@ -430,7 +431,7 @@ function codeGenExpr(
       return undefined!;
     }
 
-    let ptrType = expr.type.val.fields[0].type;
+    let ptrType = getFields(expr.type)[0].type;
     if (ptrType.tag != 'ptr') {
       compilerError('expected ptr field');
       return undefined!;
@@ -574,7 +575,7 @@ function codeGenStructInit(expr: Expr, ctx: FnContext, position: Position): Code
     let initField = structInit[i];
     let innerExpr = codeGenExpr(initField.expr, ctx, position);
     statements.push(...innerExpr.statements);
-    if (expr.type.tag == 'struct' && expr.type.val.unit.endsWith('.h')) {
+    if (expr.type.tag == 'struct' && expr.type.val.template.unit.endsWith('.h')) {
       output += `.${initField.name} = ${innerExpr.output}`;
     }
     else {
@@ -615,7 +616,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
     let innerExpr = codeGenExpr(leftExpr.val.left, ctx, position);
     statements = innerExpr.statements;
     let leftType = leftExpr.val.left.type;
-    if (leftType.tag == 'struct' && leftType.val.unit.endsWith('.h')) {
+    if (leftType.tag == 'struct' && leftType.val.template.unit.endsWith('.h')) {
       leftExprText = `${innerExpr.output}.${leftExpr.val.varName}`;
     }
     else {
@@ -688,16 +689,17 @@ function codeGenStructDef(struct: Type): string {
 
   let structStr = '';
   structStr += '\n' + codeGenType(struct) + ' {';
-  if (struct.val.isEnum) {
+  if (struct.val.template.isEnum) {
     structStr += '\n\tint64_t tag;'
     structStr += '\n\tunion {;'
   }
 
-  for (let i = 0; i < struct.val.fields.length; i++) {
-    structStr += '\n  ' + codeGenType(struct.val.fields[i].type);
-    structStr += ' _' + struct.val.fields[i].name + ';';
+  let fields = getFields(struct);
+  for (let i = 0; i < fields.length; i++) {
+    structStr += '\n  ' + codeGenType(fields[i].type);
+    structStr += ' _' + fields[i].name + ';';
   }
-  if (struct.val.isEnum) {
+  if (struct.val.template.isEnum) {
     structStr += '\n};'
   }
 

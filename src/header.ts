@@ -149,12 +149,15 @@ function loadHeaderFile(headerPath: string): UnitSymbols | null {
       structTypeMap.set(child.name, typeDefType);
       alreadyAdded.add(child.name);
       symbols.structs.set(child.name, {
-        fields: typeDefType.val.fields,
-        name: child.name,
-        unit: headerPath,
-        isEnum: false,
-        modifier: 'pub',
-        generics: []
+        generics: [],
+        template: {
+          fields: typeDefType.val.template.fields,
+          name: child.name,
+          unit: headerPath,
+          isEnum: false,
+          modifier: 'pub',
+          generics: []
+        }
       });
     }
   }
@@ -191,12 +194,15 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
     return {
       tag: 'struct',
       val: {
-        fields: [],
-        name: node.name,
         generics: [],
-        unit,
-        modifier: 'pub',
-        isEnum: false
+        template: {
+          fields: [],
+          name: node.name,
+          generics: [],
+          unit,
+          modifier: 'pub',
+          isEnum: false
+        }
       }
     }
   }
@@ -217,12 +223,15 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
   return {
     tag: 'struct',
     val: {
-      fields,
       generics: [],
-      name: node.name,
-      unit,
-      isEnum: false,
-      modifier: 'pub'
+      template: {
+        fields,
+        generics: [],
+        name: node.name,
+        unit,
+        isEnum: false,
+        modifier: 'pub'
+      }
     }
   }
 };
@@ -314,7 +323,7 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
     // for fn(void)
     if (paramTypes.length == 1) {
       let t = paramTypes[0];
-      if (t.tag == 'struct' && t.val.name == 'nil') {
+      if (t.tag == 'struct' && t.val.template.name == 'nil') {
          paramTypes = [];
       }
     } 
@@ -349,7 +358,7 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
   let thisStruct: Type | undefined = structTypeMap.get(type);
   let fields: Field[] = [];
   if (thisStruct != undefined && thisStruct.tag == 'struct') {
-    fields = thisStruct.val.fields;
+    fields = thisStruct.val.template.fields;
   }
 
   // return a struct with no fields so it can be used
@@ -357,12 +366,15 @@ function parseCType(type: string, unit: string, structTypeMap: Map<string, Type>
   return {
     tag: 'struct',
     val: {
-      fields: fields,
-      name: type,
-      unit,
-      isEnum: false,
-      modifier: 'pub',
-      generics: []
+      generics: [],
+      template: {
+        fields: fields,
+        name: type,
+        unit,
+        isEnum: false,
+        modifier: 'pub',
+        generics: []
+      }
     }
   }
 }

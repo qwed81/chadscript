@@ -10,7 +10,7 @@ export {
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
-  resolveMacro, isGeneric
+  resolveMacro, isGeneric, getFields
 }
 
 type Modifier = 'pri' | 'pub';
@@ -22,13 +22,18 @@ interface Field {
   modifier: FieldModifier
 }
 
-interface Struct {
+interface StructTemplate {
   name: string,
   unit: string,
-  generics: Type[],
   fields: Field[]
   modifier: Modifier,
   isEnum: boolean
+  generics: string[]
+}
+
+interface Struct {
+  template: StructTemplate,
+  generics: Type[],
 }
 
 type Type = { tag: 'generic', val: string }
@@ -87,12 +92,15 @@ function basic(name: string): Type {
   return { 
     tag: 'struct',
     val: {
-      name,
       generics: [],
-      unit: 'std/core',
-      modifier: 'pub',
-      isEnum: false,
-      fields: []
+      template: {
+        name,
+        unit: 'std/core',
+        modifier: 'pub',
+        isEnum: false,
+        fields: [],
+        generics: []
+      }
     }
   }
 }
@@ -100,74 +108,86 @@ function basic(name: string): Type {
 const STR: Type = {
   tag: 'struct',
   val: {
-    name: 'str',
     generics: [],
-    unit: 'std/core',
-    modifier: 'pub',
-    isEnum: false,
-    fields: [
-      { name: 'base', type: { tag: 'ptr', val: CHAR }, modifier: 'get' },
-      { name: 'len', type: INT, modifier: 'get' }
-    ] 
+    template: {
+      name: 'str',
+      unit: 'std/core',
+      modifier: 'pub',
+      isEnum: false,
+      fields: [
+        { name: 'base', type: { tag: 'ptr', val: CHAR }, modifier: 'get' },
+        { name: 'len', type: INT, modifier: 'get' }
+      ],
+      generics: []
+    }
   }
 };
 
 const ERR: Type = {
   tag: 'struct',
   val: {
-    name: 'err',
     generics: [],
-    unit: 'std/core',
-    modifier: 'pub',
-    isEnum: false,
-    fields: [
-      { name: 'message', type: STR, modifier: 'get' }
-    ] 
+    template: {
+      name: 'err',
+      unit: 'std/core',
+      modifier: 'pub',
+      isEnum: false,
+      fields: [
+        { name: 'message', type: STR, modifier: 'get' }
+      ], 
+      generics: []
+    }
   }
 };
 
 const FMT: Type = {
   tag: 'struct',
   val: {
-    name: 'Fmt',
     generics: [],
-    unit: 'std/core',
-    modifier: 'pub',
-    isEnum: false,
-    fields: [] 
+    template: {
+      name: 'Fmt',
+      unit: 'std/core',
+      modifier: 'pub',
+      isEnum: false,
+      fields: [],
+      generics: []
+    }
   }
 };
 
 const RANGE: Type = {
   tag: 'struct',
   val: {
-    name: 'range',
     generics: [],
-    unit: 'std/core',
-    modifier: 'pub',
-    isEnum: false,
-    fields: [
-      { name: 'start', type: INT, modifier: 'pub' },
-      { name: 'end', type: INT, modifier: 'pub' },
-      { name: 'output', type: INT, modifier: 'pub' }
-    ] 
+    template: {
+      name: 'range',
+      unit: 'std/core',
+      modifier: 'pub',
+      isEnum: false,
+      fields: [
+        { name: 'start', type: INT, modifier: 'pub' },
+        { name: 'end', type: INT, modifier: 'pub' },
+        { name: 'output', type: INT, modifier: 'pub' }
+      ],
+      generics: []
+    }
   }
 };
 
 const BASICS: Struct[] = [
-  { name: 'i8', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'i16', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'i64', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'int', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'u8', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'u16', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'u32', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'u64', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'f32', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'f64', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'bool', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'char', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] },
-  { name: 'nil', generics: [], unit: 'std/core', modifier: 'pub', isEnum: false, fields: [] }
+  { generics: [], template: { name: 'i8', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'i16', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'int', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'i64', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'u8', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'u16', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'u32', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'u64', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'f32', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'f64', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'bool', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'char', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
+  { generics: [], template: { name: 'nil', unit: 'std/core', modifier: 'pub', isEnum: false, fields: [], generics: [] } },
 ];
 
 function refType(type: Type): Type {
@@ -178,19 +198,43 @@ function serializeType(type: Type): string {
   return toStr(type);
 }
 
+function getFields(type: Type): Field[] {
+  if (type.tag != 'struct') {
+    return []
+  }
+
+  let genericMap: Map<string, Type> = new Map(); 
+  for (let i = 0; i < type.val.generics.length; i++) {
+    genericMap.set(type.val.template.generics[i], type.val.generics[i]);
+  }
+
+  let newFields: Field[] = [];
+  for (let i = 0; i < type.val.template.fields.length; i++) {
+    let field = type.val.template.fields[i];
+    let fieldType: Type = applyGenericMap(field.type, genericMap);
+    newFields.push({ name: field.name, type: fieldType, modifier: field.modifier });
+  }
+
+  return newFields;
+}
+
+
 function createTypeUnion(t1: Type, t2: Type): Type {
   return {
     tag: 'struct',
     val: {
-      name: 'TypeUnion',
       generics: [t1, t2],
-      unit: 'std/core',
-      modifier: 'pub',
-      isEnum: true,
-      fields: [
-        { name: 'val0', type: t1, modifier: 'pub' },
-        { name: 'val1', type: t2, modifier: 'pub' }
-      ]
+      template: {
+        name: 'TypeUnion',
+        unit: 'std/core',
+        modifier: 'pub',
+        isEnum: true,
+        fields: [
+          { name: 'val0', type: t1, modifier: 'pub' },
+          { name: 'val1', type: t2, modifier: 'pub' }
+        ],
+        generics: ['T', 'K']
+      }
     }
   };
 }
@@ -199,24 +243,27 @@ function createVec(t1: Type): Type {
   return {
     tag: 'struct',
     val: {
-      name: 'Vec',
       generics: [t1],
-      unit: 'std/core',
-      modifier: 'pub',
-      isEnum: true,
-      fields: [
-        { name: 'base', type: { tag: 'ptr', val: t1 }, modifier: 'get' },
-        { name: 'len', type: INT, modifier: 'get' },
-        { name: 'capacity', type: INT, modifier: 'get' }
-      ]
+      template: {
+        name: 'Vec',
+        unit: 'std/core',
+        modifier: 'pub',
+        isEnum: true,
+        fields: [
+          { name: 'base', type: { tag: 'ptr', val: t1 }, modifier: 'get' },
+          { name: 'len', type: INT, modifier: 'get' },
+          { name: 'capacity', type: INT, modifier: 'get' }
+        ],
+        generics: ['T']
+      }
     }
   };
 }
 
 function getFieldIndex(type: Type, fieldName: string): number {
   if (type.tag != 'struct') return -1;
-  for (let i = 0; i < type.val.fields.length; i++) {
-    if (type.val.fields[i].name == fieldName) {
+  for (let i = 0; i < type.val.template.fields.length; i++) {
+    if (type.val.template.fields[i].name == fieldName) {
       return i;
     }
   }
@@ -224,9 +271,9 @@ function getFieldIndex(type: Type, fieldName: string): number {
 }
 
 function isBasic(type: Type): boolean {
-  if (type.tag != 'struct' || type.val.unit != 'std/core') return false;
+  if (type.tag != 'struct' || type.val.template.unit != 'std/core') return false;
   for (let i = 0; i < BASICS.length; i++) {
-    if (type.val.name == BASICS[i].name) return true;
+    if (type.val.template.name == BASICS[i].template.name) return true;
   }
   return false;
 }
@@ -236,7 +283,7 @@ function isGeneric(a: Type): boolean {
   if (isBasic(a)) return false;
   if (a.tag == 'struct') {
     for (let generic of a.val.generics) {
-      if (isGeneric(generic)) return false;
+      if (isGeneric(generic)) return true;
     }
   }
   if (a.tag == 'fn') {
@@ -245,7 +292,7 @@ function isGeneric(a: Type): boolean {
       if (isGeneric(paramType)) return true;
     }
   }
-  if (a.tag == 'ptr') {
+  if (a.tag == 'ptr' || a.tag == 'link') {
     return isGeneric(a.val);
   }
   return false;
@@ -269,7 +316,7 @@ function typeEq(t1: Type, t2: Type): boolean {
 
   if (t1.tag != t2.tag) return false;
   if (t1.tag == 'struct' && t2.tag == 'struct') {
-    return t1.val.name == t2.val.name && t1.val.unit == t2.val.unit;
+    return t1.val.template.name == t2.val.template.name && t1.val.template.unit == t2.val.template.unit;
   }
 
   if (t1.tag == 'ptr' && t2.tag == 'ptr') {
@@ -307,16 +354,18 @@ function typeApplicableStateful(
 
   if (sub.tag == 'ambig_float') {
     if (supa.tag == 'ambig_float') return true;
-    if (supa.tag == 'struct' && (supa.val.name == 'f32' || supa.val.name == 'f64') && supa.val.unit == 'std/core') return true;
+    if (supa.tag == 'struct' && (supa.val.template.name == 'f32' || supa.val.template.name == 'f64') && supa.val.template.unit == 'std/core') return true;
   }
 
   if (sub.tag == 'ambig_int') {
     if (supa.tag == 'ambig_float' || supa.tag == 'ambig_int') return true;
-    if (supa.tag == 'struct' && (supa.val.name == 'f32' || supa.val.name == 'f64') && supa.val.unit == 'std/core') return true;
-    if (supa.tag == 'struct' && supa.val.unit == 'std/core' && (
-      supa.val.name == 'i64' || supa.val.name == 'int' || supa.val.name == 'i16' || supa.val.name == 'i8'
-      || supa.val.name == 'u64' || supa.val.name == 'u32' || supa.val.name == 'u16' || supa.val.name == 'u8'
-    )) return true;
+    if (supa.tag == 'struct' && (supa.val.template.name == 'f32' || supa.val.template.name == 'f64') && supa.val.template.unit == 'std/core') return true;
+
+    if (supa.tag == 'struct' && supa.val.template.unit == 'std/core') {
+      let name = supa.val.template.name;
+      if (name == 'i64' || name == 'int' || name == 'i16' || name == 'i8'
+        || name == 'u64' || name == 'u32' || name == 'u16' || name == 'u8') return true;
+    }
   }
 
   if (supa.tag == 'generic') {
@@ -332,20 +381,22 @@ function typeApplicableStateful(
   }
 
   // T -> T|K is valid
-  if (supa.tag == 'struct' && supa.val.isEnum && supa.val.name == 'TypeUnion' && supa.val.unit == 'std/core') {
-    let firstApplicable = typeApplicableStateful(sub, supa.val.fields[0].type, genericMap, fnHeader);
-    let secondApplicable = typeApplicableStateful(sub, supa.val.fields[1].type, genericMap, fnHeader);
+  if (supa.tag == 'struct' && supa.val.template.isEnum && supa.val.template.name == 'TypeUnion' && supa.val.template.unit == 'std/core') {
+    let fields = getFields(supa);
+    let firstApplicable = typeApplicableStateful(sub, fields[0].type, genericMap, fnHeader);
+    let secondApplicable = typeApplicableStateful(sub, fields[1].type, genericMap, fnHeader);
     if (firstApplicable || secondApplicable) return true;
   }
 
   if (sub.tag != supa.tag) return false;
 
-  if (isBasic(sub) && isBasic(supa)) return (sub as any).val.name == (supa as any).val.name;
+  if (isBasic(sub) && isBasic(supa)) return (sub as any).val.template.name == (supa as any).val.template.name;
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
     return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
   }
   if (sub.tag == 'struct' && supa.tag == 'struct') {
-    if (sub.val.name != supa.val.name) return false;
+    if (sub.val.template.name != supa.val.template.name) return false;
+    if (sub.val.template.unit != supa.val.template.unit) return false;
     if (sub.val.generics.length != supa.val.generics.length) return false;
     for (let i = 0; i < sub.val.generics.length; i++) {
       if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader)) {
@@ -380,7 +431,7 @@ function typeApplicable(sub: Type, supa: Type, fnHeader: boolean): boolean {
 
 function toStr(t: Type | null): string {
   if (t == null) return 'null';
-  if (t.tag == 'struct' && isBasic(t)) return t.val.name;
+  if (t.tag == 'struct' && isBasic(t)) return t.val.template.name;
   if (t.tag == 'generic') return t.val;
   if (t.tag == 'ptr') return '*' + toStr(t.val);
   if (t.tag == 'link') return '&' + toStr(t.val);
@@ -396,10 +447,10 @@ function toStr(t: Type | null): string {
       }     
     }
     if (t.val.generics.length == 0) {
-      return t.val.name;
+      return t.val.template.name;
     }
     else {
-      return t.val.name + generics + ']';
+      return t.val.template.name + generics + ']';
     }
   }
 
@@ -433,24 +484,22 @@ function applyGenericMap(
   }
   else if (input.tag == 'struct') {
     let newGenerics: Type[] = [];
-    let newFields: Field[] = [];
 
-    for (let field of input.val.fields) {
-      let fieldType = applyGenericMap(field.type, map);
-      newFields.push({ name: field.name, type: fieldType, modifier: field.modifier });
-    }
     for (let generic of input.val.generics) {
       newGenerics.push(applyGenericMap(generic, map));
     }
     return {
       tag: input.tag,
       val: {
-        fields: newFields,
         generics: newGenerics,
-        name: input.val.name,
-        unit: input.val.unit,
-        isEnum: input.val.isEnum,
-        modifier: input.val.modifier
+        template: {
+          fields: input.val.template.fields,
+          name: input.val.template.name,
+          unit: input.val.template.unit,
+          isEnum: input.val.template.isEnum,
+          modifier: input.val.template.modifier,
+          generics: input.val.template.generics
+        }
       }
     };
   }
@@ -584,15 +633,19 @@ function loadStructs(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
     for (let struct of unit.structs) {
       let modifier: Modifier = struct.header.pub ? 'pub' : 'pri';
       let s: Struct = { 
-        name: struct.header.name,
-        unit: unit.fullName,
         generics: [],
-        modifier: modifier,
-        isEnum: struct.header.isEnum,
-        fields: [] 
+        template: {
+          name: struct.header.name,
+          unit: unit.fullName,
+          modifier: modifier,
+          isEnum: struct.header.isEnum,
+          fields: [],
+          generics: []
+        }
       };
       for (let genericLetter of struct.header.generics) {
         s.generics.push({ tag: 'generic', val: genericLetter });
+        s.template.generics.push(genericLetter);
       }
       unitTypeMap.set(struct.header.name, s);
     }
@@ -600,7 +653,7 @@ function loadStructs(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
     // load basic types
     if (unit.fullName == 'std/core') {
       for (let basic of BASICS) {
-        unitTypeMap.set(basic.name, basic);
+        unitTypeMap.set(basic.template.name, basic);
       }
     }
     to[i].structs = unitTypeMap;
@@ -619,7 +672,7 @@ function loadFields(units: Parse.ProgramUnit[], symbols: UnitSymbols[]) {
           logError(field.position, 'invalid type');
           continue;
         };
-        struct.fields.push({
+        struct.template.fields.push({
           name: field.name,
           type,
           modifier: field.visibility
@@ -761,9 +814,6 @@ function resolveGlobal(unit: UnitSymbols, name: string, position: Position | nul
 }
 
 function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Position | null): Type | null {
-  if (unit.name == 'stdio.h') {
-    throw new Error();
-  }
   let types: Type[] | null = resolveTypeInternal(unit, parseType, position);
   // return with no message
   if (types == null) {
@@ -777,6 +827,7 @@ function resolveType(unit: UnitSymbols, parseType: Parse.Type, position: Positio
     if (position != null) logError(position, 'type is ambiguous');
     return null;
   }
+
   return types[0];
 }
 
@@ -834,7 +885,7 @@ function resolveFnOrDecl(
         if (j != t.paramTypes.length - 1) line += ', '
       }
       line += ')'
-      if (t.returnType.tag != 'struct' || t.returnType.val.name != 'nil') {
+      if (t.returnType.tag != 'struct' || t.returnType.val.template.name != 'nil') {
         line += ' ' + toStr(t.returnType);
       }
       context.push(line);
@@ -895,7 +946,17 @@ function resolveImpl(
       mode: fn.mode,
       isGeneric: genericMap.size != 0
     };
-    if (isGeneric(fnType)) {
+
+    let isGeneric = false;
+    for (let i = 0; i < fnType.paramTypes.length; i++) {
+      if (fnType.paramTypes[i].tag == 'generic') {
+        isGeneric = true;
+        break;
+      }
+    }
+    if (fnType.returnType.tag == 'generic') isGeneric = true;
+
+    if (isGeneric) {
       possibleFns.push(possibleFn);
     }
     else {
@@ -1017,42 +1078,19 @@ function resolveTypeInternal(
       allStructs = [struct];
     }
 
+    // add the generics for this type
     for (let struct of allStructs) {
       if (parseType.tag == 'generic') {
-        let genericMap: Map<string, Type> = new Map();
-        if (parseType.val.generics.length != struct.generics.length) {
-          continue;
-        }
+        if (parseType.val.generics.length != struct.generics.length) return null;
 
-        let newStruct: Struct = { 
-          generics: [],
-          name,
-          unit: struct.unit,
-          modifier: struct.modifier,
-          fields: [],
-          isEnum: struct.isEnum
-        };
+        let generics: Type[] = []
         for (let i = 0; i < struct.generics.length; i++) {
           let genericType = resolveType(unit, parseType.val.generics[i], position);
           if (genericType == null) return null;
-          let g = struct.generics[i];
-          if (g.tag != 'generic') {
-            compilerError('expected generic');
-            return null;
-          }
-          newStruct.generics.push(genericType);
-          genericMap.set(g.val, genericType);
+          generics.push(genericType);
         }
 
-        for (let i = 0; i < struct.fields.length; i++) {
-          let newFieldType = applyGenericMap(struct.fields[i].type, genericMap);
-          newStruct.fields.push({
-            type: newFieldType,
-            modifier: struct.fields[i].modifier,
-            name: struct.fields[i].name
-          });
-        }
-        types.push({ tag: 'struct', val: newStruct });
+        types.push({ tag: 'struct', val: { generics, template: struct.template } });
       }
       else {
         types.push({ tag: 'struct', val: struct });
