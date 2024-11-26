@@ -1,5 +1,5 @@
 import { FnMode } from './parse';
-import { Position, compilerError } from './util';
+import { Position, compilerError, logError } from './util';
 import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, INT, typeApplicable } from './typeload';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
@@ -95,15 +95,14 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
 }
 
 function codeGenGlobal(global: GlobalImpl): string {
-  let expr = '{0}';
-  if (global.expr.tag == 'int_const') {
-    expr = '' + global.expr.val;
-  }
-  else if (global.expr.tag == 'num_const') {
-    expr = '' + global.expr.val;
-  }
-  else if (global.expr.tag == 'str_const') {
-    expr = `{ ._base = "${global.expr.val}" , ._len = ${strLen(global.expr.val)}}`;
+  let ctx: FnContext = {
+    unit: global.header.unit,
+    returnType: NIL,
+    amtReserved: 0
+  };
+  let expr = codeGenExpr(global.expr, ctx, global.position);
+  if (expr.statements.length > 0) {
+    logError(global.position, 'expression must be compile time');
   }
 
   let mode = ''; 
@@ -115,7 +114,7 @@ function codeGenGlobal(global: GlobalImpl): string {
   }
 
   let name = getGlobalUniqueId(global.header.unit, global.header.name)
-  return `${mode} ${codeGenType(global.header.type)} ${name} = ${expr}`;
+  return `${mode} ${codeGenType(global.header.type)} ${name} = ${expr.output}`;
 }
 
 function codeGenFn(fn: FnImpl) {

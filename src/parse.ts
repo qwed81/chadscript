@@ -40,7 +40,7 @@ function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] 
 export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, Index, StructInitField,
-  BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode, GlobalMode, parse
+  BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode, GlobalMode, parse,
 }
 
 interface SourceLine {
@@ -76,6 +76,7 @@ interface ProgramUnit {
   fns: Fn[]
   globals: Global[]
   structs: Struct[]
+  referencedUnits: Set<string>
 }
 
 interface GenericType {
@@ -265,10 +266,13 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
   return parse(unitText, progName);
 }
 
+let referencedUnits: Set<string> = new Set();
+
 // returns the program, null if invalid syntax, and logs all errors to the console
-function parse(unitText: string, documentName: string): ProgramUnit | null {
-  let lines = getLines(unitText, documentName);
-  let program: ProgramUnit = { fullName: documentName, uses: [], fns: [], structs: [], globals: [] };
+function parse(unitText: string, progName: string): ProgramUnit | null {
+  let lines = getLines(unitText, progName);
+  referencedUnits = new Set();
+  let program: ProgramUnit = { fullName: progName, uses: [], fns: [], structs: [], globals: [], referencedUnits: referencedUnits };
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
@@ -460,6 +464,7 @@ function balancedSplitTwoBackwards(tokens: Token[], op: string): Token[][] {
     }
 
     if (tokens[i].val == op && oParenCount == 0 && oSquareCount == 0 && oCurlyCount == 0) {
+      if (i == 0 || i == tokens.length - 1) return [tokens];
       return [tokens.slice(0, i), tokens.slice(i + 1)];
     }
   }
@@ -548,6 +553,8 @@ function parseUses(header: SourceLine): Use[] | null {
         as: null
       });
     }
+
+    referencedUnits.add(modNameStr.slice(1, -1));
   }
 
   return uses;
@@ -736,11 +743,13 @@ function tryParseType(tokens: Token[]): Type | null {
     if (expr.tag == 'str_const') {
       unitMode = 'unit';
       unit = expr.val;
+      referencedUnits.add(unit);
       tokens = unitSplit[1];
     }
     else if (expr.tag == 'left_expr' && expr.val.tag == 'var') {
       unitMode = 'as'
       unit = expr.val.val;
+      referencedUnits.add(unit);
       tokens = unitSplit[1];
     } 
     else {
@@ -1325,9 +1334,11 @@ function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null 
     if (left == null || right == null) return null;
 
     if (left.tag == 'str_const') {
+      referencedUnits.add(left.val);
       return { tag: 'scope_unit', unit: left.val, inner: right }
     }
     else if (left.tag == 'left_expr' && left.val.tag == 'var') {
+      referencedUnits.add(left.val.val);
       return { tag: 'scope_as', as: left.val.val, inner: right }
     }
     return null;
@@ -1362,8 +1373,13 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
         continue;
       }
 
-      let binOp = tryParseBinOp(tokens, props[0], position);
-      if (binOp == null) continue;
+      let splits = balancedSplitTwoBackwards(tokens, props[0]);
+      if (splits.length != 2) continue;
+
+      let binOp = tryParseBinOp(splits[0], splits[1], props[0], position);
+      if (binOp == null) {
+        return null;
+      }
 
       return binOp;
     }
@@ -1502,30 +1518,25 @@ function tryParseFmtString(lineExpr: string, position: Position): Expr[] | null 
   return exprs;
 }
 
-function tryParseBinOp(tokens: Token[], op: string, position: Position): Expr | null {
-  let splits = balancedSplitTwoBackwards(tokens, op);
-  if (splits.length == 1) {
-    return null;
-  }
-
+function tryParseBinOp(leftTokens: Token[], rightTokens: Token[], op: string, position: Position): Expr | null {
   if (op == 'is') {
-    let left = tryParseLeftExpr(splits[0], positionRange(splits[0]));
+    let left = tryParseLeftExpr(leftTokens, positionRange(leftTokens));
     if (left == null) {
       return null;
     }
-    let right = tryParseType(splits[1]);
+    let right = tryParseType(rightTokens);
     if (right == null) {
       return null;
     }
     return { tag: 'is', val: left, right, position };
   }
 
-  let left = tryParseExpr(splits[0], positionRange(splits[0]));
+  let left = tryParseExpr(leftTokens, positionRange(leftTokens));
   if (left == null) {
     return null;
   }
 
-  let right = tryParseExpr(splits[1], positionRange(splits[1]));
+  let right = tryParseExpr(rightTokens, positionRange(rightTokens));
   if (right == null) {
     return null;
   }

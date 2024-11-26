@@ -14,58 +14,139 @@ export {
   analyzeProgram, getFilesRecur
 }
 
-let chadPaths: string[] = [];
-let headerPaths: string[] = [];
-for (let i = 2; i < process.argv.length; i++) {
-  let fileName = process.argv[i]; 
-  if (fileName.endsWith('.h')) {
-    headerPaths.push(fileName);
+let libs: string[] = []
+let rename: Map<string, string> = new Map();
+let entryPoint: string = ''
+let mode: 'default' | 'build' | 'lsp' = 'default';
+
+function processArgs(args: string[]): boolean {
+  libs = []
+  rename = new Map()
+  entryPoint = '';
+
+  for (let i = 0; i < args.length; i++) {
+    let arg = args[i];
+    if (arg == '--rename') {
+      if (args.length == i) {
+        console.error('expected rename files');
+        return false;
+      }
+      let renameFiles = args[i + 1].split(':');
+      if (renameFiles.length != 2) {
+        console.error('expected rename file:file');
+        return false;
+      }
+      rename.set(renameFiles[0], renameFiles[1]);
+      i += 1;
+      continue;
+    }
+
+    if (arg.endsWith('chad')) {
+      if (entryPoint != '') {
+        console.error('expected only 1 entry point')
+        return false;
+      }
+      entryPoint = arg;
+    }
+
+    if (arg.endsWith('.o') || arg.endsWith('.a') || arg.endsWith('.so')) {
+      libs.push(arg);
+    }
   }
-  else if (fileName.endsWith('.chad')) {
-    chadPaths.push(fileName);
+
+  if (args.length > 2) {
+    if (args[2] == 'lsp') mode = 'lsp';
+    else if (args[2] == 'build') mode = 'build';
+  }
+
+  return true;
+}
+
+processArgs(process.argv.slice(2));
+if (entryPoint == '') {
+  try {
+    execSync(`node ${__dirname}/index.js -- build.chad`, { encoding: 'utf-8' });
+    let result = execSync('./build/output', { encoding: 'utf-8' }).toString();
+    let args = result.split(/\s/);
+    args = args.filter(arg => arg.length > 0);
+    let outputBuildCommand = 'chad ' + result; 
+    console.log(outputBuildCommand);
+    processArgs(args)
+  } catch (e) {
+    process.exit(-1);
   }
 }
 
-if (process.argv.includes('--lsp')) {
-  Lsp.startServer(chadPaths, headerPaths);
-}
-else {
-  let program = analyzeProgram(chadPaths, headerPaths, new Map())
+if (mode == 'default') {
+  let program = analyzeProgram(new Map())
   if (program != null) {
-    compileProgram(program, headerPaths);
+    compileProgram(program);
   }
   else {
     console.log('could not finish build');
+    process.exit(-1);
   }
+}
+else if (mode == 'build'){
+  let program = analyzeProgram(new Map())
+  if (program != null) {
+    compileProgram(program);
+  }
+  else {
+    console.log('could not finish build');
+    process.exit(-1);
+  }
+}
+else if (mode == 'lsp') {
+  Lsp.startServer();
+}
+
+interface AnalysisResult {
+  includes: Set<string>,
+  program: Program
 }
 
 function analyzeProgram(
-  chadPaths: string[],
-  headerPaths: string[],
   replaceFile: Map<string, string>
-): Program | null {
+): AnalysisResult | null {
+  // determine which files should be analyzed based on entry point
+  let alreadyParsed: Set<string> = new Set();
+  let filePathStack: string[] = ['std/core.chad', entryPoint]
   let programUnits: ProgramUnit[] = [];
   let symbols: UnitSymbols[] = [];
-  for (let filePath of chadPaths) {
-    let fileName = filePath.slice(0, -5);
-    if (replaceFile.has(filePath)) {
-      let progUnit = parse(replaceFile.get(filePath)!, fileName);
-      if (progUnit == null) continue;
-      programUnits.push(progUnit);
+  let headerFiles: Set<string> = new Set();
+
+  while (filePathStack.length != 0) {
+    let filePath = filePathStack.pop()!;
+    if (alreadyParsed.has(filePath)) continue;
+    alreadyParsed.add(filePath);
+
+    if (filePath.endsWith('.h')) {
+      let headerUnit = loadHeaderFile(filePath);
+      if (headerUnit == null) {
+        continue;
+      }
+      symbols.push(headerUnit);
+      headerFiles.add(filePath);
     }
     else {
-      let progUnit = parseFile(filePath, fileName);
-      if (progUnit == null) continue;
-      programUnits.push(progUnit);
-    }
-  }
+      let fileName = filePath.slice(0, -5);
+      if (replaceFile.has(filePath)) {
+        let progUnit = parse(replaceFile.get(filePath)!, fileName);
+        if (progUnit == null) continue;
+        programUnits.push(progUnit);
+      }
+      else {
+        let progUnit = parseFile(filePath, fileName);
+        if (progUnit == null) continue;
+        programUnits.push(progUnit);
+      }
 
-  for (let filePath of headerPaths) {
-    let headerUnit = loadHeaderFile(filePath);
-    if (headerUnit == null) {
-      continue;
+      for (let fileName of programUnits[programUnits.length - 1].referencedUnits) {
+        if (fileName.endsWith('.h')) filePathStack.push(fileName);
+        else filePathStack.push(fileName + '.chad');
+      }
     }
-    symbols.push(headerUnit);
   }
 
   symbols = loadUnits(programUnits, symbols)
@@ -77,13 +158,13 @@ function analyzeProgram(
 
   let mainFn = program.fns.find(x => x.header.name == 'main');
   if (mainFn == undefined) return null;
-  return replaceGenerics(program, symbols, mainFn);
+  return { includes: headerFiles, program: replaceGenerics(program, symbols, mainFn) };
 }
 
-function compileProgram(program: Program, headerPaths: string[]) {
-  let outputFiles: OutputFile[] = codegen(program, new Set(headerPaths));
+function compileProgram(program: AnalysisResult) {
+  let outputFiles: OutputFile[] = codegen(program.program, program.includes);
 
-  let fileNames: string[]= [];
+  let fileNames: string[] = [];
   for (let file of outputFiles) {
     fileNames.push(file.name);
     fs.writeFileSync(path.join('build', file.name), file.data);
@@ -107,11 +188,8 @@ function compileProgram(program: Program, headerPaths: string[]) {
   }
 
   let libPaths = '';
-  for (let i = 2; i < process.argv.length; i++) {
-    let input = process.argv[i];
-    if (input.endsWith('.so') || input.endsWith('.a')) {
-      libPaths += process.argv[i] + ' ';
-    }
+  for (let i = 0; i < libs.length; i++) {
+    libPaths += libs[i] + ' ';
   }
 
   let outputPath = path.join('build', 'output');

@@ -27,7 +27,7 @@ function getConnection(): Connection {
 let hasCodeActionLiteralsCapability = false
 let hasConfigurationCapability = false
 
-export function startServer(chadPaths: string[], headerPaths: string[]): void {
+export function startServer(): void {
   const connection: Connection = getConnection()
 
   console.log = connection.console.log.bind(connection.console)
@@ -84,16 +84,18 @@ export function startServer(chadPaths: string[], headerPaths: string[]): void {
       });
     });
 
+    /*
     let correctPath = '';
     for (let path of chadPaths) {
       if (textDocument.uri.endsWith(path)) {
         if (path.length > correctPath.length) correctPath = path;
       }
     }
+    */
 
     let replaceMap: Map<string, string> = new Map();
-    replaceMap.set(correctPath, textDocument.getText());
-    let _program = analyzeProgram(chadPaths, headerPaths, replaceMap);
+    replaceMap.set('', textDocument.getText());
+    let _program = analyzeProgram(replaceMap);
 
     await connection.sendDiagnostics({ uri: textDocument.uri, diagnostics })
   }
