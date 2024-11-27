@@ -108,7 +108,3 @@ impl json(Vec[T] input, &Fmt output)
 
 # using FFI
 fn queryPerson(str s) person|err
-  int a = 0
-  *int b = &a
-  
-fn putPerson

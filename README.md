@@ -1,46 +1,48 @@
 # Chadscript
 
-## Overview
-
-ChadScript is a prototype compiled programming language focused on simplicity, performance, and safety.
-It is optimized for both systems and application programming
-
-## Documentation
-
-For comprehensive documentation, and guides please visit our [official documentation website](https://qwed81.github.io/chadscript).
+Zero overhead, high performance programming language focused on developer productivity.
 
 ## Prerequisites
 
-ChadScript only runs on linux x64 currently. Other platforms are currently being
+ChadScript only runs on linux. Other platforms are currently being
 implemented and tested.
 
 Building ChadScript programs requires
 - node
 - clang
 
-Building the compiler requires
-- node
-- clang
-- nasm
+Dependencies are planned to be removed in the future. 
 
-## Building
-After installing the required dependencies in the prerequisits section, building is
-as simple as 1 command.
+## Quick Start
+#### Installation
 ```
 git clone git@github.com:qwed81/chadscript.git
 cd chadscript
-mkdir build
+npm install
 npm run build
 ```
+#### Hello World
+```
+# file 'main.chad'
+fn main() int
+  print("hello world")
+  ret 0
+```
+#### Building and Running
+```
+chad main.chad
+```
 
-## Getting Started
+## Learning the Language
 
-See more information on our [official documentation website](https://qwed81.github.io/chadscript/#quick-start)
+- [Langugage Features](https://qwed81.github.io/chadscript/#quick-start)
+- [Compiler Configuration](https://qwed81.github.io/chadscript/#quick-start)
+- [Examples](https://qwed81.github.io/chadscript/#quick-start)
 
 ## Contributing
 
 ChadScript is still in an experimental phase. Any feedback is appriciated, especially
-ideas for features of programming languages that do not exist.
+ideas for features of programming languages.
 
 
 

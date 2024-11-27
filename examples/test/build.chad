@@ -1,0 +1,3 @@
+fn main(int argc, **char argv) int
+  print("src/basic.chad")
+  ret 0

@@ -11,7 +11,7 @@ enum expr
   int IntConst
   recur binaryExpr Binary
 
-impl writeStr(expr e, &Fmt output)
+impl format(&Fmt output, expr e)
   if e is IntConst
     output ++= e.IntConst
   elif e is Binary 

@@ -1,0 +1,173 @@
+use "stdio.h"
+
+# dump of all features as a sanity check that changes
+# do not cause major bugs. This serves as a good example
+# of arbitrary features
+
+decl impl testDefaultImpl(K val)
+  assert true
+
+impl testDefaultImpl(int val)
+  assert false
+
+decl myTrait(T val) 
+
+impl myTrait(int val)
+  assert true
+
+impl myTrait(f64 val)
+  assert false
+
+struct point
+  int x
+  int y
+
+struct testPoint
+  int x2
+  int y2
+
+impl format(&Fmt f, point p)
+  f ++= "({p.x}, {p.y})"
+
+fn testRet(int a) int
+  ret a
+
+fn printFields(T input)
+  for field in input
+    print("{field.name}: {field.val}")
+
+fn main(int argc, **char argv) int
+  point p = {}
+  testPoint p2 = {}
+
+  assert -0.5 < 1
+
+  printFields(p)
+  testDefaultImpl(p)
+  print(p2)
+
+  fn(int) => int newFn = testRet
+  int o = newFn(1)
+
+  assert @sizeOf(point) == 8
+  assert @alignOf(point) == 4
+
+  Vec[int] v = [1, 2, 3, 4]
+  print(v)
+
+  Vec[point] v2 = [{ x = 1, y = 2 }]
+  print(v2)
+
+  *FILE f = fopen(cstr("stdio.h"), cstr("r"))
+  if f == nil
+    print("could not open")
+  else
+    Vec[char] buf = vec(1024)
+    u32 amtRead = fread(buf.base, u32(1), u32(buf.len), f)
+    str s = { base = buf.base, len = 100 }
+    print(s)
+    int result = fclose(f)
+
+  int i = 0
+  assert true
+  fnCall()
+
+  int len = 0
+  setToLen(len, "hello")
+  assert len == 5
+
+  testOps()
+  testControlFlow()
+
+  structTest()
+  enumTest()
+
+  int x = 24
+  print(x)
+
+  int|err output = testTry()
+  assert output is err
+
+  overloadTest(0)
+  genericTest(0)
+
+  myTrait(10)
+
+  for i in 0:1
+    point p = { x = i * 2, y = i }
+    print(p)
+
+  ret 0
+
+
+fn fnCall()
+  assert true
+
+fn setToLen(&int input, str s)
+  input = s.len
+
+fn testOps()
+  char c = 'b'
+  assert int(c - 'a') == 1
+  assert 10 / 5 == 2
+
+fn testControlFlow()
+  int a = 0
+  int output = 0
+  if a == 0
+    output = 1
+  elif a == 1
+    output = 2
+  else
+    output = 3
+
+  for i in 0:3
+    output = output * 2
+    output += i
+
+  int b = 0
+  while b < 10
+    output += 1
+    b += 1
+
+  assert output == 22
+
+struct testStruct
+  int x
+  str s
+
+fn structTest()
+  testStruct test = { x = 0, s = "hello" }
+  assert test.x == 0
+  assert test.s == "hello"
+  testStruct test2 = test
+  test2.x = 1
+  assert test2.x == 1
+
+enum testEnum
+  None 
+  int First
+  f32 Second
+
+fn enumTest()
+  testEnum test = None
+  assert test is None
+  test = First(0)
+  assert test is First && test.First == 0
+
+fn newEnum() int|err
+  ret err("hello world")
+
+fn testTry() int|err
+  int|err e = err("hello world")
+  int b = try e
+  ret 0
+
+fn overloadTest()
+  assert false
+
+fn overloadTest(int a)
+  assert true
+
+fn genericTest(T a)
+  assert true

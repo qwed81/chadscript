@@ -1,0 +1,113 @@
+# not meant to be ran, just used as introduction 
+
+# variables
+fn vars()
+  int a = 0 # i32
+  f32 b = 0.5
+  char c = '0'
+  str s = "hello"
+  *int ptrA = &a
+  Vec[int] v = [1, 2, 3]  
+
+  Fmt f = {} # struct for formatting strings, {} is 0 initialize
+  f ++= "{s} world!" # ++= is syntax for format
+  print(f)
+
+  # TypeUnion enum which is used to represent optional and error values
+  int|nil optInt = nil 
+  str|err optErr = "hello world"
+
+# control flow
+fn controlFlow()
+  bool condition = 1 == 1
+  if true
+    assert true
+  for i in 0:10
+    print(i)
+  int j = 0
+  while j < 10
+    print(j)
+
+# types
+struct point
+  int x
+  int y
+
+# enums are tagged unions that can only be in 1 state at a time
+# note upper case names which is important to avoid name collisions
+enum message
+  str Init
+  Close # close has type 'nil' which means no data is stored
+
+# enums
+fn workWithEnum()
+  str|nil output = nil
+  assert output is nil
+
+  # can use as string once narrowed down
+  if output is str
+    print(output.len)
+
+  message m = Init("hello") # create message of Init
+  if m is Init
+    print(m.Init) # prints the string
+
+fn workWithErrors() int|err 
+  str|err myStr = "hello world" 
+  str output = try myStr # will return err if is error
+
+# functions
+
+# entry point of the program. Chadscript has no runtime so it
+# gives the args directly like a C program
+fn main(int argc, **char argv) int
+  f32 s = overload()
+  ret 0
+
+# functions can be overloaded by return type, paramtypes, and param count
+fn overload() int
+  assert false
+fn overload() f32
+  assert true
+
+# generics
+
+# generics are represented as uppercase 1 letter names.
+fn generic(T input)  
+  print(input)
+
+# declares a generic function with a default impl. decl and impl can
+# not be overloaded because they are used for specialization
+decl impl staticDispatch(T input)
+  for field in input # iterate the fields to build meaningful default impls
+    print(field.name, field.val)
+  assert false
+
+# any time staticDispatch is called with an 'int' as the param
+# it will call this implementation instead of the other one
+impl staticDispatch(int val)
+  assert true
+
+# cffi
+fn cffi()
+  *char template = cstr("hello world\n")
+  # c functions can be called directly as if they were
+  # native functions and header files can be imported as modules
+  "stdio.h"::printf(template)
+
+# memory
+fn manualGarbageCollection()
+  # it is all manual memory managment, but the libraries provide tools to make
+  # it significantly less annoying to deal with malloc/free
+
+  # bp is your 'bump' which is the head of a stack where memory is allocated
+  # by default allocations will go through the alloc function which allocates
+  # with no intention of freeing individual elements. When your algorithm is
+  # done with all the items you can move items to different memory segments and
+  # clear all of the garbage that was allocated
+  bump saveArena = {}
+  *int myArr = alloc(1024) # allocs to bp
+  Vec[int] v = [1, 2, 3, 4] # allocs to bp
+  move(v, saveArena) # deep copies mem in v to a second arena
+  clear(bp) # all allocations are gone but v still lives
+  clear(saveArena) # v is gone too now 
