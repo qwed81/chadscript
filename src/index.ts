@@ -62,6 +62,10 @@ if (process.argv.length > 2) {
   else if (process.argv[2] == 'build') mode = 'build';
 }
 
+if (!fs.existsSync('build/')) {
+  fs.mkdirSync('build');
+}
+
 processArgs(process.argv.slice(2));
 if (entryPoint == '') {
   try {

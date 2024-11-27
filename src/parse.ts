@@ -256,6 +256,10 @@ function positionRange(tokens: Token[]): Position {
 
 function parseFile(filePath: string, progName: string): ProgramUnit | null {
   let unitText;
+  if (filePath.startsWith('std/')) {
+    filePath = __dirname + '/' + filePath;
+  }
+
   try {
     unitText = fs.readFileSync(filePath, 'utf8');
   } catch (err) {

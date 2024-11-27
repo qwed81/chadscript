@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "main": "codegen.js",
   "scripts": {
-    "start": "npx tsc && NODE_OPTIONS=--enable-source-maps node build/index.js",
-    "build": "npx tsc && NODE_OPTIONS=--enable-source-maps && node build.js",
-    "lsp": "npx tsc && NODE_OPTIONS=--enable-source-maps && node lsp.js"
+    "start": "npx tsc && node build.js && NODE_OPTIONS=--enable-source-maps node build/index.js",
+    "build": "npx tsc && node build.js && NODE_OPTIONS=--enable-source-maps"
   },
   "author": "",
   "license": "ISC",
