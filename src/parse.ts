@@ -1681,6 +1681,7 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
     else if (i > 1 && tokens[i - 2].val == '+' && tokens[i - 1].val == '+' && tokens[i].val == '=') {
       tokens.splice(i - 1, 2);
       tokens[i - 2].val = '++=';
+      i -= 1;
     }
     else if (tokens[i].val == '=' && (tokens[i - 1].val == '>' || tokens[i - 1].val == '<'
       || tokens[i - 1].val == '+' || tokens[i - 1].val == '-' || tokens[i - 1].val == '=')) {

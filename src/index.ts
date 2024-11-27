@@ -54,12 +54,12 @@ function processArgs(args: string[]): boolean {
     }
   }
 
-  if (args.length > 2) {
-    if (args[2] == 'lsp') mode = 'lsp';
-    else if (args[2] == 'build') mode = 'build';
-  }
+    return true;
+}
 
-  return true;
+if (process.argv.length > 2) {
+  if (process.argv[2] == 'lsp') mode = 'lsp';
+  else if (process.argv[2] == 'build') mode = 'build';
 }
 
 processArgs(process.argv.slice(2));
