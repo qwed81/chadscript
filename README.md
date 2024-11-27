@@ -35,9 +35,9 @@ chad main.chad
 
 ## Learning the Language
 
-- [Langugage Features](https://qwed81.github.io/chadscript/#quick-start)
-- [Compiler Configuration](https://qwed81.github.io/chadscript/#quick-start)
-- [Examples](https://qwed81.github.io/chadscript/#quick-start)
+- [Langugage Features](https://github.com/qwed81/chadscript/blob/main/examples/overview.chad)
+- [Compiler Configuration](https://github.com/qwed81/chadscript/tree/main/examples/buildscript)
+- [Examples](https://github.com/qwed81/chadscript/tree/main/examples)
 
 ## Contributing
 
