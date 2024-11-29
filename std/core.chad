@@ -304,6 +304,18 @@ impl format(&Fmt fmt, int val)
   str newStr = { base = output, len = len }
   fmt ++= newStr
 
+impl format(&Fmt fmt, f32 val)
+  int len = 0
+  include
+    _len = snprintf(NULL, 0, "%f", _val);
+
+  *char output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%f", _val);
+
+  str newStr = { base = output, len = len }
+  fmt ++= newStr
+
 impl format(&Fmt f, Vec[T] vec)
   f ++= '['
   for i in 0:vec.len
