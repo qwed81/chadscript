@@ -370,17 +370,17 @@ function codeGenExpr(
       let exprB = codeGenExpr(expr.val.right, ctx, position) 
 
       statements = exprA.statements;
-      statements.push(`if (${expr.val.op == '||' ? '!' : ''}${exprA.output}) {`)
+      statements.push(`if (${expr.val.op == '||' ? '!' : ''}(${exprA.output})) {`)
       statements.push(...exprB.statements);
       statements.push('}')
-      exprText = `${exprA.output} ${ expr.val.op } ${exprB.output}`;
+      exprText = `(${exprA.output}) ${ expr.val.op } (${exprB.output})`;
     }
     else {
       let left = codeGenExpr(expr.val.left, ctx, position);
       let right = codeGenExpr(expr.val.right, ctx, position);
       statements = left.statements;
       statements.push(...right.statements);
-      exprText = `${left.output} ${ expr.val.op } ${right.output}`;
+      exprText = `(${left.output}) ${ expr.val.op } (${right.output})`;
     }
   } 
   else if (expr.tag == 'cast') {
