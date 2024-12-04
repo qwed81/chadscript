@@ -507,7 +507,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'return_void') {
-    if (typeApplicable(scope.returnType, NIL, false)) {
+    if (!typeApplicable(scope.returnType, NIL, false)) {
       logError(inst.position, 'returning from non-void fn without expression');
       return null;
     }
@@ -1021,7 +1021,7 @@ function ensureBinOpValid(
             return null;
           }
         }
-        else if (op == '|' || op == '&' || op == '^' || op == '%') {
+        else if (op == '|' || op == '&' || op == '^' || op == '%' || op == '>>' || op == '<<') {
           if (t == 'bool' || t == 'nil' || t == 'f32' || t == 'f64') {
             if (position != null) logError(position, `can not ${op} on '${t}'`);
             return null;
@@ -1303,7 +1303,7 @@ function ensureExprValid(
     if (expr.val.fn.tag == 'var') {
       let name = expr.val.fn.val;
       if (name == 'bool' || name == 'int' || name == 'char'
-        || name == 'i8' || name == 'i16' || name == 'i32'
+        || name == 'i8' || name == 'i16' || name == 'i64'
         || name == 'u8' || name == 'u16' || name == 'u32' || name == 'u64'
         || name == 'f32' || name == 'f64' || name == 'ptr') {
 

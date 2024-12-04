@@ -245,8 +245,9 @@ const MAPPING: [string, number][] = [
   ['^', 4],
   ['&', 5],
   ['==', 6], ['!=', 6], ['<', 6], ['>', 6], ['>=', 6], ['<=', 6], ['is', 6],
-  ['+',  7], ['-', 7],
-  ['/', 8], ['%', 8], ['*', 8],
+  ['>>', 7], ['<<', 7],
+  ['+',  8], ['-', 8],
+  ['/', 9], ['%', 9], ['*', 9],
 ]; 
 
 function positionRange(tokens: Token[]): Position {
@@ -864,6 +865,9 @@ function parseFnHeader(
   else if (tokens[i].val == 'impl') { 
     fnMode = 'impl'
     i += 1;
+    if (tokens[i].val == 'decl') {
+      logError(header.position, 'did you mean decl impl?');
+    }
   }
 
   let paramStart = tokens.map(x => x.val).indexOf('(');
@@ -1342,7 +1346,6 @@ function tryParseLeftExpr(tokens: Token[], position: Position): LeftExpr | null 
       return { tag: 'scope_unit', unit: left.val, inner: right }
     }
     else if (left.tag == 'left_expr' && left.val.tag == 'var') {
-      referencedUnits.add(left.val.val);
       return { tag: 'scope_as', as: left.val.val, inner: right }
     }
     return null;
