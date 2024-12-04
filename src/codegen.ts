@@ -37,6 +37,10 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   }
 
   for (let include of progIncludes) {
+    if (include.startsWith('include/')) {
+      chadDotC += `\n#include <${include.replace('include/', '')}>`;
+    }
+
     chadDotC += '\n#include "../' + include + '"';
   }
 
@@ -171,27 +175,48 @@ function codeGenType(type: Type): string {
     return codeGenType(type.val) + '*';
   }
 
-  let typeStr = toStr(type);
-  if (type.tag != 'struct' || !type.val.template.unit.endsWith('.h')) {
-    typeStr = '_' + typeStr;
+  let typeStr = '';
+  if (type.tag == 'struct') {
+    let generics: string = '_os_';
+    for (let i = 0; i < type.val.generics.length; i++) {
+      generics += replaceAll(codeGenType(type.val.generics[i]), ' ', '_');
+      if (i != type.val.generics.length - 1) {
+        generics += '_c_';
+      }     
+    }
+    if (type.val.generics.length == 0) {
+      typeStr = type.val.template.name;
+    }
+    else {
+      typeStr = type.val.template.name + generics + '_cs_';
+    }
+
+    if (!type.val.template.unit.endsWith('.h')) {
+      typeStr = 'struct _' + typeStr;
+    }
+    else {
+      typeStr = 'struct ' + typeStr;
+    }
+
+    return typeStr;
   }
 
-  typeStr = replaceAll(typeStr, '(', '_op');
-  typeStr = replaceAll(typeStr, ')', '_cp');
-  typeStr = replaceAll(typeStr, '[', '_os');
-  typeStr = replaceAll(typeStr, ']', '_cs');
-  typeStr = replaceAll(typeStr, ',', '_c');
-  typeStr = replaceAll(typeStr, '.', '_');
-  typeStr = replaceAll(typeStr, '/', '_');
-  typeStr = replaceAll(typeStr, '*', '_op_cp');
-  typeStr = replaceAll(typeStr, '&', '*');
-  typeStr = replaceAll(typeStr, ' ', '');
-
-  if (type.tag == 'struct' && !type.val.template.unit.endsWith('.h')) {
-    return 'struct ' + typeStr;
+  if (type.tag == 'fn') {
+    let s = 'fn_op_';
+    for (let i = 0; i < type.paramTypes.length; i++) {
+      s += codeGenType(type.paramTypes[i]);
+      if (i != type.paramTypes.length - 1) {
+        s += '_c_';
+      }
+    }
+    s += `_cp_${codeGenType(type.returnType)}`;
+    s = replaceAll(s, ' ', '');
+    s = replaceAll(s, '*', '_p_');
+    return s;
   }
 
-  return typeStr;
+  compilerError('codegen type fallthrough ' + JSON.stringify(type));
+  return '';
 }
 
 function codeGenFnHeader(fn: Fn): string {
@@ -240,7 +265,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   } 
   else if (inst.tag == 'assign') {
     let rightExpr = codeGenExpr(inst.val.expr, ctx, inst.position);
-    let leftExpr = codeGenLeftExpr(inst.val.to, ctx, inst.position);
+    let leftExpr = codeGenLeftExpr(inst.val.to, ctx, inst.position, false);
 
     statements.push(...rightExpr.statements);
     statements.push(...statements);
@@ -369,8 +394,7 @@ function codeGenExpr(
       let exprA = codeGenExpr(expr.val.left, ctx, position);
       let exprB = codeGenExpr(expr.val.right, ctx, position) 
 
-      statements = exprA.statements;
-      statements.push(`if (${expr.val.op == '||' ? '!' : ''}(${exprA.output})) {`)
+      statements.push(`if (${expr.val.op == '||' ? '!' : ''}${exprA.output}) {`)
       statements.push(...exprB.statements);
       statements.push('}')
       exprText = `(${exprA.output}) ${ expr.val.op } (${exprB.output})`;
@@ -501,7 +525,7 @@ function codeGenExpr(
     exprText = `${expr.val}`;
   }
   else if (expr.tag == 'is') {
-    let leftExpr = codeGenLeftExpr(expr.left, ctx, position);
+    let leftExpr = codeGenLeftExpr(expr.left, ctx, position, false);
     statements = leftExpr.statements;
     exprText = `${leftExpr.output}.tag == ${expr.variantIndex}`;
   }
@@ -520,10 +544,10 @@ function codeGenExpr(
   } 
   else if (expr.tag == 'left_expr') {
     // doesn't need to store var on stack (already stored)
-    return codeGenLeftExpr(expr.val, ctx, position);
+    return codeGenLeftExpr(expr.val, ctx, position, false);
   }
   else if (expr.tag == 'ptr') {
-    let innerExpr = codeGenLeftExpr(expr.val, ctx, position);
+    let innerExpr = codeGenLeftExpr(expr.val, ctx, position, false);
     statements.push(...innerExpr.statements);
     exprText = `&(${innerExpr.output})`;
   }
@@ -594,7 +618,9 @@ function codeGenFnCall(fnCall: FnCall, ctx: FnContext, position: Position): Code
   if (fnCall.fn.type.tag != 'fn') return undefined!;
 
   let statements: string[] = [];
-  let output = codeGenLeftExpr(fnCall.fn, ctx, position).output + '(';
+  let output = codeGenLeftExpr(fnCall.fn, ctx, position, true).output;
+  output += '(';
+
   for (let i = 0; i < fnCall.exprs.length; i++) {
     if (fnCall.fn.type.paramTypes[i].tag == 'link') output += '&';
     let paramExpr = codeGenExpr(fnCall.exprs[i], ctx, position);
@@ -608,7 +634,7 @@ function codeGenFnCall(fnCall: FnCall, ctx: FnContext, position: Position): Code
   return { output: output + ')', statements };
 }
 
-function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position): CodeGenExpr {
+function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position, fnCall: boolean): CodeGenExpr {
   let statements: string[] = [];
   let leftExprText: string = '';
 
@@ -632,7 +658,12 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position)
   } 
   else if (leftExpr.tag == 'fn') {
     if (leftExpr.type.tag != 'fn') return undefined!;
-    leftExprText = getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
+    if (fnCall) {
+      leftExprText = getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
+    }
+    else {
+      leftExprText = '(void*)' + getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
+    }
   }
   else {
     if (leftExpr.mode == 'link') {

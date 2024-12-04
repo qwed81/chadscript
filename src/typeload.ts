@@ -462,7 +462,7 @@ function toStr(t: Type | null): string {
         s += ', ';
       }
     }
-    return `${toStr(t.returnType)}(${s})`;
+    return `fn(${s}) => ${toStr(t.returnType)}`;
   }
 
   compilerError('toStr fallthrough')
@@ -881,7 +881,7 @@ function resolveFnOrDecl(
       let line: string = 'expected: ' + name + '(';
       let t = results.wrongTypeFns[i];
       for (let j = 0; j < t.paramTypes.length; j++) {
-        line += toStr(t.paramTypes[j]) + ' ' + t.paramNames[j];
+        line += toStr(t.paramTypes[j]);
         if (j != t.paramTypes.length - 1) line += ', '
       }
       line += ')'

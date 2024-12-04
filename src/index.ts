@@ -198,7 +198,7 @@ function compileProgram(program: AnalysisResult) {
 
   let outputPath = path.join('build', 'output');
   try {
-    execSync(`clang ${objPaths} ${libPaths} -o ${outputPath}`);
+    execSync(`clang ${objPaths} ${libPaths} -o ${outputPath} -Wno-parentheses-equality`);
   } catch {}
 }
 

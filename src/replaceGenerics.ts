@@ -159,6 +159,7 @@ function addType(set: FnSet, type: Type) {
     for (let i = 0; i < type.paramTypes.length; i++) {
       addType(set, type.paramTypes[i]);
     }
+
     addType(set, type.returnType);
   }
 }

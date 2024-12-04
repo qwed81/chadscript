@@ -28,6 +28,21 @@ impl next(&range r) *int
   r.start += 1
   ret &r.output
 
+fn rev(range r) revRange
+  ret { start = r.end - 1, end = r.start - 1, output = r.end - 1 }
+
+struct revRange
+  int start
+  int end
+  int output
+
+impl next(&revRange r) *int
+  r.output = r.start 
+  if r.start == r.end
+    ret nil
+  r.start -= 1
+  ret &r.output
+
 struct bump
   *u8 base
   *u8 curr
@@ -92,23 +107,6 @@ fn abs(f32 a) f32
     ret a * f32(-1)
   ret a
 
-##
-fn rev(range r) revRange
-  ret { start = r.end - 1, end = r.start - 1, output = r.start - 1 }
-
-struct revRange
-  int start
-  int end
-  int output
-
-fn next(&revRange r) *int
-  int thisIndex = r.start
-  if r.start == r.end
-    ret nil
-  r.start -= 1
-  ret thisIndex
-##
-
 fn print(T val)
   Fmt f = fmt()
   format(f, val)
@@ -139,6 +137,12 @@ fn append(&Vec[T] l, T val)
 
   l.base[l.len] = val
   l.len += 1
+
+fn remove(&Vec[T] l, int index)
+  assert index < l.len && index >= 0
+  for i in index:l.len - 1
+    l.base[i] = l.base[i + 1] 
+  l.len -= 1
 
 struct str
   get *char base
@@ -328,12 +332,13 @@ impl format(&Fmt f, char c)
   appendOne(f, c)
 
 struct Map[K, V]
+  int len
+  *K keys
+  *V values
+
+fn set(&Map[K, V] map, K key, V value)
 
 struct Set[T]
-
-struct Heap[T]
-
-struct BST[T]
 
 fn rand(int start, int end) int
   include
