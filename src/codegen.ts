@@ -420,12 +420,14 @@ function codeGenExpr(
   else if (expr.tag == 'try') {
     let innerExpr = codeGenExpr(expr.val, ctx, position);
     statements = innerExpr.statements;
-    statements.push(`if (${innerExpr.output}.tag == 1) return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${innerExpr.output}._val1 };`);
+    let name = uniqueVarName(ctx);
+    statements.push(`${codeGenType(expr.type)} ${name} = ${innerExpr.output};`);
+    statements.push(`if (${name}.tag == 1) return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 };`);
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'struct' && expr.type.val.template.name == 'nil') {
       return { statements , output: '' };
     }
-    return { statements, output: `${innerExpr.output}._val0` };
+    return { statements, output: `${name}._val0` };
   }
   else if (expr.tag == 'assert') {
     let innerExpr = codeGenExpr(expr.val, ctx, position);

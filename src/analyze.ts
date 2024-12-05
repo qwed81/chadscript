@@ -1,5 +1,5 @@
 import * as Parse from './parse';
-import { logError, compilerError, Position } from './util'
+import { logError, logMultiError, compilerError, Position } from './util'
 import {
   Type, Fn, UnitSymbols, resolveType, typeApplicable,
   NIL, INT, BOOL, resolveFnOrDecl, FnResult, toStr,
@@ -7,7 +7,8 @@ import {
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
-  resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields
+  resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields, lookupFnOrDecl,
+  getFoundFns, getExpectedFns, getCurrentFn
 } from './typeload'
 import * as Enum from './enum';
 
@@ -1561,30 +1562,51 @@ function ensureExprValid(
           return null;
         }
 
+        let varName = expr.val.val;
         let paramTypes: (Type | null)[] | null = null; 
         let retType: Type | null = null; 
         if (expectedReturn != null && expectedReturn.tag == 'fn') {
           paramTypes = expectedReturn.paramTypes;
           retType = expectedReturn.returnType;
         }
-        let fn = resolveFnOrDecl(symbols, expr.val.val, paramTypes, retType, position);
-        if (fn == null) {
-          ensureLeftExprValid(symbols, expr.val, scope, position); // log proper error
-          return null;
-        } 
 
-        computedExpr = {
-          tag: 'left_expr',
-          val: {
-            tag: 'fn',
-            unit: fn.unit,
-            name: fn.name,
-            type: fn.resolvedType,
-            mode: fn.mode,
-            isGeneric: fn.isGeneric
-          },
-          type: fn.resolvedType 
-        };
+        let fnResults = lookupFnOrDecl(symbols, varName, paramTypes, retType);
+        if (fnResults.possibleFns.length == 1) {
+          let fn = fnResults.possibleFns[0];
+          computedExpr = {
+            tag: 'left_expr',
+            val: {
+              tag: 'fn',
+              unit: fn.unit,
+              name: fn.name,
+              type: fn.resolvedType,
+              mode: fn.mode,
+              isGeneric: fn.isGeneric
+            },
+            type: fn.resolvedType 
+          };
+        }
+        else if (fnResults.possibleFns.length > 0) {
+          if (position != null) {
+            let context: string[] = []
+            getFoundFns(fnResults, varName, context);
+            getCurrentFn(varName, paramTypes, retType, context);
+            logMultiError(position, varName + 'is an ambiguous fn', context);
+          }
+          return null
+        }
+        else if (fnResults.wrongTypeFns.length > 1) {
+          let context: string[] = []
+          if (position != null) {
+            getFoundFns(fnResults, varName, context);
+            logMultiError(position, varName + 'is an ambiguous fn', context);
+          }
+          return null
+        }
+        else {
+          if (position != null) logError(position, 'could not find ' + varName);
+          return null;
+        }
       }
       else {
         computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };

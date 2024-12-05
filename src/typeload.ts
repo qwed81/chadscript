@@ -10,7 +10,7 @@ export {
   typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
-  resolveMacro, isGeneric, getFields
+  resolveMacro, isGeneric, getFields, lookupFnOrDecl, getFoundFns, getExpectedFns, getCurrentFn
 }
 
 type Modifier = 'pri' | 'pub';
@@ -358,6 +358,8 @@ function typeApplicableStateful(
   if (supa.tag == 'link') {
     return typeApplicableStateful(sub, supa.val, genericMap, fnHeader);
   }
+
+  if (supa.tag == 'struct' && supa.val.template.name == '...') return true;
 
   if (sub.tag == 'ambig_float') {
     if (supa.tag == 'ambig_float') return true;
@@ -869,6 +871,78 @@ interface FnLookupResult {
   wrongTypeFns: Fn[]
 }
 
+function getExpectedFns(
+  results: FnLookupResult,
+  name: string,
+  context: string[]
+) {
+  for (let i = 0; i < results.wrongTypeFns.length; i++) {
+    let line: string = 'expected: ' + name + '(';
+    let t = results.wrongTypeFns[i];
+    for (let j = 0; j < t.paramTypes.length; j++) {
+      line += toStr(t.paramTypes[j]);
+      if (j != t.paramTypes.length - 1) line += ', '
+    }
+    line += ')'
+    if (t.returnType.tag != 'struct' || t.returnType.val.template.name != 'nil') {
+      line += ' ' + toStr(t.returnType);
+    }
+    context.push(line);
+  }
+}
+
+function getFoundFns(
+  results: FnLookupResult,
+  name: string,
+  context: string[]
+) {
+  for (let i = 0; i < results.possibleFns.length; i++) {
+    let line: string = 'expected: ' + name + '(';
+    let t = results.possibleFns[i].resolvedType;
+    if (t.tag != 'fn') {
+      compilerError('expected fn');
+      return;
+    }
+
+    for (let j = 0; j < t.paramTypes.length; j++) {
+      line += toStr(t.paramTypes[j]);
+      if (j != t.paramTypes.length - 1) line += ', '
+    }
+    line += ')'
+    if (t.returnType.tag != 'struct' || t.returnType.val.template.name != 'nil') {
+      line += ' ' + toStr(t.returnType);
+    }
+    context.push(line);
+  }
+}
+
+function getCurrentFn(
+  name: string,
+  paramTypes: (Type | null)[] | null,
+  retType: Type | null,
+  context: string[]
+) {
+  let line: string = 'found: ' + name + '(';
+  if (paramTypes != null) {
+    for (let j = 0; j < paramTypes.length; j++) {
+      if (paramTypes[j] == null) line += 'ANY'
+      else line += toStr(paramTypes[j]);
+
+      if (j != paramTypes.length - 1) line += ', '
+    }
+  }
+  else {
+    line += '...';
+  }
+
+  line += ')'
+
+  if (retType != null && (retType.tag != 'struct' || retType.val.template.name != 'nil')) {
+    line += ' ' + toStr(retType);
+  }
+  context.push(line)
+}
+
 function resolveFnOrDecl(
   unit: UnitSymbols,
   name: string,
@@ -876,45 +950,23 @@ function resolveFnOrDecl(
   retType: Type | null,
   position: Position | null
 ): FnResult | null {
-  let results = lookupFnInternal(['fn', 'decl', 'declImpl'], unit, name, paramTypes, retType);
+  let results = lookupFnOrDecl(unit, name, paramTypes, retType);
   if (results.possibleFns.length == 1) return results.possibleFns[0];
   if (results.possibleFns.length > 1) {
-    if (position != null) logError(position, 'function is ambiguous');
+    let context: string[] = [];
+    getFoundFns(results, name, context);
+    getCurrentFn(name, paramTypes, retType, context);
+    if (position != null) logMultiError(position, 'function is ambiguous', context);
     return null
   }
   if (results.wrongTypeFns.length > 0) {
     let context: string[] = [];
-    for (let i = 0; i < results.wrongTypeFns.length; i++) {
-      let line: string = 'expected: ' + name + '(';
-      let t = results.wrongTypeFns[i];
-      for (let j = 0; j < t.paramTypes.length; j++) {
-        line += toStr(t.paramTypes[j]);
-        if (j != t.paramTypes.length - 1) line += ', '
-      }
-      line += ')'
-      if (t.returnType.tag != 'struct' || t.returnType.val.template.name != 'nil') {
-        line += ' ' + toStr(t.returnType);
-      }
-      context.push(line);
-    }
-    let line: string = 'found: ' + name + '(';
-    if (paramTypes != null) {
-      for (let j = 0; j < paramTypes.length; j++) {
-        line += toStr(paramTypes[j]);
-        if (j != paramTypes.length - 1) line += ', '
-      }
-      line += ')'
-
-      if (retType != null && (retType.tag != 'struct' || retType.val.template.name != 'nil')) {
-        line += ' ' + toStr(retType);
-      }
-      context.push(line)
-    }
-
+    getExpectedFns(results, name, context);
+    getCurrentFn(name, paramTypes, retType, context);
     if (position != null) logMultiError(position, 'function is wrong type', context);
     return null
   }
-  if (position != null) logError(position, 'unknown function');
+  if (position != null) logError(position, 'unknown function ' + name);
   return null;
 }
 
@@ -1004,8 +1056,7 @@ function resolveImpl(
   return null;
 }
 
-function lookupFnInternal(
-  modeFilter: string[],
+function lookupFnOrDecl(
   unit: UnitSymbols,
   name: string,
   paramTypes: (Type | null)[] | null,
@@ -1022,15 +1073,23 @@ function lookupFnInternal(
   let wrongTypeFns: Fn[] = []; 
   let possibleFns: FnResult[] = [];
   fnLoop: for (let fn of fns) {
-    if (!modeFilter.includes(fn.mode)) continue;
+    if (!['fn', 'decl', 'declImpl'].includes(fn.mode)) continue;
     let genericMap: Map<string, Type> = new Map();
 
     if (paramTypes != null) {
-      if (fn.paramTypes.length != paramTypes.length) {
+      let lastParam = fn.paramTypes[fn.paramTypes.length - 1];
+      let varArgs = false;
+      let paramLen = fn.paramTypes.length;
+      if (fn.paramTypes.length > 0 && lastParam.tag == 'struct' && lastParam.val.template.name == '...') {
+        varArgs = true;
+        paramLen -= 1;
+      }
+
+      if (fn.paramTypes.length != paramTypes.length && !varArgs) {
         wrongTypeFns.push(fn);
         continue fnLoop;
       };
-      for (let i = 0; i < paramTypes.length; i++) {
+      for (let i = 0; i < paramLen; i++) {
         let pType = paramTypes[i];
         if (pType == null) continue;
         if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true)) {
