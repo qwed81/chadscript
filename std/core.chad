@@ -1,3 +1,5 @@
+use "include/string.h" as memory, "include/stdlib.h" as stdlib
+
 struct type
 
 macro alignOf(type t) int
@@ -51,25 +53,33 @@ local bump bp = {}
 
 fn clear(&bump bp)
   int diff = int(u64(bp.curr) - u64(bp.base))
-  memset(bp.base, 0, diff)
+  memSet(bp.base, 0, diff)
   bp.curr = bp.base
 
-fn memset(*u8 mem, u8 val, int num)
-  include
-    memset(_mem, _val, _num);
+fn memEq(*T memA, *T memB, int size) bool
+  *u8 u8memA = ptr(memA)
+  *u8 u8memB = ptr(memB)
+  ret memory::memcmp(u8memA, u8memB, u32(size)) == 0
+
+fn memSet(*T mem, int val, int amt)
+  *u8 u8mem = ptr(mem)
+  *u8 _ = memory::memset(u8mem, val, u32(amt))
+
+fn memCopy(*T dest, *T src, int size)
+  *u8 u8memDest = ptr(dest)
+  *u8 u8memSrc = ptr(src)
+  *u8 _ = memory::memcpy(u8memDest, u8memSrc, u32(size))
 
 fn alloc(&bump bp, int amt) *T
-  int allocSize = 0
-  include
-    _allocSize = _amt * sizeof($(T));
-
+  int allocSize = amt * @sizeOf(T)
   if bp.base == nil
-    bp.base = malloc(1024 * 1024 * 1024)
+    bp.base = malloc(1024 * 1024)
     bp.curr = bp.base
 
   *T newLoc = ptr(bp.curr)
   newLoc = align(newLoc)
   bp.curr = ptr(&newLoc[amt])
+  memSet(newLoc, 0, allocSize)
   ret newLoc
 
 fn alloc(int amt) *T
@@ -83,14 +93,12 @@ fn align(*T p) *T
   ret nil
 
 fn malloc(int amt) *T
-  include
-    return malloc(_amt * sizeof($(T)));
-  ret nil
+  int size = amt * @sizeOf(T)
+  *u8 out = stdlib::malloc(u32(size))
+  ret ptr(out)
 
 fn free(*T mem)
-  include
-    free(_mem);
-  ret nil
+  stdlib::free(ptr(mem))
 
 fn min(int a, int b) int
   if b < a
@@ -161,20 +169,15 @@ impl index(&str s, range r) *str
 fn str(str s) str
   ret s
 
-impl eq(str a, str b) bool
-  if a.len != b.len
-    ret false
-  for i in 0:a.len
-    if a[i] != b[i]
-      ret false
-  ret true
-
 fn cstr(str s) *char
   *char cstr = alloc(s.len + 1)
   for i in 0:s.len
     cstr[i] = s[i]
   cstr[s.len] = '\0'
   ret cstr
+
+fn lines(str s) Vec[str]
+  ret split(s, '\n')
 
 fn split(str s) Vec[str]
   ret split(s, ' ')
@@ -195,21 +198,61 @@ fn split(str s, char c) Vec[str]
   ret output
 
 fn trim(str s) str
-  ret ""
+  int start = 0
+  while start < s.len && (s[start] == ' ' || s[start] == '\n' || s[start] == '\t')
+    start += 1
+  int end = s.len - 1
+  while end >= 0 && (s[end] == ' ' || s[end] == '\n' || s[end] == '\t')
+    end -= 1
+  ret s[start:end]
 
 fn contains(str s, str inner) bool
+  for i in 0:(s.len - inner.len + 1)
+    bool contained = true
+    for j in 0:inner.len
+      if s[i] != inner[j]
+        contained = false
+        break
+    if contained
+      ret true
   ret false
 
 fn startsWith(str s, str start) bool
-  ret false
+  if s.len < start.len
+    ret false
+  for i in 0:start.len
+    if s[i] != start[i]
+      ret false
+  ret true
 
 fn endsWith(str s, str end) bool
-  ret false
+  if s.len < end.len
+    ret false
+  for i in 0:end.len
+    if s[s.len - end.len + i] != end[i]
+      ret false
+  ret true
 
 fn indexOf(str s, str inner) int|nil
+  for i in 0:(s.len - inner.len + 1)
+    bool contained = true
+    for j in 0:inner.len
+      if s[i] != inner[j]
+        contained = false
+        break
+    if contained
+      ret i
   ret nil
 
 fn lastIndexOf(str s, str inner) int|nil
+  for i in rev(0:(s.len - inner.len + 1))
+    bool contained = true
+    for j in 0:inner.len
+      if s[i] != inner[j]
+        contained = false
+        break
+    if contained
+      ret i
   ret nil
 
 struct Fmt
@@ -296,29 +339,59 @@ impl format(&Fmt fmt, u64 val)
   str newStr = { base = output, len = len }
   fmt ++= newStr
 
-impl format(&Fmt fmt, int val)
+impl format(&Fmt fmt, u32 val)
+  format(fmt, u64(val))
+
+impl format(&Fmt fmt, u16 val)
+  format(fmt, u64(val))
+
+impl format(&Fmt fmt, u8 val)
+  format(fmt, u64(val))
+
+impl format(&Fmt fmt, i64 val)
   int len = 0
   include
-    _len = snprintf(NULL, 0, "%d", _val);
+    _len = snprintf(NULL, 0, "%ld", _val);
 
   *char output = alloc(len + 1)
   include
-    snprintf(_output, _len + 1, "%d", _val);
+    snprintf(_output, _len + 1, "%ld", _val);
+
+  str newStr = { base = output, len = len }
+  fmt ++= newStr
+
+impl format(&Fmt fmt, int val)
+  format(fmt, i64(val))
+
+impl format(&Fmt fmt, i16 val)
+  format(fmt, i64(val))
+
+impl format(&Fmt fmt, i8 val)
+  format(fmt, i64(val))
+
+impl format(&Fmt fmt, f64 val)
+  int len = 0
+  include
+    _len = snprintf(NULL, 0, "%lf", _val);
+
+  *char output = alloc(len + 1)
+  include
+    snprintf(_output, _len + 1, "%lf", _val);
 
   str newStr = { base = output, len = len }
   fmt ++= newStr
 
 impl format(&Fmt fmt, f32 val)
-  int len = 0
-  include
-    _len = snprintf(NULL, 0, "%f", _val);
+  format(fmt, f64(val))
 
-  *char output = alloc(len + 1)
-  include
-    snprintf(_output, _len + 1, "%f", _val);
+impl format(&Fmt fmt, bool val)
+  if val == true
+    format(fmt, "true")
+  else
+    format(fmt, "false")
 
-  str newStr = { base = output, len = len }
-  fmt ++= newStr
+impl format(&Fmt fmt, *T p)
+  format(fmt, u64(p))
 
 impl format(&Fmt f, Vec[T] vec)
   f ++= '['
@@ -331,14 +404,132 @@ impl format(&Fmt f, Vec[T] vec)
 impl format(&Fmt f, char c)
   appendOne(f, c)
 
+decl impl eq(T a, T b) bool
+  ret memEq(&a, &b, @sizeOf(T))
+
+impl eq(str a, str b) bool
+  if a.len != b.len
+    ret false
+  ret memEq(a.base, b.base, a.len)
+
+impl eq(Vec[T] a, Vec[T] b) bool
+  if a.len != b.len
+    ret false
+  for i in 0:a.len
+    if !eq(a[i], b[i])
+      ret false
+  ret true
+
+decl impl hash(K key, &u32 hashState)
+  for field in key
+    hash(field.val, hashState)
+
+impl hash(u64 key, &u32 hashState)
+  hashState += u32((key & 32) ^ (key >> 32) ^ 2984300601)
+
+impl hash(u32 key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(u16 key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(u8 key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(i64 key, &u32 hashState)
+  hashState += u32((key & 32) ^ (key >> 32) ^ 2984300601)
+
+impl hash(int key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(i16 key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(i8 key, &u32 hashState)
+  hashState += u32(key ^ 2984300601)
+
+impl hash(char key, &u32 hashState)
+  hashState += u32(u32(key) ^ 2984300601)
+
+impl hash(bool key, &u32 hashState)
+  hashState += u32(key)
+
+impl hash(f64 key, &u32 hashState)
+  hashState += u32(u64(key) ^ 2984300601)
+
+impl hash(f32 key, &u32 hashState)
+  hashState += u32(u32(key) ^ 2984300601)
+
+impl hash(Vec[T] key, &u32 hashState)
+  for i in 0:key.len
+    hash(key[i], hashState)
+
+impl hash(str key, &u32 hashState)
+  for i in 0:key.len
+    hash(key[i], hashState)
+
+struct MapEntry[K, V]
+  K key
+  V val
+  pri bool hasValue
+
 struct Map[K, V]
-  int len
-  *K keys
-  *V values
+  get int len
+  get int capacity
+  pri *MapEntry[K, V] entries
+
+fn allocMap(int capacity) Map[K, V]
+  assert capacity > 0
+  ret { len = 0, capacity = capacity, entries = alloc(capacity) }
+
+fn lookupMapEntry(*MapEntry[K, V] entries, int capacity, K key) *MapEntry[K, V]
+  u32 hashState = 0
+  hash(key, hashState)
+  int i = int(hashState & u32(capacity - 1))
+  while entries[i].hasValue && key != entries[i].key
+    i = ((i + 1) & (capacity - 1))
+  ret &entries[i]
+
+impl index(&Map[K, V] map, K key) *V
+  assert map.len > 0
+  *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
+  assert entry[0].hasValue
+  ret &entry[0].val
 
 fn set(&Map[K, V] map, K key, V value)
+  if map.len > 0
+    *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
+    if entry[0].hasValue
+      entry[0].val = value
+      ret
 
-struct Set[T]
+  if map.len * 5 >= map.capacity * 4
+    int newCapacity = max(8, map.capacity * 2)
+    *MapEntry[K, V] newEntries = alloc(newCapacity) 
+    for i in 0:map.capacity
+      if map.entries[i].hasValue
+        lookupMapEntry(newEntries, newCapacity, map.entries[i].key)[0] = map.entries[i]
+    map.entries = newEntries
+    map.capacity = newCapacity
+
+  lookupMapEntry(map.entries, map.capacity, key)[0] = { key = key, val = value, hasValue = true }
+  map.len += 1
+
+impl format(&Fmt f, Map[K, V] map)
+  f ++= '['
+  for i in 0:map.capacity
+    if map.entries[i].hasValue
+      f ++= "("
+      f ++= map.entries[i].key
+      f ++= ": "
+      f ++= map.entries[i].val
+      f ++= ") , "
+  f.len -= 3
+  f ++= ']'
+
+fn contains(Map[K, V] map, K key) bool
+  *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
+  ret entry == nil || !entry[0].hasValue
 
 fn rand(int start, int end) int
   include
@@ -349,21 +540,6 @@ fn rand() f64
   include
     return ((double)rand() / (double)RAND_MAX);
   ret 0.0
-
-fn str(f64 val) str
-  int len = 0
-  include
-    _len = snprintf(NULL, 0, "%lf", *_val);
-
-  *char output = alloc(len + 1)
-  include
-    snprintf(_output, _len + 1, "%lf", *_val);
-  ret { base = output, len = len }
-
-fn str(char val) str
-  Fmt buf = fmt(1)
-  buf[0] = val
-  ret str(buf)
 
 fn input(str output) int|err
   int val = 0
