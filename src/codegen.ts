@@ -132,7 +132,7 @@ function codeGenFn(fn: FnImpl) {
 
   let retType = fn.header.returnType;
   if (retType.tag == 'struct' && retType.val.template.name == 'nil') {
-    bodyStr += '\n\treturn 0;'
+    bodyStr += '\n\treturn;'
   }
   else if (typeApplicable(NIL, retType, false)) {
     bodyStr += `\n\treturn (${codeGenType(fn.header.returnType)}){ 0 };`
@@ -154,7 +154,7 @@ function codeGenType(type: Type): string {
   if (type.tag == 'struct' && isBasic(type)) {
     let name = type.val.template.name;
     if (name == 'int') return 'int32_t';
-    else if (name == 'nil') return 'int';
+    else if (name == 'nil') return 'void';
     else if (name == 'i64') return 'int64_t';
     else if (name == 'i16') return 'int16_t';
     else if (name == 'i8') return 'int8_t';
@@ -309,7 +309,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   }
   else if (inst.tag == 'return') {
     if (inst.val == null) {
-      statements.push('return 0;');
+      statements.push('return;');
     }
     else {
       let expr = codeGenExpr(inst.val, ctx, inst.position);
@@ -418,11 +418,17 @@ function codeGenExpr(
     exprText = `!(${innerExpr.output})`;
   } 
   else if (expr.tag == 'try') {
+    if (expr.val.type.tag != 'struct') {
+      compilerError('expected struct');
+      return undefined!;
+    }
+
     let innerExpr = codeGenExpr(expr.val, ctx, position);
     statements = innerExpr.statements;
     let name = uniqueVarName(ctx);
-    statements.push(`${codeGenType(expr.type)} ${name} = ${innerExpr.output};`);
+    statements.push(`${codeGenType(expr.val.type)} ${name} = ${innerExpr.output};`);
     statements.push(`if (${name}.tag == 1) return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 };`);
+
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'struct' && expr.type.val.template.name == 'nil') {
       return { statements , output: '' };
@@ -729,6 +735,13 @@ function codeGenStructDef(struct: Type): string {
 
   let fields = getFields(struct);
   for (let i = 0; i < fields.length; i++) {
+    let fieldType = fields[i].type;
+    if (fieldType.tag == 'struct' 
+      && fieldType.val.template.name == 'nil'
+      && fieldType.val.template.unit == 'std/core') {
+      continue; 
+    } 
+
     structStr += '\n  ' + codeGenType(fields[i].type);
     structStr += ' _' + fields[i].name + ';';
   }

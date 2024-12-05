@@ -1251,11 +1251,10 @@ function ensureExprValid(
     else {
       innerExpr = ensureExprValid(symbols, expr.val, null, scope, position);
     }
-    if (innerExpr == null) return null;
 
-    if (expr.tag == 'try') {
-      return { tag: 'try', val: innerExpr, type: innerExpr.type };
-    }
+    if (innerExpr == null) return null;
+    let successType: Type = getFields(innerExpr.type)[0].type;
+    computedExpr = { tag: 'try', val: innerExpr, type: successType };
   }
 
   if (expr.tag == 'not') {
