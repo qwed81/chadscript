@@ -306,12 +306,19 @@ function typeEq(t1: Type, t2: Type): boolean {
     return typeEq(t1, t2.val);
   }
 
-  if (t1.tag == 'ambig_int' && t2.tag == 'ambig_int') {
-    return true;
+  if (t1.tag == 'ambig_int') {
+    if (t2.tag == 'ambig_int') return true;
+    if (t2.tag != 'struct' || !isBasic(t2)) return false;
+    let name = t2.val.template.name;
+    return name == 'i8' || name == 'i16' || name == 'int' || name == 'i64'
+      || name == 'u8' || name == 'u16' || name == 'u32' || name == 'u64';
   }
 
-  if (t1.tag == 'ambig_float' && t2.tag == 'ambig_float') {
-    return true;
+  if (t1.tag == 'ambig_float') {
+    if (t2.tag == 'ambig_float') return true;
+    if (t2.tag != 'struct' || !isBasic(t2)) return false;
+    let name = t2.val.template.name;
+    return name == 'f32' || name == 'f64';
   }
 
   if (t1.tag != t2.tag) return false;
@@ -890,6 +897,20 @@ function resolveFnOrDecl(
       }
       context.push(line);
     }
+    let line: string = 'found: ' + name + '(';
+    if (paramTypes != null) {
+      for (let j = 0; j < paramTypes.length; j++) {
+        line += toStr(paramTypes[j]);
+        if (j != paramTypes.length - 1) line += ', '
+      }
+      line += ')'
+
+      if (retType != null && (retType.tag != 'struct' || retType.val.template.name != 'nil')) {
+        line += ' ' + toStr(retType);
+      }
+      context.push(line)
+    }
+
     if (position != null) logMultiError(position, 'function is wrong type', context);
     return null
   }
@@ -1005,7 +1026,10 @@ function lookupFnInternal(
     let genericMap: Map<string, Type> = new Map();
 
     if (paramTypes != null) {
-      if (fn.paramTypes.length != paramTypes.length) continue;
+      if (fn.paramTypes.length != paramTypes.length) {
+        wrongTypeFns.push(fn);
+        continue fnLoop;
+      };
       for (let i = 0; i < paramTypes.length; i++) {
         let pType = paramTypes[i];
         if (pType == null) continue;

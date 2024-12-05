@@ -4,8 +4,7 @@ import { compilerError, Position, logError } from './util';
 import {
   Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
   NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
-  F64, getFields,
-  isGeneric
+  F64, getFields, isGeneric
 } from './typeload';
 
 export {
@@ -648,7 +647,6 @@ function resolveLeftExpr(
     let thisFnType = applyGenericMap(leftExpr.type, genericMap);
 
     let fnType: Type;
-
     if (shouldResolve) {
       let genericFn = getFnTemplate(set, leftExpr.name, leftExpr.unit, leftExpr.mode, leftExpr.type);
       let genericType: Type = { tag: 'fn', paramTypes: genericFn.header.paramTypes, returnType: genericFn.header.returnType };
@@ -673,10 +671,12 @@ function resolveLeftExpr(
         type: serializeType({ tag: 'fn', returnType: implType.returnType, paramTypes: implType.paramTypes }) ,
         mode: leftExpr.mode
       };
-      let key = JSON.stringify(keyProps);
-      set.used.add(key)
 
-      monomorphizeFn(genericFn, set, newFnGenericMap);
+      let key = JSON.stringify(keyProps);
+      if (!set.used.has(key)) {
+        set.used.add(key)
+        monomorphizeFn(genericFn, set, newFnGenericMap);
+      }
     }
     else {
       fnType = leftExpr.type
