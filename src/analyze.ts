@@ -1584,13 +1584,28 @@ function ensureExprValid(
             },
             type: fn.resolvedType 
           };
+
+          if (expectedReturn != null && expectedReturn.tag == 'fn') {
+            if (fn.resolvedType.tag != 'fn') { compilerError('should always be fn'); return null; }
+            if (expectedReturn.tag != 'fn') { compilerError('should always be fn'); return null; }
+
+            for (let i = 0; i < fn.resolvedType.paramTypes.length; i++) {
+              let fp = fn.resolvedType.paramTypes[i].tag;
+              let ep = expectedReturn.paramTypes[i].tag;
+
+              if (fp == 'link' && ep != 'link' || fp != 'link' && ep == 'link') {
+                if (position != null) logError(position, 'references do not match');
+                return null;
+              }
+            }
+          }
         }
         else if (fnResults.possibleFns.length > 0) {
           if (position != null) {
             let context: string[] = []
             getFoundFns(fnResults, varName, context);
             getCurrentFn(varName, paramTypes, retType, context);
-            logMultiError(position, varName + 'is an ambiguous fn', context);
+            logMultiError(position, varName + ' is an ambiguous fn', context);
           }
           return null
         }
@@ -1598,7 +1613,7 @@ function ensureExprValid(
           let context: string[] = []
           if (position != null) {
             getFoundFns(fnResults, varName, context);
-            logMultiError(position, varName + 'is an ambiguous fn', context);
+            logMultiError(position, varName + ' is an ambiguous fn', context);
           }
           return null
         }

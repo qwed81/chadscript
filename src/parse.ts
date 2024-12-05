@@ -1060,18 +1060,34 @@ function tryParseFnCall(tokens: Token[]): FnCall | null {
 function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
   let keyword: string = line.tokens[0].val;
   let tokens = line.tokens;
-  if (keyword == 'if') {
+  if (tokens[tokens.length - 1].val == ';') {
+    logError(positionRange(line.tokens), 'unexpected semi colon');
+    tokens = tokens.slice(0, -1);
+  }
+
+  if (keyword == 'if' || keyword == 'elif' || keyword == 'while') {
     let exprTokens = tokens.slice(1);
+    let splits = balancedSplitTwo(exprTokens, ';')
+    let parseBody: Inst[];
+    if (splits.length == 2) {
+      exprTokens = splits[0];
+      let inst = parseInst({ tokens: splits[1], indent: line.indent, position: line.position }, []);
+      if (inst == null) return null;
+      parseBody = [inst]
+      if (body.length != 0) logError(positionRange(line.tokens), 'unexpected body');
+    }
+    else {
+      let b = parseInstBody(body);
+      if (b == null) return null;
+      parseBody = b;
+    }
+
     let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
     if (cond == null) {
       logError(line.position, 'expected expression');
       return null;
     }
-    let b = parseInstBody(body);
-    if (b == null) {
-      return null;
-    }
-    return { tag: 'if', val: { cond, body: b }, position: line.position };
+    return { tag: keyword, val: { cond, body: parseBody }, position: line.position };
   } 
   else if(keyword == 'include') {
     let lines: string[] = [];
@@ -1086,48 +1102,43 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'include', val: { lines, types }, position: line.position };
   }
-  else if (keyword == 'elif') {
-    let exprTokens = tokens.slice(1);
-    let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
-    if (cond == null) {
-      logError(line.position, 'expected expression');
-      return null;
+  else if (keyword == 'else') {
+    let splits = balancedSplitTwo(tokens, ';');
+    if (splits.length == 1) {
+      if (tokens.length != 1) {
+        logError(line.position, 'unexpected token after \'else\'');
+        return null;
+      }
+      let b = parseInstBody(body);
+      if (b == null) return null;
+      return { tag: 'else', val: b, position: line.position }
     }
-    let b = parseInstBody(body);
-    if (b == null) {
-      return null;
+    else {
+      if (body.length != 0) logError(positionRange(line.tokens), 'unexpected body');
+      let inst = parseInst({ tokens: splits[1], indent: line.indent, position: line.position }, []);
+      if (inst == null) return null;
+      return { tag: 'else', val: [inst], position: line.position }
     }
-    return { tag: 'elif', val: { cond, body: b }, position: line.position };
-  } else if (keyword == 'else') {
-    if (tokens.length != 1) {
-      logError(line.position, 'unexpected token after \'else\'');
-      return null;
-    }
-
-    let b = parseInstBody(body);
-    if (b == null) {
-      return null;
-    }
-    return { tag: 'else', val: b, position: line.position }
-  } 
-  else if (keyword == 'while') {
-    let exprTokens = tokens.slice(1);
-    let cond = tryParseExpr(exprTokens, positionRange(exprTokens));
-    if (cond == null) {
-      logError(line.position, 'expected expression');
-      return null;
-    }
-
-    let b = parseInstBody(body);
-    if (b == null) {
-      return b;
-    }
-    return { tag: 'while', val: { cond, body: b }, position: line.position };
   } 
   else if (keyword == 'for') {
     if (tokens.length < 4 || tokens[2].val != 'in') {
       logError(line.position, 'expected for <var> in <iter>');
       return null;
+    }
+
+    let splits = balancedSplitTwo(tokens, ';')
+    let parseBody: Inst[];
+    if (splits.length == 2) {
+      tokens = splits[0];
+      let inst = parseInst({ tokens: splits[1], indent: line.indent, position: line.position }, []);
+      if (inst == null) return null;
+      parseBody = [inst]
+      if (body.length != 0) logError(positionRange(line.tokens), 'unexpected body');
+    }
+    else {
+      let b = parseInstBody(body);
+      if (b == null) return null;
+      parseBody = b;
     }
 
     let varName = tokens[1].val;
@@ -1137,11 +1148,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       return null;
     }
 
-    let b = parseInstBody(body);
-    if (b == null) {
-      return b;
-    }
-    return { tag: 'for_in', val: { varName, iter: expr, body: b }, position: line.position };
+    return { tag: 'for_in', val: { varName, iter: expr, body: parseBody }, position: line.position };
   } 
   else if (keyword == 'break') {
     return { tag: 'break', position: line.position };
@@ -1599,7 +1606,7 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
   // split tokens based on special characters
   let tokens: Token[] = [];
   let tokenStart = 0;
-  const splitTokens = [' ', '+', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^', '|'];
+  const splitTokens = [' ', '+', '=', '.', ',', '(', ')', '[', ']', '{', '}', '&', '*', '!', '?', '@', ':', '^', '|', ';'];
   for (let i = 0; i < line.length; i++) {
     // process string as a single token
     if (line[i] == '"') {

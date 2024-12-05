@@ -1241,7 +1241,8 @@ function verifyDataType(
   symbols: UnitSymbols,
   type: Parse.Type,
   position: Position,
-  validGenerics: string[]
+  validGenerics: string[],
+  allowRef: boolean
 ): boolean {
   if (type.tag == 'basic') {
     if (type.val.length == 1 && validGenerics.includes(type.val) == false) {
@@ -1257,19 +1258,19 @@ function verifyDataType(
   } 
 
   if (type.tag == 'type_union') {
-    let firstTypeValid = verifyDataType(symbols, type.val0, position, validGenerics);
-    let secondTypeValid = verifyDataType(symbols, type.val1, position, validGenerics);
+    let firstTypeValid = verifyDataType(symbols, type.val0, position, validGenerics, allowRef);
+    let secondTypeValid = verifyDataType(symbols, type.val1, position, validGenerics, allowRef);
     return firstTypeValid && secondTypeValid;
   }
 
   if (type.tag == 'ptr') {
-    return verifyDataType(symbols, type.val, position, validGenerics);
+    return verifyDataType(symbols, type.val, position, validGenerics, allowRef);
   }
 
   if (type.tag == 'generic') {
     let dataType = resolveType(symbols, type, position);
     for (let g of type.val.generics) {
-      if (verifyDataType(symbols, g, position, validGenerics) == false) {
+      if (verifyDataType(symbols, g, position, validGenerics, allowRef) == false) {
         logError(position, 'unknown datatype');
         return false;
       }
@@ -1279,18 +1280,21 @@ function verifyDataType(
   } 
 
   if (type.tag == 'link') {
-    logError(position, 'ref not allowed in struct definitions');
-    return false;
+    if (!allowRef) {
+      logError(position, 'ref not allowed in struct definitions');
+      return false;
+    }
+    return verifyDataType(symbols, type.val, position, validGenerics, allowRef);
   } 
 
   if (type.tag == 'fn') {
     for (let i = 0; i < type.val.paramTypes.length; i++) {
-      if (verifyDataType(symbols, type.val.paramTypes[i], position, validGenerics) == false) {
+      if (verifyDataType(symbols, type.val.paramTypes[i], position, validGenerics, true) == false) {
         logError(position, 'unknown datatype');
         return false;
       }
     }
-    if (verifyDataType(symbols, type.val.returnType, position, validGenerics) == false) {
+    if (verifyDataType(symbols, type.val.returnType, position, validGenerics, true) == false) {
       logError(position, 'unknown datatype');
       return false;
     }
@@ -1303,7 +1307,7 @@ function verifyDataType(
 function verifyStruct(symbols: UnitSymbols, struct: Parse.Struct): boolean {
   let invalidField = false;
   for (let field of struct.fields) {
-    if (verifyDataType(symbols, field.t, field.position, struct.header.generics) == false) {
+    if (verifyDataType(symbols, field.t, field.position, struct.header.generics, false) == false) {
       invalidField = true;
     }
   }
