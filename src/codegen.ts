@@ -268,7 +268,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let leftExpr = codeGenLeftExpr(inst.val.to, ctx, inst.position, false);
 
     statements.push(...rightExpr.statements);
-    statements.push(...statements);
+    statements.push(...leftExpr.statements);
     statements.push(`${leftExpr.output} ${inst.val.op} ${rightExpr.output};`);
   } 
   else if (inst.tag == 'if') {
@@ -538,7 +538,10 @@ function codeGenExpr(
     exprText = `${leftExpr.output}.tag == ${expr.variantIndex}`;
   }
   else if (expr.tag == 'enum_init') {
-    if (expr.fieldExpr != null) {
+    let fields = getFields(expr.type);
+    let variant = fields[expr.variantIndex].type;
+    let isNil = variant.tag == 'struct' && variant.val.template.name == 'nil' && variant.val.template.unit == 'std/core';
+    if (expr.fieldExpr != null && !isNil) {
       if (expr.type.tag != 'struct') {
         return undefined!;
       }
@@ -585,10 +588,6 @@ function codeGenMacroCall(expr: Expr, ctx: FnContext, position: Position): CodeG
       return undefined!;
     }
     return { output: `alignof(${codeGenType(arg.val)})`, statements: [] };
-  }
-
-  if (expr.val.name == 'mapFields') {
-
   }
 
   return { output: '', statements: [] }

@@ -323,7 +323,13 @@ function typeEq(t1: Type, t2: Type): boolean {
 
   if (t1.tag != t2.tag) return false;
   if (t1.tag == 'struct' && t2.tag == 'struct') {
-    return t1.val.template.name == t2.val.template.name && t1.val.template.unit == t2.val.template.unit;
+    if (t1.val.template.name != t2.val.template.name || t1.val.template.unit != t2.val.template.unit) return false;
+    for (let i = 0; i < t1.val.generics.length; i++) {
+      if (!typeEq(t1.val.generics[i], t2.val.generics[i])) {
+        return false;
+      }
+    }
+    return true;
   }
 
   if (t1.tag == 'ptr' && t2.tag == 'ptr') {

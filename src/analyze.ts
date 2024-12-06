@@ -261,7 +261,7 @@ function analyzeFn(
   let body = analyzeInstBody(symbols, fn.body, scope);
   if (body == null) return null;
 
-  if (!typeApplicable(NIL, scope.returnType, false) && allPaths(body, 'return') == false) {
+  if (fn.mode != 'decl' && !typeApplicable(NIL, scope.returnType, false) && allPaths(body, 'return') == false) {
     logError(fn.position, 'function does not always return');
     return null;
   }

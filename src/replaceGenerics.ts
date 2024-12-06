@@ -102,6 +102,8 @@ function shouldResolveFn(
     return false;
   }
 
+  let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
+  let key = JSON.stringify(keyProps);
   for (let i = 0; i < fnTemplates.length; i++) {
     let header = fnTemplates[i].header;
     if (header.mode != mode) continue;
@@ -109,8 +111,6 @@ function shouldResolveFn(
     let fnType: Type = { tag: 'fn', paramTypes: header.paramTypes, returnType: header.returnType };
     if (!typeApplicable(type, fnType, true)) continue;
 
-    let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
-    let key = JSON.stringify(keyProps);
     return !(set.fns.has(key) || set.used.has(key));
   }
 
@@ -673,7 +673,7 @@ function resolveLeftExpr(
       };
 
       let key = JSON.stringify(keyProps);
-      if (!set.used.has(key)) {
+      if (!set.used.has(key) && leftExpr.mode != 'decl') {
         set.used.add(key)
         monomorphizeFn(genericFn, set, newFnGenericMap);
       }
