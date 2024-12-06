@@ -1500,6 +1500,11 @@ function tryParseFmtString(lineExpr: string, position: Position): Expr[] | null 
   let exprs: Expr[] = [];
   let constStrStart = 0;
   for (let i = 0; i < lineExpr.length; i++) {
+    if (lineExpr[i] == '\\' && i + 1 < lineExpr.length && lineExpr[i + 1] == '{' || lineExpr[i + 1] == '}') {
+      lineExpr = lineExpr.slice(0, i) + lineExpr.slice(i + 1);
+      continue;
+    }
+
     if (lineExpr[i] == '{') {
       let constStr = lineExpr.slice(constStrStart, i);
       exprs.push({ tag: 'str_const', val: constStr, position });
