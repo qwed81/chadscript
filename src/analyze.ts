@@ -1555,7 +1555,10 @@ function ensureExprValid(
 
     if (computedExpr == null) {
       let exprTuple = ensureLeftExprValid(symbols, expr.val, scope, null);
-      if (exprTuple == null) {
+      if (exprTuple != null) {
+        computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
+      }
+      else {
         if (expr.val.tag != 'var') {
           ensureLeftExprValid(symbols, expr.val, scope, position); // log proper error
           return null;
@@ -1621,9 +1624,6 @@ function ensureExprValid(
           if (position != null) logError(position, 'could not find ' + varName);
           return null;
         }
-      }
-      else {
-        computedExpr = { tag: 'left_expr', val: exprTuple, type: exprTuple.type };
       }
     }
   }

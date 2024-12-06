@@ -754,7 +754,6 @@ function tryParseType(tokens: Token[]): Type | null {
     else if (expr.tag == 'left_expr' && expr.val.tag == 'var') {
       unitMode = 'as'
       unit = expr.val.val;
-      referencedUnits.add(unit);
       tokens = unitSplit[1];
     } 
     else {

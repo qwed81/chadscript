@@ -1150,14 +1150,14 @@ function resolveTypeInternal(
       let symbols = getIsolatedUnitSymbolsFromAs(unit, parseType.unit, position);
       if (symbols == null) return null;
       let struct: Struct | undefined = symbols.structs.get(name);
-      if (struct == undefined) return null;
+      if (struct == undefined) return [];
       allStructs = [struct];
     }
     else if (parseType.unitMode == 'unit') {
       let symbols = getIsolatedUnitSymbolsFromName(unit, parseType.unit, position);
       if (symbols == null) return null;
       let struct: Struct | undefined = symbols.structs.get(name);
-      if (struct == undefined) return null;
+      if (struct == undefined) return [];
       allStructs = [struct];
     }
 

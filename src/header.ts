@@ -378,6 +378,10 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
     return parseCType(type.slice(6), unit, typeMap);
   }
 
+  if (type.endsWith('restrict')) {
+    return parseCType(type.slice(0, -8), unit, typeMap);
+  }
+
   if (type.startsWith('struct')) {
     return parseCType(type.slice(7), unit, typeMap);
   }
@@ -434,13 +438,12 @@ function cBasicMapping(type: string): Type | null {
 
   if (type == 'unsigned long long' || type == 'uint64_t') return U64;
   if (type == 'unsigned long' || type == 'unsigned int' || type == 'uint32_t') return U32
-  if (type == 'unsinged short' || type == 'uint16_t') return U16;
+  if (type == 'unsigned short' || type == 'uint16_t') return U16;
   if (type == 'unsigned char' || type == 'uint8_t') return U8;
 
   else if (type == 'float') return F32;
   else if (type == 'double') return F64;
 
   else if (type == 'size_t') return U64;
-
   return null;
 }
