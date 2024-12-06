@@ -12,6 +12,7 @@ interface FnContext {
   returnType: Type
   unit: string,
   amtReserved: number
+  nextFnStmt: string | null
 }
 
 interface CodeGenExpr {
@@ -45,8 +46,15 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   }
 
   chadDotC += '\n#include "chad.h"';
+
+  chadDotC += '\nstruct StackFrame { const char* file; int64_t line; } frames[1024 * 1024]; int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
+  chadDotC += '\nvoid chad_callstack_push() { frames[frameIndex] = (struct StackFrame){ .file = lastFile, .line = lastLine }; frameIndex += 1; }';
+  chadDotC += '\nvoid chad_callstack_pop() { frameIndex -= 1; }';
+
   chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
-  chadDotC += '\n\tfprintf(stderr, "panic in \'%s.chad\' line %ld: %s\\n", file, line, message); \nexit(-1); \n}'
+  chadDotC += '\nfprintf(stderr, "%s in \'%s.chad\' line %ld", message, file, line); for (int i = frameIndex - 1; i > 0; i--) {'
+  chadDotC += 'fprintf(stderr, "\\nin \'%s.chad\' line %ld", frames[i].file, frames[i].line); } exit(-1); }'
+
 
   // forward declare all structs for pointers
   for (let type of prog.orderedTypes) {
@@ -102,7 +110,8 @@ function codeGenGlobal(global: GlobalImpl): string {
   let ctx: FnContext = {
     unit: global.header.unit,
     returnType: NIL,
-    amtReserved: 0
+    amtReserved: 0,
+    nextFnStmt: null
   };
   let expr = codeGenExpr(global.expr, ctx, global.position);
   if (expr.statements.length > 0) {
@@ -122,20 +131,21 @@ function codeGenGlobal(global: GlobalImpl): string {
 }
 
 function codeGenFn(fn: FnImpl) {
-  let ctx: FnContext = { returnType: fn.header.returnType, amtReserved: 0, unit: fn.header.unit };
+  let ctx: FnContext = { returnType: fn.header.returnType, amtReserved: 0, unit: fn.header.unit, nextFnStmt: null };
   let fnCode = codeGenFnHeader(fn.header) + ' {';
   let bodyStr = '\n';
 
+  bodyStr += '\tchad_callstack_push();';
   for (let i = 0; i < fn.body.length; i++) {
     bodyStr += codeGenInst(fn.body, i, 1, ctx);
   }
 
   let retType = fn.header.returnType;
   if (retType.tag == 'struct' && retType.val.template.name == 'nil') {
-    bodyStr += '\n\treturn;'
+    bodyStr += '\n\tchad_callstack_pop(); return;'
   }
   else if (typeApplicable(NIL, retType, false)) {
-    bodyStr += `\n\treturn (${codeGenType(fn.header.returnType)}){ 0 };`
+    bodyStr += `\n\tchad_callstack_pop(); return (${codeGenType(fn.header.returnType)}){ 0 };`
   }
   bodyStr += '\n};';
 
@@ -295,12 +305,14 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   // generated before
   else if (inst.tag == 'elif' || inst.tag == 'else') {}
   else if (inst.tag == 'while') {
+    let saveNextFnStmt = ctx.nextFnStmt;
     statements.push(`while (true) {`);
     let bodyText = codeGenBody(inst.val.body, indent + 1, false, ctx);
     let condName = codeGenExpr(inst.val.cond, ctx, inst.position);
     statements.push(...condName.statements);
     statements.push(`if (!(${condName.output})) break;`);
     statements.push(bodyText + `${tabs}}`);
+    ctx.nextFnStmt = saveNextFnStmt;
   }
   else if (inst.tag == 'expr') {
     let expr = codeGenExpr(inst.val, ctx, inst.position);
@@ -309,12 +321,12 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   }
   else if (inst.tag == 'return') {
     if (inst.val == null) {
-      statements.push('return;');
+      statements.push('chad_callstack_pop(); return;');
     }
     else {
       let expr = codeGenExpr(inst.val, ctx, inst.position);
       statements.push(...expr.statements);
-      statements.push(`return ${expr.output};`)
+      statements.push(`chad_callstack_pop(); return ${expr.output};`)
     }
   }
   else if (inst.tag == 'include') {
@@ -331,9 +343,13 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     return instText;
   }
   else if (inst.tag == 'continue' || inst.tag == 'break') {
+    if (inst.tag == 'continue' && ctx.nextFnStmt != null) {
+      statements.push(ctx.nextFnStmt);
+    }
     statements.push(inst.tag + ';');
   } 
   else if (inst.tag == 'for_in') {
+    statements.push('{')
     let varName = `_${inst.val.varName}_for`;
     let iterExpr = codeGenExpr(inst.val.iter, ctx, inst.position);
     statements.push(...iterExpr.statements);
@@ -346,10 +362,17 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let nextFnName = getFnUniqueId(inst.val.nextFn.unit, inst.val.nextFn.name, inst.val.nextFn.mode, paramTypes, itemType);
 
     let iterSaved = uniqueVarName(ctx);
+    let saveNextFnStmt = ctx.nextFnStmt;
+  
+    ctx.nextFnStmt = `lastLine = ${inst.position.line}; lastFile = "${inst.position.document}"; ${varName} = ${nextFnName}(&${iterSaved});`;
     statements.push(`${codeGenType(inst.val.iter.type)} ${iterSaved} = ${iterExpr.output};`);
-    statements.push(`for (${itemTypeStr} ${varName} = ${nextFnName}(&${iterSaved}); ${varName} != 0; ${varName} = ${nextFnName}(&${iterSaved})) {`);
+    statements.push(`lastLine = ${inst.position.line}; lastFile = "${inst.position.document}"; ${itemTypeStr} ${varName} = ${nextFnName}(&${iterSaved});`);
+    statements.push(`while (${varName} != 0) {`);
     statements.push(codeGenBody(inst.val.body, indent + 1, false, ctx));
+    statements.push(ctx.nextFnStmt);
     statements.push('}');
+    ctx.nextFnStmt = saveNextFnStmt;
+    statements.push('}')
   }
 
   let outputText = '';
@@ -427,7 +450,7 @@ function codeGenExpr(
     statements = innerExpr.statements;
     let name = uniqueVarName(ctx);
     statements.push(`${codeGenType(expr.val.type)} ${name} = ${innerExpr.output};`);
-    statements.push(`if (${name}.tag == 1) return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 };`);
+    statements.push(`if (${name}.tag == 1) { chad_callstack_pop(); return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 }; }`);
 
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'struct' && expr.type.val.template.name == 'nil') {
@@ -624,10 +647,11 @@ function codeGenStructInit(expr: Expr, ctx: FnContext, position: Position): Code
 function codeGenFnCall(fnCall: FnCall, ctx: FnContext, position: Position): CodeGenExpr {
   if (fnCall.fn.type.tag != 'fn') return undefined!;
 
-  let statements: string[] = [];
-  let output = codeGenLeftExpr(fnCall.fn, ctx, position, true).output;
-  output += '(';
+  let leftExpr = codeGenLeftExpr(fnCall.fn, ctx, position, true); 
+  let statements: string[] = leftExpr.statements;
+  statements.push(`lastLine = ${position.line}; lastFile = "${position.document}";`);
 
+  let output = leftExpr.output + '(';
   for (let i = 0; i < fnCall.exprs.length; i++) {
     if (fnCall.fn.type.paramTypes[i].tag == 'link') output += '&';
     let paramExpr = codeGenExpr(fnCall.exprs[i], ctx, position);
