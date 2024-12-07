@@ -1257,11 +1257,19 @@ function tryParseStructInit(tokens: Token[], position: Position): Expr | null {
   let splits = balancedSplit(tokens.slice(1, -1), ',');
   if (splits[0].length != 0) {
     for (let split of splits) {
-      if (split.length < 3) {
-        return null;
-      }
-
       let newSplits = balancedSplit(split, '=');
+      if (newSplits.length == 1) {
+        props.push({ name: newSplits[0][0].val, expr: {
+          tag: 'left_expr',
+          val: {
+            tag: 'var',
+            val: newSplits[0][0].val,
+          },
+          position: newSplits[0][0].position
+        }});
+        continue;
+      }
+      
       if (newSplits.length != 2) {
         return null;
       }

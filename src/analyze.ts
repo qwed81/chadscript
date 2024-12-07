@@ -546,6 +546,11 @@ function analyzeInst(
       return null;
     }
 
+    if (scope.typeScope[scope.typeScope.length - 1].get(inst.val.name) != undefined) {
+      logError(inst.position, 'variable already declared');
+      return null;
+    }
+
     let declareType = resolveType(symbols, inst.val.t, inst.position);
     if (declareType == null) return null;
     setValToScope(scope, inst.val.name, declareType, true, 'none');
