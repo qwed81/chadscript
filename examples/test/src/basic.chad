@@ -3,7 +3,6 @@ use "stdio.h"
 # dump of all features as a sanity check that changes
 # do not cause major bugs. This serves as a good example
 # of arbitrary features
-
 decl impl testDefaultImpl(K val)
   assert true
 
@@ -26,6 +25,10 @@ struct testPoint
   int x2
   int y2
 
+struct Node
+  int val
+  *Node next
+
 impl format(&Fmt f, point p)
   f ++= "({p.x}, {p.y})"
 
@@ -36,11 +39,47 @@ fn printFields(T input)
   for field in input
     print("{field.name}: {field.val}")
 
+struct FnTable
+  fn(int) => int m2
+  fn(int) => int m4
+  fn(&int) m2ref
+
+fn mul2(&int a)
+  a = a * 2
+
+fn mul2(int a) int
+  ret a * 2
+fn mul4(int a) int
+  ret a * 4
+
 fn main(int argc, **char argv) int
   point p = {}
   testPoint p2 = {}
 
+  Node node = { next = nil, val = 10 }
+  print(node)
+
+  FnTable table = {
+    m2 = mul2,
+    m4 = mul4,
+    m2ref = mul2
+  }
+
+  int a = table.m4(table.m2(1))
+  table.m2ref(a)
+  assert a == 16
+
+  Map[int, int] myMap = {} 
+  for i in 0:10
+    set(myMap, i, i)
+  for i in 0:10
+    myMap[i] = i * myMap[i]
+  assert myMap[4] == 16
+  print(myMap)
+
   assert -0.5 < 1
+
+  print(&p)
 
   printFields(p)
   testDefaultImpl(p)
@@ -63,7 +102,7 @@ fn main(int argc, **char argv) int
     print("could not open")
   else
     Vec[char] buf = vec(1024)
-    u32 amtRead = fread(buf.base, u32(1), u32(buf.len), f)
+    u32 amtRead = fread(ptr(buf.base), u32(1), u32(buf.len), f)
     str s = { base = buf.base, len = 100 }
     print(s)
     int result = fclose(f)
@@ -98,7 +137,6 @@ fn main(int argc, **char argv) int
     print(p)
 
   ret 0
-
 
 fn fnCall()
   assert true
