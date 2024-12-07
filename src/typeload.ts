@@ -7,7 +7,7 @@ export {
   CHAR, INT, I64, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   AMBIG_INT, AMBIG_FLOAT,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
-  typeApplicableStateful, serializeType, createTypeUnion, resolveImpl, refType,
+  typeApplicableStateful, getTypeKey, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
   resolveMacro, isGeneric, getFields, lookupFnOrDecl, getFoundFns, getExpectedFns, getCurrentFn
@@ -37,7 +37,7 @@ interface Struct {
 }
 
 type Type = { tag: 'generic', val: string }
-  | { tag: 'ptr', val: Type }
+  | { tag: 'ptr', val: Type, const: boolean }
   | { tag: 'link', val: Type }
   | { tag: 'struct', val: Struct }
   | { tag: 'ambig_int' }
@@ -115,7 +115,7 @@ const STR: Type = {
       modifier: 'pub',
       isEnum: false,
       fields: [
-        { name: 'base', type: { tag: 'ptr', val: CHAR }, modifier: 'get' },
+        { name: 'base', type: { tag: 'ptr', val: CHAR, const: true }, modifier: 'get' },
         { name: 'len', type: INT, modifier: 'get' }
       ],
       generics: []
@@ -194,8 +194,44 @@ function refType(type: Type): Type {
   return { tag: 'link', val: type };
 }
 
-function serializeType(type: Type): string {
-  return toStr(type);
+function getTypeKey(t: Type): string {
+  if (t == null) return 'null';
+  if (t.tag == 'struct' && isBasic(t)) return t.val.template.name;
+  if (t.tag == 'generic') return t.val;
+  if (t.tag == 'ptr') return '*' + getTypeKey(t.val);
+  if (t.tag == 'link') return '&' + getTypeKey(t.val);
+  if (t.tag == 'ambig_int') return 'int';
+  if (t.tag == 'ambig_float') return 'f64';
+
+  if (t.tag == 'struct') {
+    let generics: string = '[';
+    for (let i = 0; i < t.val.generics.length; i++) {
+      generics += getTypeKey(t.val.generics[i]);
+      if (i != t.val.generics.length - 1) {
+        generics += ', ';
+      }     
+    }
+    if (t.val.generics.length == 0) {
+      return t.val.template.name;
+    }
+    else {
+      return t.val.template.name + generics + ']';
+    }
+  }
+
+  if (t.tag == 'fn') {
+    let s = '';
+    for (let i = 0; i < t.paramTypes.length; i++) {
+      s += getTypeKey(t.paramTypes[i]);
+      if (i != t.paramTypes.length - 1) {
+        s += ', ';
+      }
+    }
+    return `fn(${s}) => ${getTypeKey(t.returnType)}`;
+  }
+
+  compilerError('typeKey fallthrough')
+  return undefined!;
 }
 
 function getFields(type: Type): Field[] {
@@ -217,7 +253,6 @@ function getFields(type: Type): Field[] {
 
   return newFields;
 }
-
 
 function createTypeUnion(t1: Type, t2: Type): Type {
   return {
@@ -250,7 +285,7 @@ function createVec(t1: Type): Type {
         modifier: 'pub',
         isEnum: true,
         fields: [
-          { name: 'base', type: { tag: 'ptr', val: t1 }, modifier: 'get' },
+          { name: 'base', type: { tag: 'ptr', val: t1, const: false }, modifier: 'get' },
           { name: 'len', type: INT, modifier: 'get' },
           { name: 'capacity', type: INT, modifier: 'get' }
         ],
@@ -407,6 +442,7 @@ function typeApplicableStateful(
 
   if (isBasic(sub) && isBasic(supa)) return (sub as any).val.template.name == (supa as any).val.template.name;
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
+    if (sub.const == true && supa.const == false) return false;
     return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
   }
   if (sub.tag == 'struct' && supa.tag == 'struct') {
@@ -448,7 +484,7 @@ function toStr(t: Type | null): string {
   if (t == null) return 'null';
   if (t.tag == 'struct' && isBasic(t)) return t.val.template.name;
   if (t.tag == 'generic') return t.val;
-  if (t.tag == 'ptr') return '*' + toStr(t.val);
+  if (t.tag == 'ptr') return '*' + (t.const ? 'const ' : '') + toStr(t.val);
   if (t.tag == 'link') return '&' + toStr(t.val);
   if (t.tag == 'ambig_int') return 'int';
   if (t.tag == 'ambig_float') return 'f64';
@@ -522,7 +558,7 @@ function applyGenericMap(
     return { tag: 'link', val: applyGenericMap(input.val, map) };
   }
   else if (input.tag == 'ptr') {
-    return { tag: 'ptr', val: applyGenericMap(input.val, map) };
+    return { tag: 'ptr', val: applyGenericMap(input.val, map), const: input.const };
   }
   else if (input.tag == 'fn') {
     let newReturnType: Type = applyGenericMap(input.returnType, map);
@@ -1202,7 +1238,7 @@ function resolveTypeInternal(
   else if (parseType.tag == 'ptr') {
     let inner = resolveType(unit, parseType.val, position);
     if (inner == null) return null;
-    return [{ tag: 'ptr', val: inner }];
+    return [{ tag: 'ptr', val: inner, const: parseType.const }];
   }
   else if (parseType.tag == 'link') {
     let inner = resolveType(unit, parseType.val, position);

@@ -2,7 +2,7 @@ import { FnMode } from './parse';
 import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl, MacroArg } from './analyze';
 import { compilerError, Position, logError } from './util';
 import {
-  Type, serializeType, applyGenericMap, resolveImpl, BOOL, typeApplicable,
+  Type, getTypeKey, applyGenericMap, resolveImpl, BOOL, typeApplicable,
   NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
   F64, getFields, isGeneric
 } from './typeload';
@@ -102,7 +102,7 @@ function shouldResolveFn(
     return false;
   }
 
-  let keyProps: FnKey = { name, unit, type: serializeType(type), mode };
+  let keyProps: FnKey = { name, unit, type: getTypeKey(type), mode };
   let key = JSON.stringify(keyProps);
   for (let i = 0; i < fnTemplates.length; i++) {
     let header = fnTemplates[i].header;
@@ -143,7 +143,7 @@ function getFnTemplate(
 }
 
 function addType(set: FnSet, type: Type) {
-  let key = serializeType(type);
+  let key = getTypeKey(type);
   if (set.types.has(key)) {
     return;
   }
@@ -193,7 +193,7 @@ function monomorphizeFn(
   let keyProps: FnKey = {
     name: genericFn.header.name,
     unit: genericFn.header.unit,
-    type: serializeType({ tag: 'fn', returnType, paramTypes}) ,
+    type: getTypeKey({ tag: 'fn', returnType, paramTypes}) ,
     mode: genericFn.header.mode
   };
   let key = JSON.stringify(keyProps);
@@ -590,7 +590,8 @@ function resolveExpr(
   else if (expr.tag == 'ptr') {
     let val = resolveLeftExpr(expr.val, set, genericMap, position);
     if (val == null) return null;
-    return { tag: 'ptr', val, type: { tag: 'ptr', val: val.type } };
+    if (expr.type.tag != 'ptr') { compilerError('expected pointer'); return null; }
+    return { tag: 'ptr', val, type: { tag: 'ptr', val: val.type, const: expr.type.const } };
   }
 
   compilerError('resolveExpr unreachable');
@@ -665,7 +666,7 @@ function resolveLeftExpr(
       let keyProps: FnKey = {
         name: leftExpr.name,
         unit: leftExpr.unit,
-        type: serializeType({ tag: 'fn', returnType: implType.returnType, paramTypes: implType.paramTypes }) ,
+        type: getTypeKey({ tag: 'fn', returnType: implType.returnType, paramTypes: implType.paramTypes }) ,
         mode: leftExpr.mode
       };
 
@@ -703,7 +704,7 @@ function typeTreeRecur(
   queue: Type[],
 ) {
   if (type.tag == 'fn') {
-    let typeKey = serializeType(type);
+    let typeKey = getTypeKey(type);
     if (alreadyGenned.has(typeKey)) return;
     typeTreeRecur(type.returnType, inStack, alreadyGenned, output, queue);
     for (let i = 0; i < type.paramTypes.length; i++) {
@@ -714,7 +715,7 @@ function typeTreeRecur(
   }
 
   if (type.tag == 'ptr' || type.tag == 'link') {
-    let typeKey = serializeType(type.val);
+    let typeKey = getTypeKey(type.val);
     if (alreadyGenned.has(typeKey)) return;
     queue.push(type.val);
   }
@@ -723,7 +724,7 @@ function typeTreeRecur(
     return;
   }
 
-  let typeKey = serializeType(type);
+  let typeKey = getTypeKey(type);
   if (inStack.has(typeKey)) {
     compilerError('recusive struct ' + typeKey);
     return;

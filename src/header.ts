@@ -375,7 +375,9 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
   }
 
   if (type.startsWith('const')) {
-    return parseCType(type.slice(6), unit, typeMap);
+    let chadType = parseCType(type.slice(6), unit, typeMap);
+    if (chadType.tag == 'ptr') chadType.const = false;
+    return chadType;
   }
 
   if (type.endsWith('restrict')) {
@@ -387,7 +389,7 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
   }
 
   if (type == 'void *') {
-    return { tag: 'ptr', val: U8 }
+    return { tag: 'ptr', val: U8, const: false }
   }
 
   if (type.endsWith('*')) {
@@ -396,7 +398,7 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
       return innerType;
     }
 
-    return { tag: 'ptr', val: innerType };
+    return { tag: 'ptr', val: innerType, const: false };
   }
 
   let basic = cBasicMapping(type);

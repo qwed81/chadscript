@@ -91,7 +91,7 @@ interface FnType {
 
 type Type = { tag: 'basic', val: string, unitMode: 'as' | 'unit' | 'none', unit: string }
   | { tag: 'generic', val: GenericType, unitMode: 'as' | 'unit' | 'none', unit: string }
-  | { tag: 'ptr', val: Type }
+  | { tag: 'ptr', val: Type, const: boolean }
   | { tag: 'type_union', val0: Type, val1: Type }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
@@ -719,11 +719,21 @@ function tryParseType(tokens: Token[]): Type | null {
   }
 
   if (tokens[0].val == '*') {
-    let inner = tryParseType(tokens.slice(1));
+    let constPtr = false;
+    let nextTokens = [];
+    if (tokens.length > 1 && tokens[1].val == 'const') {
+      constPtr = true;
+      nextTokens = tokens.slice(2);
+    }
+    else {
+      nextTokens = tokens.slice(1);
+    }
+
+    let inner = tryParseType(nextTokens);
     if (inner == null) {
       return null;
     }
-    return { tag: 'ptr', val: inner };
+    return { tag: 'ptr', val: inner, const: constPtr };
   }
   
   // parse it as a type union

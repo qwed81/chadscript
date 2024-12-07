@@ -1126,10 +1126,16 @@ function ensureExprValid(
     }
     let inner = ensureLeftExprValid(symbols, expr.val.val, scope, position);
     if (inner == null) return null;
+
+    let constPtr = false;
+    if (inner.tag == 'index' && inner.val.var.type.tag == 'ptr') {
+      if (inner.val.var.type.const) constPtr = true;
+    }
+
     computedExpr = {
       tag: 'ptr',
       val: inner,
-      type: { tag: 'ptr', val: inner.type }
+      type: { tag: 'ptr', val: inner.type, const: constPtr }
     };
   }
 

@@ -179,7 +179,7 @@ function codeGenType(type: Type): string {
   if (type.tag == 'ambig_int') return 'int32_t';
   if (type.tag == 'ambig_float') return 'double';
   if (type.tag == 'ptr') {
-    return codeGenType(type.val) + '*';
+    return (type.const ? 'const ' : '') + codeGenType(type.val) + '*';
   }
   if (type.tag == 'link') {
     return codeGenType(type.val) + '*';
