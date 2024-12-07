@@ -131,6 +131,7 @@ interface DotOp {
 interface Index {
   var: Expr
   index: Expr
+  const: boolean
 }
 
 type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter'; 
@@ -249,7 +250,7 @@ function analyzeFn(
   enterScope(scope);
   let paramTypes: Type[] = [];
   for (let i = 0; i < fn.paramNames.length; i++) {
-    let mut = false;
+    let mut = true;
     let resolvedParamType = resolveType(symbols, fn.type.paramTypes[i], fn.position);
     if (resolvedParamType == null) return null;
 
@@ -579,6 +580,11 @@ function analyzeInst(
     let to = ensureLeftExprValid(symbols, inst.val.to, scope, inst.position);
     if (to == null) return null;
 
+    if (isConst(symbols, to, scope)) {
+      logError(inst.position, 'can not assign to const value');
+      return null;
+    }
+
     Enum.remove(scope.variantScope, to);
     if (inst.val.op == '++=') {
       if (to.type.tag == 'struct' && to.type.val.template.name == 'Fmt' && to.type.val.template.unit == 'std/core') {
@@ -698,6 +704,28 @@ function canMutate(
 }
 */
 
+function isConst(symbols: UnitSymbols, leftExpr: LeftExpr, scope: FnContext): boolean {
+  if (leftExpr.tag == 'index') {
+    return leftExpr.val.const;
+  }
+  else if (leftExpr.tag == 'var') {
+    let v = getVar(symbols, scope, leftExpr.val, null)!;
+    return !v.mut;
+  }
+  else if (leftExpr.tag == 'fn') {
+    return true;
+  }
+  else if (leftExpr.tag == 'dot') {
+    if (leftExpr.val.left.tag == 'left_expr') {
+      return isConst(symbols, leftExpr.val.left.val, scope);
+    }
+    return false;
+  }
+
+  compilerError('isConst fall through');
+  return false;
+}
+
 function ensureLeftExprValid(
   symbols: UnitSymbols,
   leftExpr: Parse.LeftExpr,
@@ -743,7 +771,7 @@ function ensureLeftExprValid(
     let index = ensureExprValid(symbols, leftExpr.val.index, null, scope, position);
     if (index == null) return null;
     if (left.type.tag == 'ptr') {
-      computedExpr = { tag: 'index', val: { var: left, index, }, type: left.type.val };
+      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const }, type: left.type.val };
     }
     else {
       let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
@@ -754,7 +782,9 @@ function ensureLeftExprValid(
         if (position != null) logError(position, 'index should return a pointer');
         return null;
       };
-      computedExpr = { tag: 'index', val: { var: left, index, }, type: retType.val };
+
+      let varConst = left.tag == 'left_expr' && isConst(symbols, left.val, scope);
+      computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst }, type: retType.val };
     }
   }
   else if (leftExpr.tag == 'var') {
@@ -1121,21 +1151,16 @@ function ensureExprValid(
 
   if (expr.tag == 'ptr') {
     if (expr.val.tag != 'left_expr') {
-      if (position != null) logError(expr.position, 'pointer on valid on left expr');
+      if (position != null) logError(expr.position, 'pointer requires a saved value');
       return null;
     }
     let inner = ensureLeftExprValid(symbols, expr.val.val, scope, position);
     if (inner == null) return null;
 
-    let constPtr = false;
-    if (inner.tag == 'index' && inner.val.var.type.tag == 'ptr') {
-      if (inner.val.var.type.const) constPtr = true;
-    }
-
     computedExpr = {
       tag: 'ptr',
       val: inner,
-      type: { tag: 'ptr', val: inner.type, const: constPtr }
+      type: { tag: 'ptr', val: inner.type, const: isConst(symbols, inner, scope) }
     };
   }
 

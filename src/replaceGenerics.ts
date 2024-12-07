@@ -627,14 +627,15 @@ function resolveLeftExpr(
         tag: 'index',
         val: {
           var: inner,
-          index: { tag: 'int_const', val: 0, type: INT }
+          index: { tag: 'int_const', val: 0, type: INT },
+          const: leftExpr.val.const,
         },
         type: inner.type.val
       }
     }
 
     let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'index', val: { var: v, index }, type };
+    return { tag: 'index', val: { var: v, index, const: leftExpr.val.var.type.const }, type };
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
