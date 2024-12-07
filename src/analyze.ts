@@ -1403,8 +1403,17 @@ function ensureExprValid(
       exprType = ptrType.val;
     }
     else { 
-      if (position != null) logError(position, 'type mismatch expected array');
-      return null;
+      if (expr.val.length < 1) {
+        if (position != null) logError(position, 'could not find type of vec');
+        return null;
+      }
+
+      let tryExpr = ensureExprValid(symbols, expr.val[0], null, scope, null);
+      if (tryExpr == null) {
+        if (position != null) logError(position, 'vec type is ambiguous');
+        return null;
+      }
+      exprType = tryExpr.type;
     }
 
     let newExprs: Expr[] = []
