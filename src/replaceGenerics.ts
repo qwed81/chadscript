@@ -51,6 +51,9 @@ interface FnSet {
 
   // to determine position of impl
   genericCallStack: (Position | null)[]
+
+  // used so index can determine if it needs to verify
+  inAssign: boolean[]
 }
 
 function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: FnImpl): Program {
@@ -61,7 +64,8 @@ function replaceGenerics(prog: AnalyzeProgram, symbols: UnitSymbols[], mainFn: F
     used: new Set(),
     symbols,
     fieldStack: [],
-    genericCallStack: []
+    genericCallStack: [],
+    inAssign: [false]
   };
 
   for (let i = 0; i < prog.fns.length; i++) {
@@ -177,7 +181,9 @@ function monomorphizeFn(
   let returnType = applyGenericMap(genericFn.header.returnType, genericMap);
   addType(set, returnType);
 
+  set.inAssign.push(false);
   let body = resolveInstBody(genericFn.body, set, genericMap);
+  set.inAssign.pop();
   let impl = {
     header: {
       returnType: returnType,
@@ -291,30 +297,22 @@ function resolveInst(
     return [{ tag: 'declare', val: { type, name: inst.val.name, expr }, position: inst.position }]
   }
   else if (inst.tag == 'assign') {
+    set.inAssign.push(true);
     let to = resolveLeftExpr(inst.val.to, set, genericMap, inst.position);
+    set.inAssign.pop();
     let expr = resolveExpr(inst.val.expr, set, genericMap, inst.position);
     if (to == null || expr == null) return null;
 
     if (inst.val.op == '++=') {
-      if (to.type.tag == 'struct' && to.type.val.template.name == 'Fmt' && to.type.val.template.unit == 'std/core') {
-        let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
-        let impl = implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr], inst.position);
-        if (impl == null) return [];
-        return [{
-          tag: 'expr',
-          val: impl,
-          position: inst.position
-        }];
-      }
-
       let toExpr: Expr = { tag: 'left_expr', val: to, type: to.type };
-      let impl = implToExpr(set, 'append', [to.type, expr.type], NIL, genericMap, [toExpr, expr], inst.position);
-      if (impl == null) return [];
-      return [{
-        tag: 'expr',
-        val: impl,
-        position: inst.position
-      }];
+      if (to.type.tag == 'struct' && to.type.val.template.name == 'Fmt' && to.type.val.template.unit == 'std/core') {
+        let impl = implToExpr(set, 'format', [to.type, expr.type], NIL, genericMap, [toExpr, expr], inst.position);
+        if (impl == null) {
+          compilerError('fmt should be implemented');
+          return [];
+        } 
+        return [{ tag: 'expr', val: impl, position: inst.position }];
+      }
     }
 
     return [{ tag: 'assign', val: { op: inst.val.op, to, expr }, position: inst.position }];
@@ -338,7 +336,7 @@ function implToExpr(
   returnType: Type | null,
   genericMap: Map<string, Type>,
   exprs: Expr[],
-  position: Position,
+  position: Position | null,
 ): Expr | null {
   let newParamTypes: Type[] = [];
   for (let i = 0; i < paramTypes.length; i++) {
@@ -350,12 +348,12 @@ function implToExpr(
 
   let impl = resolveImpl(set.symbols[0], name, newParamTypes, returnType, null);
   if (impl == null) {
-    let pos = set.genericCallStack[set.genericCallStack.length - 1];
-    if (pos == null) {
-      pos = position
+    if (position != null) {
+      let pos = set.genericCallStack[set.genericCallStack.length - 1];
+      if (pos == null) pos = position
+      logError(pos, 'no valid implementation for ' + name);
     }
 
-    logError(pos, 'no valid implementation for ' + name);
     return null;
   }
 
@@ -391,7 +389,7 @@ function resolveExpr(
   expr: Expr,
   set: FnSet,
   genericMap: Map<string, Type>,
-  position: Position
+  position: Position | null
 ): Expr | null {
   if (expr.tag == 'bin') {
     let left = resolveExpr(expr.val.left, set, genericMap, position);
@@ -411,7 +409,7 @@ function resolveExpr(
       return impl;
     }
 
-    return { tag: 'bin', val: { op: expr.val.op, left, right }, type: BOOL };
+    return { tag: 'bin', val: { op: expr.val.op, left, right }, type: expr.type };
   }
   else if (expr.tag == 'is') {
     let left = resolveLeftExpr(expr.left, set, genericMap, position);
@@ -602,7 +600,7 @@ function resolveLeftExpr(
   leftExpr: LeftExpr,
   set: FnSet,
   genericMap: Map<string, Type>,
-  position: Position
+  position: Position | null
 ): LeftExpr | null {
   if (leftExpr.tag == 'dot') {
     let resolvedLeft = resolveExpr(leftExpr.val.left, set, genericMap, position);
@@ -615,27 +613,47 @@ function resolveLeftExpr(
     let v = resolveExpr(leftExpr.val.var, set, genericMap, position);
     if (index == null || v == null) return null;
 
-    if (leftExpr.val.var.type.tag != 'ptr') {
-      let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index], position);
-      if (inner == null) return null;
-      if (inner.type.tag != 'ptr') {
-        compilerError('should always be pointer');
-        return null;
-      }
+    if (leftExpr.val.var.type.tag == 'ptr') {
+      let type = applyGenericMap(leftExpr.type, genericMap);
+      return { tag: 'index', val: { var: v, index, const: leftExpr.val.var.type.const, verifyFn: null }, type };
+    }
 
-      return {
-        tag: 'index',
-        val: {
-          var: inner,
-          index: { tag: 'int_const', val: 0, type: INT },
-          const: leftExpr.val.const,
-        },
-        type: inner.type.val
+    let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index], position);
+    if (inner == null) return null;
+    let verify = null;
+    if (set.inAssign[set.inAssign.length - 1] == true && inner.tag == 'fn_call' && inner.val.fn.type.tag == 'fn') {
+      let fnType = inner.val.fn.type;
+      let verifyImpl = resolveImpl(set.symbols[0], 'verifyIndex', [v.type, fnType.returnType], null, null);
+      if (verifyImpl != null) {
+        verify = verifyImpl.fnReference;
+        let verifyLeftExpr: LeftExpr = {
+          tag: 'fn',
+          isGeneric: false,
+          type: verifyImpl.resolvedType,
+          name: verifyImpl.name,
+          unit: verifyImpl.unit,
+          mode: verifyImpl.mode
+        };
+        resolveLeftExpr(verifyLeftExpr, set, genericMap, position);
       }
     }
 
-    let type = applyGenericMap(leftExpr.type, genericMap);
-    return { tag: 'index', val: { var: v, index, const: leftExpr.val.var.type.const }, type };
+    if (inner.type.tag != 'ptr') {
+      compilerError('should always be pointer');
+      return null;
+    }
+
+    return {
+      tag: 'index',
+      val: {
+        var: inner,
+        index: { tag: 'int_const', val: 0, type: INT },
+        const: leftExpr.val.const,
+        verifyFn: verify 
+      },
+      type: inner.type.val
+    }
+
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);

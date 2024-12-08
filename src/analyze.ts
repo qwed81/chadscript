@@ -132,6 +132,7 @@ interface Index {
   var: Expr
   index: Expr
   const: boolean
+  verifyFn: Fn | null
 }
 
 type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter'; 
@@ -592,17 +593,8 @@ function analyzeInst(
         if (expr == null) return null;
         return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
       }
-
-      let impl = resolveImpl(symbols, 'append', [refType(to.type), null], NIL, inst.position);
-      if (impl == null) return null;
-      if (impl.resolvedType.tag != 'fn' || impl.resolvedType.paramTypes.length != 2) {
-        compilerError('expected valid append fn');
-        return null;
-      }
-      let expr = ensureExprValid(symbols, inst.val.expr, impl.resolvedType.paramTypes[1], scope, inst.position);
-      if (expr == null) return null;
-
-      return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
+      logError(inst.position, 'format not implemented on type');
+      return null;
     }
     else if (inst.val.op == '+=' || inst.val.op == '-=') {
       let expr = ensureExprValid(symbols, inst.val.expr, null, scope, inst.position);
@@ -634,20 +626,6 @@ function analyzeInst(
 
     if (inst.val.op == '=') Enum.recursiveAddExpr(scope.variantScope, to, expr);
     return { tag: 'assign', val: { to: to , expr: expr, op: inst.val.op }, position: inst.position };
-
-    /*
-    if (isComplex(expr.type) && expr.tag == 'left_expr') {
-      logError(inst.position, 'assignment of complex type - mv or cp');
-      return null;
-    }
-    */
-    
-    /*
-    if (canMutate(to, table, scope) == false) {
-      logError(inst.position, 'value can not be mutated');
-      return null;
-    }
-    */
   } 
 
   logError(inst.position, 'compiler error analyzeInst');
@@ -771,7 +749,7 @@ function ensureLeftExprValid(
     let index = ensureExprValid(symbols, leftExpr.val.index, null, scope, position);
     if (index == null) return null;
     if (left.type.tag == 'ptr') {
-      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const }, type: left.type.val };
+      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null }, type: left.type.val };
     }
     else {
       let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
@@ -784,7 +762,7 @@ function ensureLeftExprValid(
       };
 
       let varConst = left.tag == 'left_expr' && isConst(symbols, left.val, scope);
-      computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst }, type: retType.val };
+      computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst, verifyFn: null }, type: retType.val };
     }
   }
   else if (leftExpr.tag == 'var') {

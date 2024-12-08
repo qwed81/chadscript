@@ -11,8 +11,9 @@ export {
 interface FnContext {
   returnType: Type
   unit: string,
-  amtReserved: number
+  reservedVars: (Type | null)[]
   nextFnStmt: string | null
+  createStmt: boolean
 }
 
 interface CodeGenExpr {
@@ -110,8 +111,9 @@ function codeGenGlobal(global: GlobalImpl): string {
   let ctx: FnContext = {
     unit: global.header.unit,
     returnType: NIL,
-    amtReserved: 0,
-    nextFnStmt: null
+    reservedVars: [],
+    nextFnStmt: null,
+    createStmt: false
   };
   let expr = codeGenExpr(global.expr, ctx, global.position);
   if (expr.statements.length > 0) {
@@ -131,8 +133,8 @@ function codeGenGlobal(global: GlobalImpl): string {
 }
 
 function codeGenFn(fn: FnImpl) {
-  let ctx: FnContext = { returnType: fn.header.returnType, amtReserved: 0, unit: fn.header.unit, nextFnStmt: null };
-  let fnCode = codeGenFnHeader(fn.header) + ' {';
+  let ctx: FnContext = { returnType: fn.header.returnType, reservedVars: [], unit: fn.header.unit, nextFnStmt: null, createStmt: true };
+  let fnCode = codeGenFnHeader(fn.header) + ' {\n';
   let bodyStr = '\n';
 
   bodyStr += '\tchad_callstack_push();';
@@ -149,6 +151,12 @@ function codeGenFn(fn: FnImpl) {
   }
   bodyStr += '\n};';
 
+  for (let i = 0; i < ctx.reservedVars.length; i++) {
+    let reserved = ctx.reservedVars[i];
+    if (reserved != null) {
+      fnCode += `${codeGenType(reserved)} __expr_${i};`;
+    }
+  }
   return fnCode + bodyStr;
 }
 
@@ -275,11 +283,34 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   } 
   else if (inst.tag == 'assign') {
     let rightExpr = codeGenExpr(inst.val.expr, ctx, inst.position);
-    let leftExpr = codeGenLeftExpr(inst.val.to, ctx, inst.position, false);
+    if (inst.val.to.tag == 'index' && inst.val.to.val.verifyFn != null) {
+      let fnCall = inst.val.to.val.var;
+      let ptrName = uniqueVarName(ctx, fnCall.type);
+      if (fnCall.tag != 'fn_call') { compilerError('should be fn call'); return undefined!; }
+      let indexFnType = fnCall.val.fn.type;
+      if (indexFnType.tag != 'fn') { compilerError('should be fn'); return undefined!; }
 
-    statements.push(...rightExpr.statements);
-    statements.push(...leftExpr.statements);
-    statements.push(`${leftExpr.output} ${inst.val.op} ${rightExpr.output};`);
+      let leftExpr = codeGenExpr(fnCall, ctx, inst.position);
+
+      statements.push(...rightExpr.statements);
+      statements.push(...leftExpr.statements);
+
+      statements.push(`${ptrName} = ${leftExpr.output};`)
+      statements.push(`${ptrName}[0] ${inst.val.op} ${rightExpr.output};`);
+
+      let verifyFn = inst.val.to.val.verifyFn;
+      let verifyFnName = getFnUniqueId(verifyFn.unit, verifyFn.name, verifyFn.mode, [indexFnType.paramTypes[0], indexFnType.returnType], NIL);
+      
+      let expr = codeGenExpr(fnCall.val.exprs[0], ctx, inst.position);
+      statements.push(...expr.statements);
+      statements.push(`${verifyFnName}(&${expr.output}, ${ptrName});`);
+    }
+    else {
+      let leftExpr = codeGenLeftExpr(inst.val.to, ctx, inst.position, false);
+      statements.push(...rightExpr.statements);
+      statements.push(...leftExpr.statements);
+      statements.push(`${leftExpr.output} ${inst.val.op} ${rightExpr.output};`);
+    }
   } 
   else if (inst.tag == 'if') {
     let condition = codeGenExpr(inst.val.cond, ctx, inst.position);
@@ -361,11 +392,11 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     if (inst.val.nextFn == null) { compilerError('nextFn should not be null'); return undefined!; };
     let nextFnName = getFnUniqueId(inst.val.nextFn.unit, inst.val.nextFn.name, inst.val.nextFn.mode, paramTypes, itemType);
 
-    let iterSaved = uniqueVarName(ctx);
+    let iterSaved = uniqueVarName(ctx, inst.val.iter.type);
     let saveNextFnStmt = ctx.nextFnStmt;
   
     ctx.nextFnStmt = `lastLine = ${inst.position.line}; lastFile = "${inst.position.document}"; ${varName} = ${nextFnName}(&${iterSaved});`;
-    statements.push(`${codeGenType(inst.val.iter.type)} ${iterSaved} = ${iterExpr.output};`);
+    statements.push(`${iterSaved} = ${iterExpr.output};`);
     statements.push(`lastLine = ${inst.position.line}; lastFile = "${inst.position.document}"; ${itemTypeStr} ${varName} = ${nextFnName}(&${iterSaved});`);
     statements.push(`while (${varName} != 0) {`);
     statements.push(codeGenBody(inst.val.body, indent + 1, false, ctx));
@@ -382,9 +413,9 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   return outputText;
 }
 
-function uniqueVarName(ctx: FnContext): string {
-  let name = `__expr_${ctx.amtReserved}`;
-  ctx.amtReserved += 1;
+function uniqueVarName(ctx: FnContext, type: Type | null): string {
+  let name = `__expr_${ctx.reservedVars.length}`;
+  ctx.reservedVars.push(type);
   return name;
 }
 
@@ -417,6 +448,7 @@ function codeGenExpr(
       let exprA = codeGenExpr(expr.val.left, ctx, position);
       let exprB = codeGenExpr(expr.val.right, ctx, position) 
 
+      statements.push(...exprA.statements);
       statements.push(`if (${expr.val.op == '||' ? '!' : ''}${exprA.output}) {`)
       statements.push(...exprB.statements);
       statements.push('}')
@@ -448,8 +480,8 @@ function codeGenExpr(
 
     let innerExpr = codeGenExpr(expr.val, ctx, position);
     statements = innerExpr.statements;
-    let name = uniqueVarName(ctx);
-    statements.push(`${codeGenType(expr.val.type)} ${name} = ${innerExpr.output};`);
+    let name = uniqueVarName(ctx, expr.val.type);
+    statements.push(`${name} = ${innerExpr.output};`);
     statements.push(`if (${name}.tag == 1) { chad_callstack_pop(); return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 }; }`);
 
     // because this is a leftExpr, it shouldn't save the value to the stack
@@ -493,12 +525,12 @@ function codeGenExpr(
     }
 
     let type = codeGenType(ptrType.val);
-    let ptr = uniqueVarName(ctx);
-    let typedPtr = uniqueVarName(ctx);
+    let ptr = uniqueVarName(ctx, null);
+    let typedPtr = uniqueVarName(ctx, ptrType);
     let allocName = getFnUniqueId('std/core', 'alloc', 'fn', [INT], ptrType);
 
     statements.push(`void *${ptr} = ${allocName}(${expr.val.length});`);
-    statements.push(`${type} *${typedPtr} = (${type}*)(${ptr});`);
+    statements.push(`${typedPtr} = (${type}*)(${ptr});`);
     for (let i = 0; i < expr.val.length; i++) {
       let innerExpr = codeGenExpr(expr.val[i], ctx, position);
       statements.push(...innerExpr.statements);
@@ -507,8 +539,8 @@ function codeGenExpr(
     exprText = `(${ codeGenType(expr.type) }){ ._base = ${typedPtr}, ._len = ${expr.val.length}, ._capacity = ${expr.val.length} }`;
   }
   else if (expr.tag == 'fmt_str') {
-    let fmtName = uniqueVarName(ctx);
-    statements.push(`${codeGenType(FMT)} _${fmtName} = {0};`);
+    let fmtName = uniqueVarName(ctx, FMT);
+    statements.push(`${fmtName} = (${codeGenType(FMT)}){0};`);
     for (let i = 0; i < expr.val.length; i++) {
       let fnCall = expr.val[i];
       if (fnCall.tag != 'fn_call') {
@@ -520,7 +552,7 @@ function codeGenExpr(
         tag: 'left_expr',
         val: {
           tag: 'var',
-          val: fmtName,
+          val: fmtName.slice(1),
           mode: 'none',
           type: FMT,
           unit: null
@@ -533,7 +565,7 @@ function codeGenExpr(
     }
 
     return {
-      output: `(${codeGenType(STR)}){ ._base=_${fmtName}._base, ._len =_${fmtName}._len }`,
+      output: `(${codeGenType(STR)}){ ._base=${fmtName}._base, ._len =${fmtName}._len }`,
       statements
     }
   } 
@@ -584,6 +616,12 @@ function codeGenExpr(
     let innerExpr = codeGenLeftExpr(expr.val, ctx, position, false);
     statements.push(...innerExpr.statements);
     exprText = `&(${innerExpr.output})`;
+  }
+
+  if (ctx.createStmt && (expr.type.tag != 'struct' || expr.type.val.template.name != 'nil' || expr.type.val.template.unit != 'std/core')) {
+    let exprOnStack = uniqueVarName(ctx, expr.type);
+    statements.push(`${exprOnStack} = ${exprText};`)
+    return { output: exprOnStack, statements };
   }
 
   return { output: exprText, statements };
