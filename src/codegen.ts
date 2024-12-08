@@ -14,6 +14,7 @@ interface FnContext {
   reservedVars: (Type | null)[]
   nextFnStmt: string | null
   createStmt: boolean
+  deferStack: string[]
 }
 
 interface CodeGenExpr {
@@ -113,7 +114,8 @@ function codeGenGlobal(global: GlobalImpl): string {
     returnType: NIL,
     reservedVars: [],
     nextFnStmt: null,
-    createStmt: false
+    createStmt: false,
+    deferStack: []
   };
   let expr = codeGenExpr(global.expr, ctx, global.position);
   if (expr.statements.length > 0) {
@@ -133,13 +135,17 @@ function codeGenGlobal(global: GlobalImpl): string {
 }
 
 function codeGenFn(fn: FnImpl) {
-  let ctx: FnContext = { returnType: fn.header.returnType, reservedVars: [], unit: fn.header.unit, nextFnStmt: null, createStmt: true };
+  let ctx: FnContext = { returnType: fn.header.returnType, reservedVars: [], unit: fn.header.unit, nextFnStmt: null, createStmt: true, deferStack: [] };
   let fnCode = codeGenFnHeader(fn.header) + ' {\n';
   let bodyStr = '\n';
 
   bodyStr += '\tchad_callstack_push();';
   for (let i = 0; i < fn.body.length; i++) {
     bodyStr += codeGenInst(fn.body, i, 1, ctx);
+  }
+
+  for (let i = ctx.deferStack.length - 1; i >= 0; i--) {
+    bodyStr += ctx.deferStack[i];
   }
 
   let retType = fn.header.returnType;
@@ -253,6 +259,9 @@ function codeGenFnHeader(fn: Fn): string {
 
 function codeGenBody(body: Inst[], indent: number, includeBraces: boolean, ctx: FnContext): string {
   let bodyStr = includeBraces ? '{\n' : '';
+  let deferStack = ctx.deferStack;
+  ctx.deferStack = [];
+
   for (let i = 0; i < body.length; i++) {
     bodyStr += codeGenInst(body, i, indent, ctx);
   }
@@ -261,6 +270,12 @@ function codeGenBody(body: Inst[], indent: number, includeBraces: boolean, ctx: 
   for (let i = 0; i < indent - 1; i++) {
     tabs += '  ';
   }
+
+  for (let i = ctx.deferStack.length - 1; i >= 0; i--) {
+    bodyStr += ctx.deferStack[i];
+  }
+  ctx.deferStack = deferStack;
+
   if (includeBraces) return bodyStr + tabs + '}'
   return bodyStr;
 }
@@ -312,10 +327,18 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
       statements.push(`${leftExpr.output} ${inst.val.op} ${rightExpr.output};`);
     }
   } 
+  else if (inst.tag == 'defer') {
+    let bodyStr = '{';
+    for (let i = 0; i < inst.val.length; i++) {
+      bodyStr += codeGenInst(inst.val, i, 0, ctx);
+    }
+    ctx.deferStack.push(bodyStr + '}');
+  }
   else if (inst.tag == 'if') {
     let condition = codeGenExpr(inst.val.cond, ctx, inst.position);
     statements.push(...condition.statements);
     statements.push(`if (${condition.output}) ${ codeGenBody(inst.val.body, indent + 1, true, ctx) }`);
+
     if (instIndex + 1 < insts.length) {
       let nextInst = insts[instIndex + 1];
       if (nextInst.tag == 'elif') {
@@ -332,6 +355,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
         statements.push('}');
       }
     }
+
   } 
   // generated before
   else if (inst.tag == 'elif' || inst.tag == 'else') {}
@@ -342,8 +366,8 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let condName = codeGenExpr(inst.val.cond, ctx, inst.position);
     statements.push(...condName.statements);
     statements.push(`if (!(${condName.output})) break;`);
-    statements.push(bodyText + `${tabs}}`);
     ctx.nextFnStmt = saveNextFnStmt;
+    statements.push(bodyText + `${tabs}}`);
   }
   else if (inst.tag == 'expr') {
     let expr = codeGenExpr(inst.val, ctx, inst.position);
@@ -407,9 +431,15 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   }
 
   let outputText = '';
+  if (inst.tag == 'return' || inst.tag == 'break' || inst.tag == 'continue') {
+    for (let i = ctx.deferStack.length - 1; i >= 0; i--) {
+      outputText += ctx.deferStack[i];
+    }
+  }
   for (let i of statements) {
     outputText += tabs + i + '\n';
   }
+
   return outputText;
 }
 
@@ -482,7 +512,13 @@ function codeGenExpr(
     statements = innerExpr.statements;
     let name = uniqueVarName(ctx, expr.val.type);
     statements.push(`${name} = ${innerExpr.output};`);
-    statements.push(`if (${name}.tag == 1) { chad_callstack_pop(); return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 }; }`);
+
+    let deferStmts = ''
+    for (let i = ctx.deferStack.length - 1; i >= 0; i--) {
+      deferStmts += ctx.deferStack[i];
+    }
+
+    statements.push(`if (${name}.tag == 1) { chad_callstack_pop(); ${deferStmts} return (${ codeGenType(ctx.returnType) }){ .tag = 1, ._val1 = ${name}._val1 }; }`);
 
     // because this is a leftExpr, it shouldn't save the value to the stack
     if (expr.type.tag == 'struct' && expr.type.val.template.name == 'nil') {

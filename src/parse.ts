@@ -184,6 +184,7 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'declare', val: Declare, position: Position }
   | { tag: 'assign', val: Assign, position: Position }
   | { tag: 'include', val: Include, position: Position }
+  | { tag: 'defer', val: Inst[], position: Position }
 
 interface DotOp {
   left: Expr,
@@ -1111,7 +1112,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'include', val: { lines, types }, position: line.position };
   }
-  else if (keyword == 'else') {
+  else if (keyword == 'else' || keyword == 'defer') {
     let splits = balancedSplitTwo(tokens, ';');
     if (splits.length == 1) {
       if (tokens.length != 1) {
@@ -1120,13 +1121,13 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       }
       let b = parseInstBody(body);
       if (b == null) return null;
-      return { tag: 'else', val: b, position: line.position }
+      return { tag: keyword, val: b, position: line.position }
     }
     else {
       if (body.length != 0) logError(positionRange(line.tokens), 'unexpected body');
       let inst = parseInst({ tokens: splits[1], indent: line.indent, position: line.position }, []);
       if (inst == null) return null;
-      return { tag: 'else', val: [inst], position: line.position }
+      return { tag: keyword, val: [inst], position: line.position }
     }
   } 
   else if (keyword == 'for') {

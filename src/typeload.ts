@@ -160,7 +160,7 @@ const RANGE: Type = {
   val: {
     generics: [],
     template: {
-      name: 'range',
+      name: 'Range',
       unit: 'std/core',
       modifier: 'pub',
       isEnum: false,

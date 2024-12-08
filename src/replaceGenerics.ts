@@ -237,6 +237,10 @@ function resolveInst(
     let body = resolveInstBody(inst.val, set, genericMap);
     return [{ tag: 'else', val: body, position: inst.position }];
   }
+  else if (inst.tag == 'defer') {
+    let body = resolveInstBody(inst.val, set, genericMap);
+    return [{ tag: 'defer', val: body, position: inst.position }];
+  }
   else if (inst.tag == 'for_in') {
     let iter = resolveExpr(inst.val.iter, set, genericMap, inst.position);
     if (iter == null) return null;

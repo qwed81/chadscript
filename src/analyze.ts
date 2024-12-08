@@ -75,6 +75,7 @@ type Inst = { tag: 'if', val: CondBody, position: Position }
   | { tag: 'declare', val: Declare, position: Position }
   | { tag: 'assign', val: Assign, position: Position }
   | { tag: 'include', val: Include, position: Position }
+  | { tag: 'defer', val: Inst[], position: Position }
 
 interface FnCall {
   fn: LeftExpr
@@ -459,6 +460,12 @@ function analyzeInst(
       newTypes.push(newType);
     }
     return { tag: 'include', val: { lines: inst.val.lines, types: newTypes }, position: inst.position };
+  }
+
+  if (inst.tag == 'defer') {
+    let body = analyzeInstBody(symbols, inst.val, scope);
+    if (body == null) return null;
+    return { tag: 'defer', val: body, position: inst.position };
   }
 
   if (inst.tag == 'for_in') {
