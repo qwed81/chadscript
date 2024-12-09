@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logError, compilerError, Position } from './util';
+import { logError, compilerError, Position, NULL_POS } from './util';
 
 function parseDir(dirPath: string, parentModName: string | null): ProgramUnit[] | null {
   let modName;
@@ -265,7 +265,6 @@ function parseFile(filePath: string, progName: string): ProgramUnit | null {
   try {
     unitText = fs.readFileSync(filePath, 'utf8');
   } catch (err) {
-    console.error(err);
     return null;
   }
   

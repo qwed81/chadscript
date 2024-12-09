@@ -1,5 +1,5 @@
 export {
-  logError, compilerError, logMultiError, Position, setLogger
+  logError, compilerError, logMultiError, Position, setLogger, NULL_POS
 }
 
 interface Position {
@@ -9,8 +9,23 @@ interface Position {
   end: number
 }
 
+const NULL_POS = {
+  document: '',
+  line: 0,
+  start: 0,
+  end: 0
+}
+
 let logger: (position: Position, message: string, context: string[]) => void;
 logger = (position, message, context) => {
+  if (position.document == '' && position.line == 0 && position.start == 0 && position.end == 0) {
+    console.error(`${message}`);
+    for (let line of context) {
+      console.error('\t' + line);
+    }
+    return;
+  }
+
   console.error(`error in '${position.document}.chad' line: ${position.line}: ${message}`);
   for (let line of context) {
     console.error('\t' + line);

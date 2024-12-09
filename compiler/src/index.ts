@@ -6,7 +6,7 @@ import { loadUnits, UnitSymbols } from './typeload';
 import { loadHeaderFile } from './header';
 import path from 'node:path';
 import { execSync } from 'node:child_process'
-import * as Util from './util';
+import { logError, NULL_POS } from './util';
 import fs from 'node:fs';
 import * as Lsp from './lsp';
 
@@ -128,22 +128,34 @@ function analyzeProgram(
     if (filePath.endsWith('.h')) {
       let headerUnit = loadHeaderFile(filePath);
       if (headerUnit == null) {
-        continue;
+        logError(NULL_POS, `could not load unit '${filePath}'`);
+        symbols.push(blankSymbols(filePath))
       }
-      symbols.push(headerUnit);
+      else {
+        symbols.push(headerUnit);
+      }
       headerFiles.add(filePath);
     }
     else {
       let fileName = filePath.slice(0, -5);
       if (replaceFile.has(filePath)) {
         let progUnit = parse(replaceFile.get(filePath)!, fileName);
-        if (progUnit == null) continue;
-        programUnits.push(progUnit);
+        if (progUnit == null) {
+          logError(NULL_POS, `could not load unit '${filePath}'`);
+          programUnits.push(blankUnit(fileName));
+        } 
+        else {
+          programUnits.push(progUnit);
+        }
       }
       else {
         let progUnit = parseFile(filePath, fileName);
-        if (progUnit == null) continue;
-        programUnits.push(progUnit);
+        if (progUnit == null) {
+          programUnits.push(blankUnit(fileName));
+        }
+        else {
+          programUnits.push(progUnit);
+        }
       }
 
       for (let fileName of programUnits[programUnits.length - 1].referencedUnits) {
@@ -223,3 +235,26 @@ function getFilesRecur(filePath: string, namePath: string, chadPaths: string[], 
   }
 }
 
+function blankSymbols(name: string): UnitSymbols {
+  return {
+    name,
+    fns: new Map(),
+    macros: new Map(),
+    asUnits: new Map(),
+    globals: new Map(),
+    structs: new Map(),
+    allUnits: [],
+    useUnits: []
+  }
+}
+
+function blankUnit(name: string): ProgramUnit {
+  return {
+    structs: [],
+    globals: [],
+    fns: [],
+    referencedUnits: new Set(),
+    uses: [],
+    fullName: name
+  }
+}

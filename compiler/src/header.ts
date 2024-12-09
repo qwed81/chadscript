@@ -53,14 +53,20 @@ interface ASTNode {
 
 function loadHeaderFile(headerName: string): UnitSymbols | null {
   let fileFullPath = headerName;
-  if (headerName.startsWith('include')) {
+  if (headerName.startsWith('include/')) {
     fileFullPath = '/usr/' + headerName;
   }
   
   let astCommand = 'clang -Xclang -ast-dump=json -fsyntax-only ' + fileFullPath;
   let defCommand = 'clang -E -dM ' + fileFullPath;
-  let astJson = execSync(astCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 * 10 });
-  let defTexts = execSync(defCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 * 10 });
+  let astJson;
+  let defTexts;
+  try {
+    astJson = execSync(astCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 * 10, stdio: ['pipe', 'pipe', 'ignore'] })
+    defTexts = execSync(defCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 * 10, stdio: ['pipe', 'pipe', 'ignore'] })
+  } catch(e) {
+    return null;
+  }
   let ast: ASTNode = JSON.parse(astJson);
   let defs: string[] = defTexts.split('\n');
 
