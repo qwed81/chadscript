@@ -1,4 +1,4 @@
-use "include/string.h" as memory, "include/stdlib.h" as stdlib
+use "include/string.h" as memory
 
 struct type
 
@@ -18,27 +18,27 @@ enum TypeUnion[T, K]
   T val0
   K val1
 
-struct range
+struct Range
   int start
   int end
   int output
 
-impl next(&range r) *int
+impl next(&Range r) *int
   r.output = r.start
   if r.start == r.end
     ret nil
   r.start += 1
   ret &r.output
 
-fn rev(range r) revRange
+fn rev(Range r) RevRange
   ret { start = r.end - 1, end = r.start - 1, output = r.end - 1 }
 
-struct revRange
+struct RevRange
   int start
   int end
   int output
 
-impl next(&revRange r) *int
+impl next(&RevRange r) *int
   r.output = r.start 
   if r.start == r.end
     ret nil
@@ -56,7 +56,7 @@ fn clear(&bump bp)
   memSet(bp.base, 0, diff)
   bp.curr = bp.base
 
-fn memEq(*T memA, *T memB, int size) bool
+fn memEq(*const T memA, *const T memB, int size) bool
   *u8 u8memA = ptr(memA)
   *u8 u8memB = ptr(memB)
   ret memory::memcmp(u8memA, u8memB, u32(size)) == 0
@@ -86,19 +86,23 @@ fn alloc(int amt) *T
   ret alloc(bp, amt)
 
 fn align(*T p) *T
+  *T output = nil
   include
     size_t loc = (size_t)_p & ~alignof($(T));
-    if (loc == (size_t)_p) return _p;
-    return ($(T)*)(loc + sizeof($(T)));
-  ret nil
+    if (loc == (size_t)_p) _output = _p;
+    else _output = ($(T)*)(loc + sizeof($(T)));
+  ret output
 
 fn malloc(int amt) *T
   int size = amt * @sizeOf(T)
-  *u8 out = stdlib::malloc(u32(size))
+  *u8 out = nil
+  include
+    _out = malloc(_size);
   ret ptr(out)
 
 fn free(*T mem)
-  stdlib::free(ptr(mem))
+  include
+    free(_mem);
 
 fn min(int a, int b) int
   if b < a
@@ -131,8 +135,18 @@ impl index(&Vec[T] vec, int index) *T
   assert index >= 0 && index < vec.len
   ret &vec.base[index]
 
+impl index(&Vec[T] s, Range r) *Vec[T]
+  assert r.start >= 0 && r.start < s.len
+  *Vec[T] newVec = alloc(1)
+  newVec[0] = { base = &s.base[r.start], len = r.end - r.start, capacity = r.end - r.start }
+  ret newVec
+
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
+
+fn extend(&Vec[T] l, Vec[T] other)
+  for i in 0:other.len
+    append(l, other[i])
 
 fn append(&Vec[T] l, T val)
   if l.len == l.capacity
@@ -153,14 +167,14 @@ fn remove(&Vec[T] l, int index)
   l.len -= 1
 
 struct str
-  get *char base
+  get *const char base
   get int len
 
-impl index(&str s, int index) *char
+impl index(&str s, int index) *const char
   assert index >= 0 && index < s.len
   ret &s.base[index]
 
-impl index(&str s, range r) *str
+impl index(&str s, Range r) *str
   assert r.start >= 0 && r.start < s.len
   *str newStr = alloc(1)
   newStr[0] = { base = &s.base[r.start], len = r.end - r.start }
@@ -176,6 +190,9 @@ fn cstr(str s) *char
   cstr[s.len] = '\0'
   ret cstr
 
+fn str(*char s) str
+  ret { base = s, len = int(memory::strlen(s)) }
+
 fn lines(str s) Vec[str]
   ret split(s, '\n')
 
@@ -188,13 +205,13 @@ fn split(str s, char c) Vec[str]
   int end = 0
   int start = 0
   while true
-    if end >= s.len 
-      break
+    if end >= s.len; break
     if s[end] == c
       append(output, s[start:end])
       start = end + 1
     end += 1
-  append(output, s[start:s.len])
+
+  if start < s.len; append(output, s[start:s.len])
   ret output
 
 fn trim(str s) str
@@ -213,24 +230,19 @@ fn contains(str s, str inner) bool
       if s[i] != inner[j]
         contained = false
         break
-    if contained
-      ret true
+    if contained; ret true
   ret false
 
 fn startsWith(str s, str start) bool
-  if s.len < start.len
-    ret false
+  if s.len < start.len; ret false
   for i in 0:start.len
-    if s[i] != start[i]
-      ret false
+    if s[i] != start[i]; ret false
   ret true
 
 fn endsWith(str s, str end) bool
-  if s.len < end.len
-    ret false
+  if s.len < end.len; ret false
   for i in 0:end.len
-    if s[s.len - end.len + i] != end[i]
-      ret false
+    if s[s.len - end.len + i] != end[i]; ret false
   ret true
 
 fn indexOf(str s, str inner) int|nil
@@ -240,8 +252,12 @@ fn indexOf(str s, str inner) int|nil
       if s[i] != inner[j]
         contained = false
         break
-    if contained
-      ret i
+    if contained; ret i
+  ret nil
+
+fn indexOf(str s, char inner) int|nil
+  for i in 0:s.len
+    if s[i] == inner; ret i
   ret nil
 
 fn lastIndexOf(str s, str inner) int|nil
@@ -251,8 +267,12 @@ fn lastIndexOf(str s, str inner) int|nil
       if s[i] != inner[j]
         contained = false
         break
-    if contained
-      ret i
+    if contained; ret i
+  ret nil
+
+fn lastIndexOf(str s, char inner) int|nil
+  for i in rev(0:s.len)
+    if s[i] == inner; ret i
   ret nil
 
 struct Fmt
@@ -309,7 +329,7 @@ pri fn appendOne(&Fmt s, char c)
   s.len += 1
 
 decl impl format(&Fmt fmt, T input)
-  fmt ++= "( "
+  fmt ++= "\{ "
   bool usedField = false
   for field in input
     usedField = true
@@ -321,11 +341,10 @@ decl impl format(&Fmt fmt, T input)
   if usedField
     fmt.len -= 2
 
-  fmt ++= " )"
+  fmt ++= " \}"
 
 impl format(&Fmt fmt, str s)
-  for i in 0:s.len
-    appendOne(fmt, s[i])
+  for i in 0:s.len; appendOne(fmt, s[i])
 
 impl format(&Fmt fmt, u64 val)
   int len = 0
@@ -408,57 +427,53 @@ decl impl eq(T a, T b) bool
   ret memEq(&a, &b, @sizeOf(T))
 
 impl eq(str a, str b) bool
-  if a.len != b.len
-    ret false
+  if a.len != b.len; ret false
   ret memEq(a.base, b.base, a.len)
 
 impl eq(Vec[T] a, Vec[T] b) bool
-  if a.len != b.len
-    ret false
+  if a.len != b.len; ret false
   for i in 0:a.len
-    if !eq(a[i], b[i])
-      ret false
+    if !eq(a[i], b[i]); ret false
   ret true
 
 decl impl hash(K key, &u32 hashState)
-  for field in key
-    hash(field.val, hashState)
+  for field in key; hash(field.val, hashState)
 
-impl hash(u64 key, &u32 hashState)
-  hashState += u32((key & 32) ^ (key >> 32) ^ 2984300601)
+impl hash(u64 key, &u32 hashState) 
+  hashState += u32((key & 32) ^ (key >> 32) ^ 29843006)
 
 impl hash(u32 key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(u16 key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(u8 key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(i64 key, &u32 hashState)
-  hashState += u32((key & 32) ^ (key >> 32) ^ 2984300601)
+  hashState += u32((key & 32) ^ (key >> 32) ^ 29843006)
 
 impl hash(int key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(i16 key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(i8 key, &u32 hashState)
-  hashState += u32(key ^ 2984300601)
+  hashState += u32(key ^ 29843006)
 
 impl hash(char key, &u32 hashState)
-  hashState += u32(u32(key) ^ 2984300601)
+  hashState += u32(u32(key) ^ 29843006)
 
 impl hash(bool key, &u32 hashState)
   hashState += u32(key)
 
 impl hash(f64 key, &u32 hashState)
-  hashState += u32(u64(key) ^ 2984300601)
+  hashState += u32(u64(key) ^ 29843006)
 
 impl hash(f32 key, &u32 hashState)
-  hashState += u32(u32(key) ^ 2984300601)
+  hashState += u32(u32(key) ^ 29843006)
 
 impl hash(Vec[T] key, &u32 hashState)
   for i in 0:key.len
@@ -469,8 +484,8 @@ impl hash(str key, &u32 hashState)
     hash(key[i], hashState)
 
 struct MapEntry[K, V]
+  V val # DO NOT REORDER
   K key
-  V val
   pri bool hasValue
 
 struct Map[K, V]
@@ -491,18 +506,6 @@ fn lookupMapEntry(*MapEntry[K, V] entries, int capacity, K key) *MapEntry[K, V]
   ret &entries[i]
 
 impl index(&Map[K, V] map, K key) *V
-  assert map.len > 0
-  *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
-  assert entry[0].hasValue
-  ret &entry[0].val
-
-fn set(&Map[K, V] map, K key, V value)
-  if map.len > 0
-    *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
-    if entry[0].hasValue
-      entry[0].val = value
-      ret
-
   if map.len * 5 >= map.capacity * 4
     int newCapacity = max(8, map.capacity * 2)
     *MapEntry[K, V] newEntries = alloc(newCapacity) 
@@ -512,8 +515,21 @@ fn set(&Map[K, V] map, K key, V value)
     map.entries = newEntries
     map.capacity = newCapacity
 
-  lookupMapEntry(map.entries, map.capacity, key)[0] = { key = key, val = value, hasValue = true }
-  map.len += 1
+  *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
+  if !entry[0].hasValue
+    map.len += 1
+
+  entry[0].key = key
+  entry[0].hasValue = true
+  ret &entry[0].val
+
+##
+impl verifyIndex(&Map[K, V] map, *V value)
+  *MapEntry[K, V] entry = ptr(value)
+  if !entry[0].hasValue
+    entry[0].hasValue = true
+    map.len += 1
+##
 
 impl format(&Fmt f, Map[K, V] map)
   f ++= '['
@@ -523,8 +539,8 @@ impl format(&Fmt f, Map[K, V] map)
       f ++= map.entries[i].key
       f ++= ": "
       f ++= map.entries[i].val
-      f ++= ") , "
-  f.len -= 3
+      f ++= "), "
+  f.len -= 2
   f ++= ']'
 
 fn contains(Map[K, V] map, K key) bool
@@ -532,13 +548,15 @@ fn contains(Map[K, V] map, K key) bool
   ret entry == nil || !entry[0].hasValue
 
 fn rand(int start, int end) int
+  int output = 0
   include
-    return (_end - _start) * ((double)rand() / (double)RAND_MAX) + _start;
-  ret 0
+    _output = (_end - _start) * ((double)rand() / (double)RAND_MAX) + _start;
+  ret output
 
 fn rand() f64
+  f64 output = 0.0
   include
-    return ((double)rand() / (double)RAND_MAX);
+    _output = ((double)rand() / (double)RAND_MAX);
   ret 0.0
 
 fn input(str output) int|err

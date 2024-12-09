@@ -1,0 +1,84 @@
+{
+  "name": "chadscript",
+  "scopeName": "source.chad",
+  "fileTypes": ["chadscript"],
+  "patterns": [
+    {
+      "name": "keyword.control.chad",
+      "match": "\\b(while|pri|if|elif|else|for|in|struct|enum|ret|break|continue|use|as|include|assert|try|get|fn|const|decl|recur|impl|with|local|macro|field|defer)\\b"
+    },
+    {
+      "name": "storage.type.chad",
+      "match": "\\b(void|int|char|bool|num|byte|ptr|str|err|i64|i32|i16|i8|u64|u32|u16|u8|f64|f32)\\b"
+    },
+    {
+      "name": "constant.language.nil.chad",
+      "match": "\\bnil\\b"
+    },
+    {
+      "name": "constant.language.boolean.chad",
+      "match": "\\b(true|false)\\b"
+    },
+    {
+      "name": "string.quoted.double.chad",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.chad",
+          "match": "\\\\."
+        },
+        {
+          "name": "meta.embedded.expression.chad",
+          "begin": "{",
+          "end": "}"
+        }
+      ]
+    },
+    {
+      "name": "comment.block.chad",
+      "begin": "##",
+      "end": "##"
+    },
+    {
+      "name": "constant.numeric.integer.chad",
+      "match": "\\b\\d+\\b"
+    },
+    {
+      "name": "string.quoted.single.chad",
+      "match": "'[^']*'"
+    },
+    {
+      "name": "variable.other.chad",
+      "match": "\\b[a-z][a-zA-Z_0-9']*\\b"
+    },
+    {
+      "name": "entity.name.type.struct.chad",
+      "match": "\\b[A-Z][a-z0-9]*\\b"
+    },
+    {
+      "name": "entity.name.function.chad",
+      "match": "\\b[a-zA-Z_0-9]+(?=\\([^)]*\\)(?:\\.[^)]*\\)?)?)"
+    },
+    {
+      "name": "keyword.other.macro.chad",
+      "match": "@[a-zA-Z_0-9]+(?=\\([^)]*\\)(?:\\.[^)]*\\)?)?)"
+    },
+    {
+      "name": "entity.name.function.special.chad",
+      "match": "\\$[a-zA-Z0-9]*"
+    },
+    {
+      "name": "keyword.operator.is.chad",
+      "match": "\\bis\\b"
+    },
+    {
+      "name": "keyword.operator.chad",
+      "match": "[+\\-*/%&|=<>!\\[\\](){}]"
+    },
+    {
+      "name": "comment.line.number-sign.chad",
+      "match": "#.*$"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "name": "chadscript-vscode",
+  "displayName": "ChadScript - Tools",
+  "description": "vscode chadscript integration",
+  "version": "0.0.0",
+  "license": "",
+  "icon": "chad.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "publisher": "qwed81",
+  "categories": [
+    "Programming Languages"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "8.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^4.9.3"
+  },
+  "repository": {
+  },
+  "scripts": {
+    "build": "npx tsc"
+  },
+  "main": "./dist/src/index.js",
+  "activationEvents": [
+    "onLanguage:chadscript"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "chadscript",
+        "aliases": [
+          "chadscript",
+          "ChadScript"
+        ],
+        "icon": {
+          "light": "./chad.png",
+          "dark": "./chad.png"
+        },
+        "extensions": [
+          ".chad"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "chadscript",
+        "scopeName": "source.chad",
+        "path": "./syntaxes/chad.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Example configuration",
+      "properties": {
+        "languageServerExample.maxNumberOfProblems": {
+          "scope": "resource",
+          "type": "number",
+          "default": 100,
+          "description": "Controls the maximum number of problems produced by the server."
+        }
+      } 
+    }
+  },
+  "preview": true
+}

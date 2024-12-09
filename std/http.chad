@@ -1,79 +1,51 @@
-use "std/net"
+use "std/io"
 
-##
-struct Routes
-  Arr[HttpResponse!(HttpRequest)] handlers
-  Arr[str] paths
+struct HttpRes
+  int code
+  str body
+  Vec[HttpHeader] headers
 
-fn routes() Routes 
-  return { handlers = [], paths = [] }
+struct HttpHeader
+  str key
+  str value
 
-fn addRoute(ln Routes routes, str path, HttpResponse!(HttpRequest) handler) 
-  routes.handlers += handler
-  routes.paths += path
+struct HttpReq
+  str method
+  str version
+  str path
+  str body
+  Vec[HttpHeader] headers
 
-fn httpEntry(ln TcpSocket socket, Routes routes) void!
-  Scanner[TcpSocket] reqScanner = scanner(socket)
+fn readReq(Tcp tcp) HttpReq|err
+  Vec[u8] buf = vec(1024)
+  int amtRead = try read(tcp, buf)
+  str req = { base = ptr(buf.base), len = amtRead }
 
-  str firstLine = try nextLine(reqScanner)
-  Arr[str] splits = split(firstLine)
-  if splits.len < 3
-    return Err("malformed request")
+  Vec[str] reqLines = lines(req)
+  if reqLines.len == 0; ret err("malformed request")
 
-  HttpMethod method = GET
-  if eq(splits[0], "POST")
-    method = POST
-  elif !eq(splits[0], "GET")
-    return Err("unsupported method")
+  Vec[str] firstLine = split(reqLines[0])
+  if firstLine.len < 3; ret err("malformed request")
 
-  HttpRequest req = { method = method, route = splits[1] }
-  HttpResponse res = { status = NOT_FOUND, contentType = Html, body = "not found" }
-  for i in 0:routes.paths.len
-    if eq(routes.paths[i], req.route)
-      HttpResponse! resultRes = routes.handlers[i](req)
-      if resultRes is Ok 
-        res = resultRes
-      else
-        res = { status = INTERNAL_SERVER_ERROR, contentType = Html, body = "internal server error"}
+  HttpReq output = {}
+  output.method = firstLine[0]
+  output.path = firstLine[1]
+  output.version = firstLine[2]
 
-  Fmt responseStr = fmt()
-  if res.status is OK
-    responseStr += "HTTP/1.1 200 OK\n"
-  elif res.status is NOT_FOUND
-    responseStr += "HTTP/1.1 404 NOT FOUND\n"
-  else
-    responseStr += "HTTP/1.1 500 Internal Server Error\n"
+  int bodyStart = 0
+  for i in 0:reqLines.len
+    str line = reqLines[i]
+    if line.len == 0
+      bodyStart += 2
+      break
+    bodyStart += line.len
+    int|nil headerDivider = indexOf(line, ':')
+    if headerDivider is nil; ret err("malformed request")
+    HttpHeader header = { key = line[0:headerDivider], value = line[headerDivider + 1:line.len] }
+    append(output.headers, header)
 
-  responseStr += "Content-Type: text/html; charset=UTF-8\n"
-  responseStr += "Content-Length: {res.body.len}\n\n"
-  responseStr += res.body
-  try write(socket, toUtf8(responseStr))
+  output.body = req[bodyStart:req.len]
+  ret output
 
-  return Ok
+fn writeRes(Tcp tcp, HttpRes res) nil|err
 
-fn httpListen(str host, int port, Routes routes) void!
-  return listen(host, port, routes, httpEntry)
-
-enum HttpMethod
-  void GET
-  void POST
-
-enum HttpStatusCode
-  void OK
-  void NOT_FOUND
-  void INTERNAL_SERVER_ERROR 
-
-enum HttpContentType
-  void Html
-  void Json
-
-struct HttpResponse
-  get HttpStatusCode status
-  get HttpContentType contentType
-  get str body
-
-struct HttpRequest
-  get str route
-  get HttpMethod method
-
-##

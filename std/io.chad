@@ -1,0 +1,139 @@
+use "include/fcntl.h", "include/unistd.h", "include/string.h", "include/errno.h", "include/arpa/inet.h", "include/netinet/in.h" as net
+
+File stdin = { fd = 0 }
+File stdout = { fd = 1 }
+File stderr = { fd = 2 }
+
+fn readAll(S input) str|err
+  Vec[u8] output = try readAll(input)
+  ret { base = ptr(output.base), len = output.len }
+
+fn readAll(S input) Vec[u8]|err
+  Vec[u8] buf = vec(1024)
+  Vec[u8] output = []
+  int amtRead = try read(input, buf)
+  extend(output, buf[0:amtRead])
+  while amtRead != 0
+    amtRead = try read(input, buf)
+    extend(output, buf[0:amtRead])
+  ret output
+
+struct File
+  int fd
+
+enum OpenFlags
+  ReadWrite
+  Read
+  Write
+
+fn errno() err
+  int ecode = __errno_location()[0]
+  *char cmessage = strerror(ecode)
+  str message = str(cmessage)
+  ret err(message)
+
+fn open(str path, OpenFlags flags) File|err
+  int intFlags = 0
+  if flags is ReadWrite; intFlags = O_RDWR
+  elif flags is Read; intFlags = O_RDONLY
+  elif flags is Write; intFlags = O_WRONLY
+
+  int fd = open(cstr(path), intFlags | O_CREAT, 384)
+  if fd < 0; ret errno()
+  ret { fd = fd }
+
+decl read(S input, &Vec[u8] buf) int|err
+decl write(S output, Vec[u8] buf) nil|err
+
+impl read(File file, &Vec[u8] buf) int|err 
+  int result = read(file.fd, buf.base, u64(buf.len))
+  if result < 0; ret errno()
+  ret result
+
+impl write(File file, Vec[u8] buf) nil|err
+  int result = write(file.fd, buf.base, u64(buf.len))
+  if result < 0; ret errno()
+
+fn writeStr(File file, str buf) nil|err
+  int result = write(file.fd, ptr(buf.base), u64(buf.len))
+  if result < 0; ret errno()
+
+fn close(File file) 
+  int result = close(file.fd)
+
+struct TcpServer
+  int fd
+
+struct Tcp
+  int fd
+
+const u16 AF_INET = 2
+
+fn bind(str ip, int port) TcpServer|err
+  int fd = net::socket(int(AF_INET), SOCK_STREAM, 0)
+  if fd < 0; ret errno()
+
+  int result = 0
+  sockaddr_in addr = {}
+  addr.sin_family = AF_INET
+
+  result = inet_pton(int(AF_INET), cstr(ip), ptr(&addr.sin_addr))
+  if result < 0; ret errno()
+  addr.sin_port = htons(u16(port))
+
+  *sockaddr addrPtr = ptr(&addr)
+  result = bind(fd, addrPtr, u32(@sizeOf(sockaddr_in)))
+  if result < 0; ret errno()
+
+  ret { fd = fd }
+  
+fn listen(TcpServer server, int backlog) nil|err
+  int fd = listen(server.fd, backlog)
+  if fd < 0; ret errno()
+
+fn accept(TcpServer server) Tcp|err
+  sockaddr_in addr = {}
+  u32 len = u32(@sizeOf(sockaddr_in))
+  int fd = accept(server.fd, ptr(&addr), &len)
+  if fd < 0; ret errno()
+  ret { fd = fd }
+
+fn close(TcpServer server)
+  int result = close(server.fd)
+
+fn connect(str ip, int port) Tcp|err
+  sockaddr_in addr = {}
+
+  int result = 0
+  int fd = socket(int(AF_INET), SOCK_STREAM, 0)
+  if fd < 0; ret errno()
+
+  addr.sin_family = AF_INET
+  addr.sin_port = htons(u16(port))
+  result = inet_pton(int(AF_INET), cstr(ip), ptr(&addr.sin_addr))
+  if result < 0; ret errno()
+
+  *sockaddr addrPtr = ptr(&addr)
+  fd = connect(fd, addrPtr, u32(@sizeOf(sockaddr_in)))
+  if result < 0; ret errno()
+
+  ret { fd = fd }
+
+impl read(Tcp tcp, &Vec[u8] buf) int|err amtRead
+  int result = read(tcp.fd, buf.base, u64(buf.len))
+  if result < 0
+    ret errno()
+  ret result
+
+impl write(Tcp tcp, Vec[u8] buf) nil|err
+  int result = write(tcp.fd, buf.base, u64(buf.len))
+  if result < 0
+    ret errno()
+
+fn writeStr(Tcp tcp, str buf) nil|err
+  int result = write(tcp.fd, ptr(buf.base), u64(buf.len))
+  if result < 0
+    ret errno()
+
+fn close(Tcp tcp)
+  int result = close(tcp.fd)

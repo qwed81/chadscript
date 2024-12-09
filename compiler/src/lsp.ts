@@ -2,6 +2,7 @@ import {
   TextDocuments,
   InitializeParams,
   InitializeResult,
+  TextDocumentSyncKind,
   CodeActionKind,
   DeclarationParams,
   Diagnostic,
@@ -30,7 +31,6 @@ export function startServer(): void {
   const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument)
 
   connection.onInitialize((params: InitializeParams) => {
-    // connection.console.info(`Default version of Prisma 'prisma-schema-wasm':`)
     const capabilities = params.capabilities
 
     hasCodeActionLiteralsCapability = Boolean(capabilities?.textDocument?.codeAction?.codeActionLiteralSupport)
@@ -38,17 +38,11 @@ export function startServer(): void {
 
     const result: InitializeResult = {
       capabilities: {
+        textDocumentSync: TextDocumentSyncKind.Incremental,
         definitionProvider: true,
         referencesProvider: true,
       },
     }
-
-    if (hasCodeActionLiteralsCapability) {
-      result.capabilities.codeActionProvider = {
-        codeActionKinds: [CodeActionKind.QuickFix],
-      }
-    }
-
     return result
   })
 
@@ -62,6 +56,12 @@ export function startServer(): void {
     for (let document of documents.all()) {
       validateDocument(document)
     }
+  })
+
+  connection.onCodeAction((_e) => {
+    connection.console.log(`Code action requested for ${_e.textDocument.uri}`);
+    connection.console.log(`Context: ${JSON.stringify(_e.context)}`);
+    return []
   })
 
   documents.onDidClose((_e) => {})
@@ -115,6 +115,7 @@ export function startServer(): void {
     await validateDocument(change.document)
   })
 
+  /*
   connection.onDefinition(async (params: DeclarationParams) => {
     const doc = documents.get(params.textDocument.uri)
     return undefined;
@@ -124,6 +125,7 @@ export function startServer(): void {
     const doc = documents.get(params.textDocument.uri)
     return undefined;
   })
+  */
 
   documents.listen(connection)
   connection.listen()

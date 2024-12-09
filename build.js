@@ -3,11 +3,20 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // create output directory
-if (!fs.existsSync('build/std')) {
-  fs.mkdirSync('build/std')
+if (!fs.existsSync('compiler/build/')) {
+  fs.mkdirSync('compiler/build/')
 }
 
-copyFilesRecur('std', 'build/std', ['.chad']);
+// create output directory
+if (!fs.existsSync('compiler/build/std')) {
+  fs.mkdirSync('compiler/build/std')
+}
+
+execSync('npm run build', { cwd: 'compiler' });
+copyFilesRecur('std', 'compiler/build/std', ['.chad']);
+if (!process.argv.includes('compiler')) {
+  execSync('npm run build', { cwd: 'vscode' });
+}
 
 function copyFilesRecur(srcDir, targetDir, extensions) {
   let files = fs.readdirSync(srcDir)
