@@ -486,8 +486,8 @@ function toStr(t: Type | null): string {
   if (t.tag == 'generic') return t.val;
   if (t.tag == 'ptr') return '*' + (t.const ? 'const ' : '') + toStr(t.val);
   if (t.tag == 'link') return '&' + toStr(t.val);
-  if (t.tag == 'ambig_int') return 'int';
-  if (t.tag == 'ambig_float') return 'f64';
+  if (t.tag == 'ambig_int') return 'NUMBER';
+  if (t.tag == 'ambig_float') return 'FLOAT';
 
   if (t.tag == 'struct') {
     let generics: string = '[';
@@ -1064,12 +1064,17 @@ function resolveImpl(
 
     let isGeneric = false;
     for (let i = 0; i < fnType.paramTypes.length; i++) {
-      if (fnType.paramTypes[i].tag == 'generic') {
+      let pType = fnType.paramTypes[i];
+      if (pType.tag == 'generic'
+        || pType.tag == 'link' && pType.val.tag == 'generic'
+      ) {
         isGeneric = true;
         break;
       }
     }
-    if (fnType.returnType.tag == 'generic') isGeneric = true;
+    if (fnType.returnType.tag == 'generic'
+      || fnType.returnType.tag == 'link' && fnType.returnType.val.tag == 'generic'
+    ) isGeneric = true;
 
     if (isGeneric) {
       possibleFns.push(possibleFn);

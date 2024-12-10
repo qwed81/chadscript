@@ -585,7 +585,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'assign') {
-    let to = ensureLeftExprValid(symbols, inst.val.to, scope, inst.position);
+    let to = ensureLeftExprValid(symbols, inst.val.to, scope, inst.position, true);
     if (to == null) return null;
 
     if (isConst(symbols, to, scope)) {
@@ -716,6 +716,7 @@ function ensureLeftExprValid(
   leftExpr: Parse.LeftExpr,
   scope: FnContext,
   position: Position | null,
+  inAssign: boolean = false
 ): LeftExpr | null {
   let computedExpr: LeftExpr | null = null;
 
@@ -799,7 +800,9 @@ function ensureLeftExprValid(
     computedExpr = ensureLeftExprValid(newUnit, leftExpr.inner, scope, position);
   }
 
-  if (computedExpr != null 
+  if (
+    inAssign == false
+    && computedExpr != null 
     && computedExpr.type.tag == 'struct'
     && computedExpr.type.val.template.name == 'TypeUnion'
     && computedExpr.type.val.template.unit == 'std/core'

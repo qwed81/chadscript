@@ -246,8 +246,11 @@ function resolveInst(
     if (iter == null) return null;
     if (inst.val.varName == 'field') {
       let output: Inst[] = [];
-      if (iter.type.tag == 'struct') {
-        let fields = getFields(iter.type);
+      let iterType: Type = iter.type;
+      if (iter.type.tag == 'link') iterType = iter.type.val;
+
+      if (iterType.tag == 'struct') {
+        let fields = getFields(iterType);
         for (let i = 0; i < fields.length; i++) {
           set.fieldStack.push({
             currentFieldName: fields[i].name,

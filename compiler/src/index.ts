@@ -128,7 +128,9 @@ function analyzeProgram(
     if (filePath.endsWith('.h')) {
       let headerUnit = loadHeaderFile(filePath);
       if (headerUnit == null) {
-        logError(NULL_POS, `could not load unit '${filePath}'`);
+        if (!fs.existsSync(filePath)) logError(NULL_POS, `could not load unit '${filePath}'. no file`);
+        else logError(NULL_POS, `could not load unit '${filePath}'. does it compile?`);
+
         symbols.push(blankSymbols(filePath))
       }
       else {

@@ -301,15 +301,11 @@ function parse(unitText: string, progName: string): ProgramUnit | null {
         }
         program.structs.push(struct);
       } else if (line.tokens[start].val == 'use') {
-        if (line.position.line != 1) {
-          logError(line.position, 'uses must be at top of file');
-          return null;
-        }
         let uses = parseUses(line);
         if (uses == null) {
           return null;
         }
-        program.uses = uses;
+        program.uses.push(...uses);
       } else if (line.tokens[start].val == 'fn'
         || line.tokens[start].val == 'decl'
         || line.tokens[start].val == 'impl'
