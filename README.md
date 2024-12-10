@@ -22,6 +22,12 @@ cd chadscript
 node build.js
 cp chad /bin/chad
 ```
+
+#### Usage
+```
+chad examples/e0-intro.chad
+./build/output
+```
 ## Learning the Language
 
 - [intro](https://github.com/qwed81/chadscript/blob/main/examples/e0-intro.chad)
