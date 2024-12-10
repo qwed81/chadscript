@@ -12,11 +12,18 @@ if (!fs.existsSync('compiler/build/std')) {
   fs.mkdirSync('compiler/build/std')
 }
 
+execSync('npm install', { cwd: 'compiler' });
 execSync('npm run build', { cwd: 'compiler' });
 copyFilesRecur('std', 'compiler/build/std', ['.chad']);
 if (!process.argv.includes('compiler')) {
   execSync('npm run build', { cwd: 'vscode' });
 }
+
+let compilerDir = process.cwd() + '/' + 'compiler/build/index.js'
+fs.writeFileSync('chad', `NODE_OPTIONS=--enable-source-maps node ${compilerDir} $@`);
+fs.chmodSync('chad', 0o700);
+
+console.log('build complete. to install cp ./chad to /bin')
 
 function copyFilesRecur(srcDir, targetDir, extensions) {
   let files = fs.readdirSync(srcDir)

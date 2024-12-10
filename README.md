@@ -1,48 +1,33 @@
 # Chadscript
 
-Zero overhead, high performance programming language focused on developer productivity.
+zero overhead, high performance programming language focused on developer productivity.
 
 ## Prerequisites
 
-ChadScript only runs on linux. Other platforms are currently being
-implemented and tested.
+chadscript only runs on x64 linux.
+MacOS and other ISA probably work but are not tested.
+Windows does not.
 
-Building ChadScript programs requires
+dependencies requires
 - node
 - clang
 
-Dependencies are planned to be removed in the future. 
+dependencies are planned to be removed after chadscript v1.0
 
 ## Quick Start
 #### Installation
 ```
 git clone git@github.com:qwed81/chadscript.git
 cd chadscript
-npm install
-npm run build
+node build.js
+cp chad /bin/chad
 ```
-#### Hello World
-```
-# file 'main.chad'
-fn main() int
-  print("hello world")
-  ret 0
-```
-#### Building and Running
-```
-chad main.chad
-```
-
 ## Learning the Language
 
-- [Langugage Features](https://github.com/qwed81/chadscript/blob/main/examples/overview.chad)
-- [Compiler Configuration](https://github.com/qwed81/chadscript/tree/main/examples/buildscript)
-- [Examples](https://github.com/qwed81/chadscript/tree/main/examples)
+- [intro](https://github.com/qwed81/chadscript/blob/main/examples/e0-intro.chad)
+- [examples](https://github.com/qwed81/chadscript/tree/main/examples)
 
 ## Contributing
 
-ChadScript is still in an experimental phase. Any feedback is appriciated, especially
-ideas for features of programming languages.
-
-
-
+chadscript is still in an experimental phase. Any feedback is appriciated, especially
+ideas for features of programming languages or libraries.
