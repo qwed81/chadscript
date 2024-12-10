@@ -1,4 +1,0 @@
-# try running 'chad'
-fn main(int argc, **char argv) int
-  print("hello world")
-  ret 0

@@ -1,0 +1,83 @@
+##
+Variables can be declared in both function and global scope.
+They are statically typed (single type per variable).
+Control flow can be controlled via standard control flow operations.
+These two in combination provide 95% of the usage of ChadScript
+##
+
+fn main()
+  # list of the primitive types 
+  i8 v0 = 0 # 8 bit signed integer
+  i16 v1 = 0
+  int v2 = 1
+  i64 v3 = 1
+  u8 v4 = 0 # 8 bit unsigned integer
+  u16 v5 = 0
+  u32 v6 = 0
+  u64 v7 = 0
+  f32 v8 = 0.5 # floating point numbers
+  f64 v9 = 0.5
+  bool v10 = true
+  char v11 = 'a'
+  
+  # variables must operated on as the same type
+  # and can be cast by using the other type's name
+  assert f32(v2) + v8 == 1.5
+  # constants will automatically cast to the proper type
+  assert v2 + 10 == 11
+
+  # control flow branch based on condition
+  str s = ""
+  if v0 == 0
+    s = "v0 is {0}"
+  elif v0 == 1
+    s = "v0 is {1}"
+  else
+    s = "v0 is {v0}"
+  print(s)
+
+  # will execute once scope exists
+  # defers will execute in reverse order they
+  # are declared
+  defer
+    print("all done")
+
+  # loop while condition is true
+  int i = 0
+  while i < 5
+    print("i: {i}")
+    i = i + 1
+
+  # loop in range
+  for j in 0:3
+    print("j: {j}")
+
+  # pointer (memory addresses) of specific types
+  # can be used directly
+  *i8 v0Ptr = &v0
+  v0Ptr[0] = 15
+  assert v0 == 15
+
+  # Control flow can be put on the same line
+  # as a 1 line body by seperating it with a semi colon
+  if true; print("true!") 
+
+  # The core library provides common structures
+  # that are used in almost every program
+  Vec[int] v = [1, 2, 3, 4]
+  assert v[2] == 3
+
+  # Note {} is 0 initialized. Think of it as default value,
+  # more will be explained later
+  Map[int, int] m = {}
+  m[100] = 1 
+  assert m[100] == 1
+
+  # Fmt (format) is used for building strings and has
+  # special syntax to do so
+  Fmt f = {}
+  f ++= "vec: " # appending to the Fmt
+  f ++= v
+  assert str(f) == "vec: [1, 2, 3, 4]" # using Fmt as its current string
+
+

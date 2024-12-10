@@ -1,0 +1,12 @@
+##
+ChadScript is a compiled programming language made to give fine grain
+control to the programmer, without destorying their productivity.
+
+These examples assume you have programmed before and only go in to
+depth on uncommon or specific knowledge.
+
+ensure the compiler is installed by running 'chad examples/e0-intro.chad'
+run the binary that is placed in build/output
+##
+fn main()
+  print("hello world")

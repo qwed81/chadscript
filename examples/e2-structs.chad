@@ -1,0 +1,44 @@
+##
+Structures provide a way of grouping data.
+Enums provide a way of representing data that can be in one of multiple states.
+Type Unions are syntax sugar over enums that provide a way of representing data that can be one of two types
+##
+
+struct Point
+  int x
+  int y
+
+enum Position
+  Origin # Variant with type 'nil'
+  Point Other # Variant with type Point
+
+fn main()
+  Point p = { x = 0, y = 0 }
+  # note p2 is not a reference, it is a direct data copy
+  Point p2 = p
+  p.x = 10
+  print("p.x: {p.x}")
+  print("p: {p}")
+  print("p2: {p2}")
+
+  Position pos0 = Origin # initialize nil enum
+  Position pos1 = Other(p) 
+
+  # 'is' can be used to narrow down what state an enum is in
+  # The enum field can be used when it is guarenteed in that state
+  if pos0 is Origin 
+    print("pos0 at origin")
+
+  if pos1 is Other
+    print("pos0 is: {pos1.Other}")
+  # if pos0.Other is used here, it will be a compile error
+
+  # this is a TypeUnion[int, nil]
+  int|nil optional = nil
+  assert optional is nil
+
+  # int val = optional # compiler error wrong type
+  optional = 10
+  int val = optional # because optional is always int
+  print(optional)
+

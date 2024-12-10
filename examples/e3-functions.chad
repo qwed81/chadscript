@@ -1,0 +1,82 @@
+# The main function has 2 possible signatures. The 
+# one you are used to is used for examples and simple applications
+# the more useful one is the same as C
+fn main(int argc, **char argv) int
+  int refVal = 0
+  passByRef(refVal)
+  print("refVal: {refVal}")
+
+  int overloadResult = overload(10)
+  print("overloadResult: {overloadResult}")
+
+  myPrint("generics are great!")
+
+  specializePrint(10)
+  catchAll("hello")
+
+  MyTypeIndex index = Second
+  MyType myStruct = { first = 0.0, second = 1.5 }
+  print("second: {myStruct[index]}")
+
+  ret 0
+
+# every parameter is pass by value but references can be passed
+# via reference (pointer) with the '&' symbol
+fn passByRef(&int a)
+  a = 20
+
+# functions can be overloaded with different argument counts,
+# argument types, or different return types
+fn overload(int a) int aCopied
+  assert true
+  ret a
+
+# this function is not called
+fn overload(str s) int
+  assert false
+  ret s.len
+
+# functions can take generic arguments that work with any type.
+# these types are capital 1 character letters 
+fn myPrint(T val)
+  print(val)
+
+# Functions can also be specialized. When the compiler finishes building
+# it can determine inside the generics and call the proper implementation
+# depending on its actual type. decl/impl can not be overloaded.
+decl specializePrint(T val)
+
+impl specializePrint(int val)
+  print("your int is: {val}")
+
+impl specializePrint(f32 val)
+  print("your float is: {val}")
+
+# if an impl is not provided for a type, you will get a compiler error
+# default implementations can be provided to avoid this and will act as
+# a catch all
+decl impl catchAll(T input)
+  print("default: {input}")
+
+##
+some declarations are builtin that can let types use better syntax
+impl index(&MyType val, bool indexType) *f32 # allows for myType[0] = 0.0
+impl verifyIndex(&MyType val, int indexType) # will be called after a value is assigned
+impl next(&MyType val) *int # lets MyType be used in for loops
+impl eq(MyType a, MyType b) bool # == and != syntax
+impl format(&Fmt fmt, MyType myType) # special implemtations used in string formatting and printing
+##
+
+struct MyType
+  f32 first
+  f32 second
+
+enum MyTypeIndex
+  First
+  Second
+
+impl index(&MyType val, MyTypeIndex index) *f32
+  if index is First
+    ret &val.first
+  else
+    ret &val.second
