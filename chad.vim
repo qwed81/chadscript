@@ -9,7 +9,6 @@ syn keyword chadBool false true
 
 syntax region chadStr start=/"/ skip=/\\"/ end=/"/ contains=expressionBlock
 syntax region expressionBlock start=/{/ end=/}/ contained
-syntax region chadComment start=/##/ end=/##/ contains=@Spell
 
 syn match chadInt	"\v\d"
 syn match chadChar "\v\'([^\']*)\'"
@@ -40,6 +39,7 @@ syn match chadOp "\v\{"
 syn match chadOp "\v\}"
 
 syn match chadComment "\v#.*$"
+syntax region chadCommentBlock start=/##/ end=/##/ keepend
 
 hi link chadStr String
 hi link chadMacro Keyword
@@ -48,6 +48,7 @@ hi link chadApply Keyword
 hi link chadType Type
 hi link chadStruct Type
 hi link chadComment	Comment
+hi link chadCommentBlock Comment
 hi link chadOp Operator 
 hi link chadInt Number
 hi link chadBool Number
