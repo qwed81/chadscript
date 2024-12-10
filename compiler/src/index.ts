@@ -151,6 +151,7 @@ function analyzeProgram(
       else {
         let progUnit = parseFile(filePath, fileName);
         if (progUnit == null) {
+          logError(NULL_POS, `could not load unit '${filePath}'`);
           programUnits.push(blankUnit(fileName));
         }
         else {
@@ -172,9 +173,15 @@ function analyzeProgram(
     return null;
   } 
 
-  let mainFn = program.fns.find(x => x.header.name == 'main');
-  if (mainFn == undefined) return null;
-  return { includes: headerFiles, program: replaceGenerics(program, symbols, mainFn) };
+  let mainFns = program.fns.filter(x => x.header.name == 'main');
+  if (mainFns.length < 1) {
+    logError(NULL_POS, 'no main function');
+    return null;
+  }
+  if (mainFns.length > 1) {
+    logError(NULL_POS, 'only 1 main function should be provided');
+  }
+  return { includes: headerFiles, program: replaceGenerics(program, symbols, mainFns[0]) };
 }
 
 function compileProgram(program: AnalysisResult) {

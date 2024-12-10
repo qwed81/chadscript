@@ -1,6 +1,6 @@
 import { FnMode } from './parse';
-import { Position, compilerError, logError } from './util';
-import { Type, toStr, isBasic, createTypeUnion, ERR, NIL, STR, FMT, INT, typeApplicable, getFields } from './typeload';
+import { Position, compilerError, logError, logMultiError, NULL_POS } from './util';
+import { Type, toStr, isBasic, createTypeUnion, ERR, CHAR, NIL, STR, FMT, INT, typeEq, typeApplicable, getFields } from './typeload';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
 
@@ -95,12 +95,37 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   let entry = prog.entry.header;
   let entryName = getFnUniqueId(entry.unit, entry.name, entry.mode, entry.paramTypes, entry.returnType);
 
-  chadDotC +=
-  `
-  int main(int argc, char** argv) {
-    return ${entryName}(argc, argv);
+  if (entry.paramTypes.length == 2 
+    && typeEq(entry.paramTypes[0], INT) 
+    && typeEq(entry.paramTypes[1], { tag: 'ptr', val: { tag: 'ptr', val: CHAR, const: false }, const: false })
+    && typeEq(entry.returnType, INT)
+  ) {
+    chadDotC +=
+    `
+    int main(int argc, char** argv) {
+      return ${entryName}(argc, argv);
+    }
+    `;
+  }  
+  else if (entry.paramTypes.length == 0
+    && typeEq(entry.returnType, NIL)
+  ) {
+    chadDotC +=
+    `
+    int main(int argc, char** argv) {
+      ${entryName}();
+      return 0;
+    }
+    `;
   }
-  `;
+  else {
+    let context = [
+      "expected: fn main()",
+      "expected: fn main(int argc, **char argv) int",
+    ];
+    logMultiError(NULL_POS, 'main function is not the correct type', context)
+    return [];
+  }
 
   return [
     { name: 'chad.h', data: chadDotH },
@@ -798,11 +823,20 @@ function typeAsName(type: Type): string {
   return replaceAll(replaceAll(codeGenType(type), ' ', '_'), '*', '_ptr');
 }
 
+function normalizeUnitName(name: string): string {
+  name = replaceAll(name, '/', '_'), 
+  name = replaceAll(name, '-', '_d_');
+  name = replaceAll(name, '"', '_q_');
+  name = replaceAll(name, '\'', '_a_');
+  name = replaceAll(name, '.', '_p_');
+  return name;
+}
+
 function getGlobalUniqueId(unit: string, name: string): string {
   if (unit.endsWith('.h')) {
     return name;
   }
-  return `_${replaceAll(unit, '/', '_')}_${name}`;
+  return `_${normalizeUnitName(name)}_${name}`;
 }
 
 function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Type[], returnType: Type): string {
@@ -815,7 +849,7 @@ function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Typ
     paramTypesStr += typeAsName(paramTypes[i]) + '_';
   }
   let returnTypeStr = typeAsName(returnType);
-  return `_${replaceAll(unit, '/', '_')}_${mode}_${name}_${paramTypesStr}_${returnTypeStr}`;
+  return `_${normalizeUnitName(unit)}_${mode}_${name}_${paramTypesStr}_${returnTypeStr}`;
 }
 
 function codeGenStructDef(struct: Type): string {
