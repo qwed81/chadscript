@@ -45,16 +45,23 @@ impl next(&RevRange r) *int
   r.start -= 1
   ret &r.output
 
-struct bump
+decl impl realloc(&T item, &BumpAlloc bump)
+  for field in item
+    realloc(field.val, bump)
+
+struct BumpAlloc
   *u8 base
   *u8 curr
 
-local bump bp = {}
+local BumpAlloc bp = {}
 
-fn clear(&bump bp)
-  int diff = int(u64(bp.curr) - u64(bp.base))
-  memSet(bp.base, 0, diff)
+fn clear(&BumpAlloc bp)
   bp.curr = bp.base
+
+fn free(&BumpAlloc bp)
+  free(bp.base)
+  bp.base = nil
+  bp.curr = nil
 
 fn memEq(*const T memA, *const T memB, int size) bool
   *u8 u8memA = ptr(memA)
@@ -70,7 +77,7 @@ fn memCopy(*T dest, *T src, int size)
   *u8 u8memSrc = ptr(src)
   *u8 _ = memory::memcpy(u8memDest, u8memSrc, u32(size))
 
-fn alloc(&bump bp, int amt) *T
+fn alloc(&BumpAlloc bp, int amt) *T
   int allocSize = amt * @sizeOf(T)
   if bp.base == nil
     bp.base = malloc(1024 * 1024)
@@ -130,6 +137,11 @@ struct Vec[T]
   get *T base
   get int capacity
   get int len
+
+impl realloc(&Vec[T] vec, &BumpAlloc bump)
+  *T newPtr = alloc(bump, vec.capacity)
+  memCopy(newPtr, vec.base, vec.len)
+  vec.base = newPtr
 
 impl index(&Vec[T] vec, int index) *T
   assert index >= 0 && index < vec.len
