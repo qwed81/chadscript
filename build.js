@@ -3,11 +3,6 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // create output directory
-if (!fs.existsSync('compiler')) {
-  fs.mkdirSync('compiler')
-}
-
-// create output directory
 if (!fs.existsSync('compiler/build/')) {
   fs.mkdirSync('compiler/build/')
 }
@@ -21,6 +16,7 @@ execSync('npm install', { cwd: 'compiler' });
 execSync('npm run build', { cwd: 'compiler' });
 copyFilesRecur('std', 'compiler/build/std', ['.chad']);
 if (!process.argv.includes('compiler')) {
+  execSync('npm install', { cwd: 'vscode' });
   execSync('npm run build', { cwd: 'vscode' });
 }
 
