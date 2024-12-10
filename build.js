@@ -3,6 +3,11 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // create output directory
+if (!fs.existsSync('compiler')) {
+  fs.mkdirSync('compiler')
+}
+
+// create output directory
 if (!fs.existsSync('compiler/build/')) {
   fs.mkdirSync('compiler/build/')
 }
