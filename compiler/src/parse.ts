@@ -1740,6 +1740,20 @@ function splitTokens(line: string, documentName: string, lineNumber: number): To
   return tokens;
 }
 
+function checkCommentCondition(condition: string): boolean {
+  condition = condition.trim();
+
+  if (condition.startsWith('!')) {
+    return !checkCommentCondition(condition.slice(1));
+  }
+
+  if (condition == 'linux') {
+    return true;
+  }
+
+  return false;
+}
+
 function getLines(data: string, documentName: string): SourceLine[] {
   let lines = data.split('\n');
   let sourceLines: SourceLine[] = [];
@@ -1747,15 +1761,38 @@ function getLines(data: string, documentName: string): SourceLine[] {
   // the last line can be merged if the parens are not closed
   let merge: Token[] = [];
 
+  // used for comment conditions
+  let lineSkipSet: Set<number> = new Set();
+
   // split lines based on spaces
   for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+    if (lineSkipSet.has(lineNumber)) continue;
+
     let line = lines[lineNumber];
     let lineLength = line.length;
 
-    if (line.trim().startsWith('##')) {
-      lineNumber++;
-      while (!lines[lineNumber].trim().startsWith('##') && lineNumber < lines.length) {
+    let trimmed = line.trim();
+    if (trimmed.startsWith('##')) {
+      let conditionString = trimmed.slice(2).trim();
+
+      let cond = false;
+      if (conditionString.startsWith('if')) {
+        cond = checkCommentCondition(conditionString.slice(2));
+      }
+
+      if (cond == false) {
         lineNumber++;
+        while (!lines[lineNumber].trim().startsWith('##') && lineNumber < lines.length) {
+          lineNumber++;
+        }
+      }
+      else {
+        let skipLineNumber = lineNumber;
+        skipLineNumber++;
+        while (!lines[skipLineNumber].trim().startsWith('##') && skipLineNumber < lines.length) {
+          skipLineNumber++;
+        }
+        lineSkipSet.add(skipLineNumber);
       }
     }
 
