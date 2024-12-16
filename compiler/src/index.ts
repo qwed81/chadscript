@@ -14,95 +14,136 @@ export {
   analyzeProgram, getFilesRecur
 }
 
-let libs: string[] = []
-let rename: Map<string, string> = new Map();
-let entryPoint: string = ''
-let mode: 'default' | 'build' | 'lsp' = 'default';
+interface Args {
+  libs: string[]
+  rename: Map<string, string>,
+  entryPoints: string[],
+  mode: 'default' | 'build' | 'lsp',
+  outputName: string
+}
 
-function processArgs(args: string[]): boolean {
-  libs = []
-  rename = new Map()
-  entryPoint = '';
+function parseArgs(args: string[]): Args | null {
+  let parsedArgs: Args = {
+    libs: [],
+    rename: new Map(),
+    entryPoints: [],
+    mode: 'default',
+    outputName: 'build/output'
+  }
+
+  if (args.length > 0) {
+    if (args[0] == 'lsp') parsedArgs.mode = 'lsp';
+    else if (args[0] == 'build') parsedArgs.mode = 'build';
+  }
 
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
     if (arg == '--rename') {
       if (args.length == i) {
         console.error('expected rename files');
-        return false;
+        return null;
       }
       let renameFiles = args[i + 1].split(':');
       if (renameFiles.length != 2) {
         console.error('expected rename file:file');
-        return false;
+        return null;
       }
-      rename.set(renameFiles[0], renameFiles[1]);
+      parsedArgs.rename.set(renameFiles[0], renameFiles[1]);
       i += 1;
       continue;
     }
 
-    if (arg.endsWith('chad')) {
-      if (entryPoint != '') {
-        console.error('expected only 1 entry point')
-        return false;
+    if (arg == '-o') {
+      if (i == args.length - 1) {
+        console.error('exepected name');
       }
-      entryPoint = arg;
+      parsedArgs.outputName = args[i + 1];
+    }
+
+    if (arg.endsWith('chad')) {
+      parsedArgs.entryPoints.push(arg);
     }
 
     if (arg.endsWith('.o') || arg.endsWith('.a') || arg.endsWith('.so')) {
-      libs.push(arg);
+      parsedArgs.libs.push(arg);
     }
   }
 
-    return true;
-}
-
-if (process.argv.length > 2) {
-  if (process.argv[2] == 'lsp') mode = 'lsp';
-  else if (process.argv[2] == 'build') mode = 'build';
+  return parsedArgs;
 }
 
 if (!fs.existsSync('build/')) {
   fs.mkdirSync('build');
 }
 
-processArgs(process.argv.slice(2));
-if (entryPoint == '') {
+let args = parseArgs(process.argv.slice(2));
+if (args == null) {
+  console.log('could not parse args');
+  process.exit(-1);
+}
+
+if (args.entryPoints.length == 0) {
+  let result: string;
   try {
-    execSync(`node ${__dirname}/index.js -- build.chad`, { encoding: 'utf-8' });
-    let result = execSync('./build/output', { encoding: 'utf-8' }).toString();
-    let args = result.split(/\s/);
-    args = args.filter(arg => arg.length > 0);
-    let outputBuildCommand = 'chad ' + result; 
-    console.log(outputBuildCommand);
-    processArgs(args)
+    execSync(`node ${__dirname}/index.js -- -o build/build-script build.chad`, { encoding: 'utf-8' });
+    result = execSync('./build/build-script', { encoding: 'utf-8' }).toString();
   } catch (e) {
     process.exit(-1);
   }
+
+  let lines = result.split('\n');
+  for (let line of lines) {
+    let scriptArgs = line.split(/\s/);
+    scriptArgs = scriptArgs.filter(arg => arg.length > 0);
+
+    if (scriptArgs[0] == 'chad:' && (args.mode == 'build' || args.mode == 'default')) {
+      scriptArgs = scriptArgs.slice(1);
+      let outputCommand = '> chad ';
+      for (let arg of scriptArgs) {
+        outputCommand += arg + ' ';
+      }
+
+      console.log(outputCommand);
+      let scriptParsedArgs = parseArgs(scriptArgs);
+      if (scriptParsedArgs == null) {
+        console.error('invalid command');
+        break;
+      }
+      build(scriptParsedArgs);
+    }
+    else if (scriptArgs[0] == 'lsp:' && args.mode == 'lsp') {
+      scriptArgs = scriptArgs.slice(1);
+      let scriptParsedArgs = parseArgs(scriptArgs);
+      if (scriptParsedArgs == null) {
+        console.error('invalid command');
+        break;
+      }
+
+      if (scriptParsedArgs.entryPoints.length == 0) {
+        console.error('lsp expected entry points');
+      }
+      else {
+        Lsp.run(scriptParsedArgs.entryPoints);
+      }
+    }
+  }
+}
+else if (args.mode == 'build' || args.mode == 'default') {
+  build(args);
+}
+else if (args.mode == 'lsp'){
+  Lsp.run(args.entryPoints);
 }
 
-if (mode == 'default') {
-  let program = analyzeProgram(new Map())
+function build(args: Args) {
+  let program = analyzeProgram(args.entryPoints, new Map())
   if (program != null) {
-    compileProgram(program);
+    compileProgram(args, program);
   }
   else {
     console.log('could not finish build');
     process.exit(-1);
   }
-}
-else if (mode == 'build'){
-  let program = analyzeProgram(new Map())
-  if (program != null) {
-    compileProgram(program);
-  }
-  else {
-    console.log('could not finish build');
-    process.exit(-1);
-  }
-}
-else if (mode == 'lsp') {
-  Lsp.startServer();
 }
 
 interface AnalysisResult {
@@ -111,11 +152,12 @@ interface AnalysisResult {
 }
 
 function analyzeProgram(
+  entryPoints: string[],
   replaceFile: Map<string, string>
 ): AnalysisResult | null {
   // determine which files should be analyzed based on entry point
   let alreadyParsed: Set<string> = new Set();
-  let filePathStack: string[] = ['std/core.chad', entryPoint]
+  let filePathStack: string[] = ['std/core.chad', ...entryPoints]
   let programUnits: ProgramUnit[] = [];
   let symbols: UnitSymbols[] = [];
   let headerFiles: Set<string> = new Set();
@@ -128,7 +170,7 @@ function analyzeProgram(
     if (filePath.endsWith('.h')) {
       let headerUnit = loadHeaderFile(filePath);
       if (headerUnit == null) {
-        if (!fs.existsSync(filePath)) logError(NULL_POS, `could not load unit '${filePath}'. no file`);
+        if (!fs.existsSync(filePath)) logError(NULL_POS, `could not load file '${filePath}'. no file`);
         else logError(NULL_POS, `could not load unit '${filePath}'. does it compile?`);
 
         symbols.push(blankSymbols(filePath))
@@ -143,7 +185,7 @@ function analyzeProgram(
       if (replaceFile.has(filePath)) {
         let progUnit = parse(replaceFile.get(filePath)!, fileName);
         if (progUnit == null) {
-          logError(NULL_POS, `could not load unit '${filePath}'`);
+          logError(NULL_POS, `could not load file '${filePath}'`);
           programUnits.push(blankUnit(fileName));
         } 
         else {
@@ -153,7 +195,7 @@ function analyzeProgram(
       else {
         let progUnit = parseFile(filePath, fileName);
         if (progUnit == null) {
-          logError(NULL_POS, `could not load unit '${filePath}'`);
+          logError(NULL_POS, `could not load file '${filePath}'`);
           programUnits.push(blankUnit(fileName));
         }
         else {
@@ -186,7 +228,7 @@ function analyzeProgram(
   return { includes: headerFiles, program: replaceGenerics(program, symbols, mainFns[0]) };
 }
 
-function compileProgram(program: AnalysisResult) {
+function compileProgram(args: Args, program: AnalysisResult) {
   let outputFiles: OutputFile[] = codegen(program.program, program.includes);
 
   let fileNames: string[] = [];
@@ -213,11 +255,11 @@ function compileProgram(program: AnalysisResult) {
   }
 
   let libPaths = '';
-  for (let i = 0; i < libs.length; i++) {
-    libPaths += libs[i] + ' ';
+  for (let i = 0; i < args.libs.length; i++) {
+    libPaths += args.libs[i] + ' ';
   }
 
-  let outputPath = path.join('build', 'output');
+  let outputPath = args.outputName;
   try {
     execSync(`clang ${objPaths} ${libPaths} -o ${outputPath} -Wno-parentheses-equality`);
   } catch {}

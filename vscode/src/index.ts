@@ -11,10 +11,7 @@ let client: LanguageClient;
 export function activate(context: ExtensionContext) {
   let serverOptions: ServerOptions = {
     command: 'chad',
-    args: ['lsp', 'src/basic.chad'],
-    options: {
-      cwd: '/home/josh/repos/chadscript/examples/test/'
-    }
+    args: ['lsp'],
   };
 
   let clientOptions: LanguageClientOptions = {

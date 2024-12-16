@@ -22,7 +22,7 @@ let hasConfigurationCapability = false
 
 let cwd = process.cwd();
 
-export function startServer(): void {
+export function run(entryPoints: string[]): void {
   const connection: Connection = createConnection(process.stdin, process.stdout);
 
   console.log = connection.console.log.bind(connection.console)
@@ -94,7 +94,7 @@ export function startServer(): void {
 
     let replaceMap: Map<string, string> = new Map();
     replaceMap.set(filePath, textDocument.getText());
-    let _program = analyzeProgram(replaceMap);
+    let _program = analyzeProgram(entryPoints, replaceMap);
 
     let sentToCurrent = false;
     for (let [fileName, diagnostics] of diagnosticMap.entries()) {

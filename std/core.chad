@@ -355,6 +355,9 @@ decl impl format(&Fmt fmt, T input)
 
   fmt ++= " \}"
 
+impl format(&Fmt fmt, Fmt s)
+  format(fmt, str(s))
+
 impl format(&Fmt fmt, str s)
   for i in 0:s.len; appendOne(fmt, s[i])
 

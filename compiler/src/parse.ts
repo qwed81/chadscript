@@ -1752,9 +1752,9 @@ function getLines(data: string, documentName: string): SourceLine[] {
     let line = lines[lineNumber];
     let lineLength = line.length;
 
-    if (line.startsWith('##')) {
+    if (line.trim().startsWith('##')) {
       lineNumber++;
-      while (!lines[lineNumber].startsWith('##') && lineNumber < lines.length) {
+      while (!lines[lineNumber].trim().startsWith('##') && lineNumber < lines.length) {
         lineNumber++;
       }
     }

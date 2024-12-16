@@ -8,18 +8,18 @@ type is ambiguous you will be asked to provide more info (use one of the other m
 This allows only the functions print from "std/core" to be considered
 3. Alias the second version with a name IE. use "std/core" as core. core::print(0) 
 ##
-use "std/io", "examples/e4-ffi.h"
+use "std/io", "e4-ffi.h"
 
 fn main()
   # can just use items from "examples/e4-ffi.h" in normal scope
-  *FILE file = fopen(cstr("examples/e4-ffi.h"), cstr("r"))
+  *FILE file = fopen(cstr("e4-ffi.h"), cstr("r"))
   if file == nil
     print("could not open file")
 
   Vec[u8] buf = vec(1024)
 
   # explicitly use the module name
-  u32 amtRead = "examples/e4-ffi.h"::fread(buf.base, 1, u32(buf.len), file)
+  u32 amtRead = "e4-ffi.h"::fread(buf.base, 1, u32(buf.len), file)
   str s = { base = ptr(buf.base), len = int(amtRead) } 
   print(s)
   int closeResult = fclose(file)

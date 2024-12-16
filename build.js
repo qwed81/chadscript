@@ -2,29 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// create output directory
-if (!fs.existsSync('compiler/build/')) {
-  fs.mkdirSync('compiler/build/')
+if (!process.argv.includes('fast')) {
+  if (!fs.existsSync('compiler/build/')) {
+    fs.mkdirSync('compiler/build/')
+  }
+
+  if (!fs.existsSync('compiler/build/std')) {
+    fs.mkdirSync('compiler/build/std')
+  }
 }
 
-// create output directory
-if (!fs.existsSync('compiler/build/std')) {
-  fs.mkdirSync('compiler/build/std')
-}
-
-execSync('npm install', { cwd: 'compiler' });
 execSync('npm run build', { cwd: 'compiler' });
 copyFilesRecur('std', 'compiler/build/std', ['.chad']);
-if (!process.argv.includes('compiler')) {
+
+if (!process.argv.includes('fast')) {
+  execSync('npm install', { cwd: 'compiler' });
   execSync('npm install', { cwd: 'vscode' });
   execSync('npm run build', { cwd: 'vscode' });
+  let compilerDir = process.cwd() + '/' + 'compiler/build/index.js'
+  fs.writeFileSync('chad', `NODE_OPTIONS=--enable-source-maps node ${compilerDir} $@`);
+  fs.chmodSync('chad', 0o700);
+  console.log('build complete. to install cp ./chad to /bin')
 }
-
-let compilerDir = process.cwd() + '/' + 'compiler/build/index.js'
-fs.writeFileSync('chad', `NODE_OPTIONS=--enable-source-maps node ${compilerDir} $@`);
-fs.chmodSync('chad', 0o700);
-
-console.log('build complete. to install cp ./chad to /bin')
 
 function copyFilesRecur(srcDir, targetDir, extensions) {
   let files = fs.readdirSync(srcDir)

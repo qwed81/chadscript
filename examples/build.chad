@@ -1,0 +1,16 @@
+use "std/build"
+
+fn main()
+  # specifies files for "chad lsp"
+  lsp([
+    "e0-intro.chad",
+    "e1-basics.chad"
+  ])
+
+  # only ran when building executables
+  chad(["e0-intro.chad", "-o", "build/intro"])
+  chad(["e1-basics.chad", "-o", "build/basics"])
+  chad(["e2-structs.chad", "-o", "build/structs"])
+  chad(["e3-functions.chad", "-o", "build/functions"])
+  chad(["e4-modules.chad", "-o", "build/modules"])
+  chad(["e5-memory.chad", "-o", "build/memory"])

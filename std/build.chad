@@ -1,0 +1,20 @@
+fn lsp(Vec[str] args)
+  Fmt output = {}
+  output ++= "lsp: "
+  for i in 0:args.len
+    output ++= args[i]
+    output ++= " "
+
+  print(output)
+
+fn chad(Vec[str] args)
+  Fmt output = {}
+  output ++= "chad: "
+  for i in 0:args.len
+    output ++= args[i]
+    output ++= " "
+
+  print(output)
+
+  
+
