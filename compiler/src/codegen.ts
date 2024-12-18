@@ -171,7 +171,7 @@ function codeGenGlobal(global: GlobalImpl): string {
   }
 
   let name = getGlobalUniqueId(global.header.unit, global.header.name)
-  return `${mode} ${codeGenType(global.header.type)} ${name} = ${expr.output}`;
+  return `\n${mode} ${codeGenType(global.header.type)} ${name} = ${expr.output}`;
 }
 
 function codeGenFn(fn: FnImpl) {
@@ -652,7 +652,18 @@ function codeGenExpr(
     exprText = `'${expr.val}'`;
   }
   else if (expr.tag == 'int_const') {
-    exprText = `${expr.val}`;
+    if (expr.type.tag == 'struct' && isBasic(expr.type)) {
+      let name = expr.type.val.template.name;
+      if (name == 'u64' || name == 'u32' || name == 'u16' || name == 'u8') {
+        exprText = `${expr.val}u`;
+      }
+      else {
+        exprText = `${expr.val}`;
+      }
+    }
+    else {
+      exprText = `${expr.val}`;
+    }
   }
   else if (expr.tag == 'nil_const') {
     exprText = '0';
@@ -851,7 +862,7 @@ function getGlobalUniqueId(unit: string, name: string): string {
   if (unit.endsWith('.h')) {
     return name;
   }
-  return `_${normalizeUnitName(name)}_${name}`;
+  return `_${normalizeUnitName(unit)}_${name}`;
 }
 
 function getFnUniqueId(unit: string, name: string, mode: FnMode, paramTypes: Type[], returnType: Type): string {

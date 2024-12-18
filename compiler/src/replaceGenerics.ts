@@ -655,7 +655,7 @@ function resolveLeftExpr(
       tag: 'index',
       val: {
         var: inner,
-        index: { tag: 'int_const', val: 0, type: INT },
+        index: { tag: 'int_const', val: '0', type: INT },
         const: leftExpr.val.const,
         verifyFn: verify 
       },

@@ -231,10 +231,10 @@ type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'str_const', val: string, position: Position }
   | { tag: 'fmt_str', val: Expr[], position: Position }
   | { tag: 'char_const', val: string, position: Position }
-  | { tag: 'int_const', val: number, position: Position }
+  | { tag: 'int_const', val: string, position: Position }
   | { tag: 'nil_const', position: Position }
   | { tag: 'bool_const', val: boolean, position: Position }
-  | { tag: 'num_const', val: number, position: Position }
+  | { tag: 'num_const', val: string, position: Position }
   | { tag: 'left_expr', val: LeftExpr, position: Position }
   | { tag: 'ptr', val: Expr, position: Position }
 
@@ -1469,7 +1469,7 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     let left = parseInt(tokens[0].val);
     let right = parseInt(tokens[2].val);
     if (!Number.isNaN(left) && !Number.isNaN(right) && tokens[1].val == '.') {
-      let num = parseFloat(`${left}.${right}`); 
+      let num = `${left}.${right}`; 
       return { tag: 'num_const', val: num, position };
     }
   }
@@ -1506,13 +1506,12 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
     if (ident.length >= 1 && ident[0] >= '0' && ident[0] <= '9'
       || ident.length >= 2 && ident[0] == '-' && ident[1] >= '0' && ident[1] <= '9') {
 
-      let int;
       try {
-        int = parseInt(ident);
+        parseInt(ident);
       } catch (e) {
         return null;
       }
-      return { tag: 'int_const', val: int, position };
+      return { tag: 'int_const', val: ident, position };
     }
   }
 

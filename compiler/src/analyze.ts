@@ -117,10 +117,10 @@ type Expr = { tag: 'bin', val: BinExpr, type: Type }
   | { tag: 'str_const', val: string, type: Type }
   | { tag: 'fmt_str', val: Expr[], type: Type }
   | { tag: 'char_const', val: string, type: Type }
-  | { tag: 'int_const', val: number, type: Type }
+  | { tag: 'int_const', val: string, type: Type }
   | { tag: 'nil_const', type: Type }
   | { tag: 'bool_const', val: boolean, type: Type }
-  | { tag: 'num_const', val: number, type: Type }
+  | { tag: 'num_const', val: string, type: Type }
   | { tag: 'left_expr', val: LeftExpr, type: Type }
   | { tag: 'ptr', val: LeftExpr, type: Type }
 
@@ -954,7 +954,7 @@ function ensureBinOpValid(
       val: [
         { name: 'start', expr: leftTuple },
         { name: 'end', expr: rightTuple },
-        { name: 'output', expr: { tag: 'int_const', val: 0, type: INT } }
+        { name: 'output', expr: { tag: 'int_const', val: '0', type: INT } }
       ],
       type: RANGE
     };
@@ -1548,7 +1548,12 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'int_const') {
-    computedExpr = { tag: 'int_const', val: expr.val, type: AMBIG_INT };
+    if (expectedReturn != null && typeApplicable(AMBIG_INT, expectedReturn, false)) {
+      computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
+    }
+    else {
+      computedExpr = { tag: 'int_const', val: expr.val, type: AMBIG_INT };
+    }
   } 
 
   if (expr.tag == 'nil_const') {
