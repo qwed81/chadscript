@@ -1107,7 +1107,7 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
     }
     return { tag: 'include', val: { lines, types }, position: line.position };
   }
-  else if (keyword == 'else' || keyword == 'defer') {
+  else if (keyword == 'else') {
     let splits = balancedSplitTwo(tokens, ';');
     if (splits.length == 1) {
       if (tokens.length != 1) {
@@ -1122,9 +1122,23 @@ function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
       if (body.length != 0) logError(positionRange(line.tokens), 'unexpected body');
       let inst = parseInst({ tokens: splits[1], indent: line.indent, position: line.position }, []);
       if (inst == null) return null;
-      return { tag: keyword, val: [inst], position: line.position }
+      return { tag: 'else', val: [inst], position: line.position }
     }
   } 
+  else if (keyword == 'defer') {
+    if (tokens.length != 1) {
+      let sourceLine = { ...line };
+      sourceLine.tokens = sourceLine.tokens.slice(1);
+      let b = parseInst(sourceLine, []);
+      if (b == null) return null;
+      return { tag: 'defer', val: [b], position: line.position }
+    }
+    else {
+      let b = parseInstBody(body);
+      if (b == null) return null;
+      return { tag: 'defer', val: b, position: line.position }
+    }
+  }
   else if (keyword == 'for') {
     if (tokens.length < 4 || tokens[2].val != 'in') {
       logError(line.position, 'expected for <var> in <iter>');

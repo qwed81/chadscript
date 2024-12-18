@@ -358,7 +358,8 @@ function implToExpr(
     if (position != null) {
       let pos = set.genericCallStack[set.genericCallStack.length - 1];
       if (pos == null) pos = position
-      logError(pos, 'no valid implementation for ' + name);
+      // to log the proper error
+      resolveImpl(set.symbols[0], name, newParamTypes, returnType, pos);
     }
 
     return null;

@@ -108,6 +108,20 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
     `;
   }  
   else if (entry.paramTypes.length == 0
+    && typeEq(entry.returnType, createTypeUnion(NIL, ERR))) {
+    chadDotC +=
+    `
+    int main(int argc, char** argv) {
+      ${codeGenType(createTypeUnion(NIL, ERR))} result = ${entryName}();
+      if (result.tag == 1) {
+        fprintf(stderr, "%s", result._val1._message._base);
+        return -1;
+      }
+      return 0;
+    }
+    `;
+  }
+  else if (entry.paramTypes.length == 0
     && typeEq(entry.returnType, NIL)
   ) {
     chadDotC +=
@@ -121,6 +135,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   else {
     let context = [
       "expected: fn main()",
+      "expected: fn main() nil|err",
       "expected: fn main(int argc, **char argv) int",
     ];
     logMultiError(NULL_POS, 'main function is not the correct type', context)
