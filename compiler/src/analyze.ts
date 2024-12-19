@@ -555,7 +555,9 @@ function analyzeInst(
       return null;
     }
 
-    if (scope.typeScope[scope.typeScope.length - 1].get(inst.val.name) != undefined) {
+    if (scope.typeScope[scope.typeScope.length - 1].get(inst.val.name) != undefined
+      || (scope.typeScope.length == 2 && scope.typeScope[scope.typeScope.length - 2].get(inst.val.name) != undefined) // for parameters
+    ) {
       logError(inst.position, 'variable already declared');
       return null;
     }
@@ -1549,7 +1551,12 @@ function ensureExprValid(
 
   if (expr.tag == 'int_const') {
     if (expectedReturn != null && typeApplicable(AMBIG_INT, expectedReturn, false)) {
-      computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
+      if (expectedReturn.tag == 'link') {
+        computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn.val };
+      }
+      else {
+        computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn };
+      }
     }
     else {
       computedExpr = { tag: 'int_const', val: expr.val, type: AMBIG_INT };

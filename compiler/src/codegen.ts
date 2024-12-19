@@ -195,6 +195,15 @@ function codeGenFn(fn: FnImpl) {
   else if (typeApplicable(NIL, retType, false)) {
     bodyStr += `\n\tchad_callstack_pop(); return (${codeGenType(fn.header.returnType)}){ 0 };`
   }
+
+  if (fn.header.returnType.tag == 'struct' 
+    && fn.header.returnType.val.template.name == 'TypeUnion'
+    && fn.header.returnType.val.template.unit == 'std/core'
+  ) {
+    if (typeApplicable(NIL, fn.header.returnType.val.generics[1], false)) {
+      bodyStr += `\n\treturn (${codeGenType(fn.header.returnType)}){ .tag = 1 };`;
+    }
+  }
   bodyStr += '\n};';
 
   for (let i = 0; i < ctx.reservedVars.length; i++) {
@@ -203,6 +212,7 @@ function codeGenFn(fn: FnImpl) {
       fnCode += `${codeGenType(reserved)} __expr_${i};`;
     }
   }
+
   return fnCode + bodyStr;
 }
 

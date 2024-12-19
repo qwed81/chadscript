@@ -1064,17 +1064,12 @@ function resolveImpl(
 
     let isGeneric = false;
     for (let i = 0; i < fnType.paramTypes.length; i++) {
-      let pType = fnType.paramTypes[i];
-      if (pType.tag == 'generic'
-        || pType.tag == 'link' && pType.val.tag == 'generic'
-      ) {
+      if (isTraitGeneric(fnType.paramTypes[i])) {
         isGeneric = true;
         break;
       }
     }
-    if (fnType.returnType.tag == 'generic'
-      || fnType.returnType.tag == 'link' && fnType.returnType.val.tag == 'generic'
-    ) isGeneric = true;
+    if (isTraitGeneric(fnType.returnType)) isGeneric = true;
 
     if (isGeneric) {
       possibleFns.push(possibleFn);
@@ -1101,6 +1096,21 @@ function resolveImpl(
   }
   if (position != null) logError(position, 'unknown impl ' + name);
   return null;
+}
+
+function isTraitGeneric(type: Type): boolean {
+  if (type.tag == 'link') {
+    return isTraitGeneric(type.val)
+  }
+  if (type.tag == 'generic') {
+    return true;
+  }
+  if (type.tag == 'struct' 
+    && type.val.template.name == 'TypeUnion' 
+    && type.val.template.unit == 'std/core') {
+    return isTraitGeneric(type.val.generics[0]) || isTraitGeneric(type.val.generics[1]);
+  }
+  return false;
 }
 
 function lookupFnOrDecl(

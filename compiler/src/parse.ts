@@ -157,7 +157,7 @@ interface Assign {
 interface FnCall {
   fn: LeftExpr
   exprs: Expr[]
-  names: string[] // name will be '' in case of unamed expr
+  exprNames: (string | null)[] // name will be '' in case of unamed expr
 }
 
 interface Include {
@@ -1031,7 +1031,7 @@ function tryParseFnCall(tokens: Token[]): FnCall | null {
 
   let paramExprs = balancedSplit(tokens.slice(paramStart + 1, -1), ',');
   let exprs = [];
-  let names: string[] = [];
+  let names: (string | null)[] = [];
   if (tokens.length - paramStart != 2) {
     for (let param of paramExprs) {
       // for implicit params
@@ -1041,7 +1041,7 @@ function tryParseFnCall(tokens: Token[]): FnCall | null {
         if (expr == null) {
           return null;
         }
-        names.push('');
+        names.push(null)
         exprs.push(expr);
       }
       else {
@@ -1059,7 +1059,7 @@ function tryParseFnCall(tokens: Token[]): FnCall | null {
     }
   }
 
-  return { fn: leftExpr, exprs, names };
+  return { fn: leftExpr, exprs, exprNames: names };
 }
 
 function parseInst(line: SourceLine, body: SourceLine[]): Inst | null {
