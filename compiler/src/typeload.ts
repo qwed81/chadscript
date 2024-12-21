@@ -395,10 +395,10 @@ function typeApplicableStateful(
   allowUnion: boolean = true
 ): boolean {
   if (sub.tag == 'link') {
-    return typeApplicableStateful(sub.val, supa, genericMap, fnHeader);
+    return typeApplicableStateful(sub.val, supa, genericMap, fnHeader, allowUnion);
   }
   if (supa.tag == 'link') {
-    return typeApplicableStateful(sub, supa.val, genericMap, fnHeader);
+    return typeApplicableStateful(sub, supa.val, genericMap, fnHeader, allowUnion);
   }
 
   if (supa.tag == 'struct' && supa.val.template.name == '...') return true;
@@ -439,8 +439,8 @@ function typeApplicableStateful(
     && supa.val.template.unit == 'std/core'
   ) {
     let fields = getFields(supa);
-    let firstApplicable = typeApplicableStateful(sub, fields[0].type, genericMap, fnHeader);
-    let secondApplicable = typeApplicableStateful(sub, fields[1].type, genericMap, fnHeader);
+    let firstApplicable = typeApplicableStateful(sub, fields[0].type, genericMap, fnHeader, false);
+    let secondApplicable = typeApplicableStateful(sub, fields[1].type, genericMap, fnHeader, false);
     if (firstApplicable || secondApplicable) return true;
   }
 
@@ -449,14 +449,14 @@ function typeApplicableStateful(
   if (isBasic(sub) && isBasic(supa)) return (sub as any).val.template.name == (supa as any).val.template.name;
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
     if (sub.const == true && supa.const == false) return false;
-    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader);
+    return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader, false);
   }
   if (sub.tag == 'struct' && supa.tag == 'struct') {
     if (sub.val.template.name != supa.val.template.name) return false;
     if (sub.val.template.unit != supa.val.template.unit) return false;
     if (sub.val.generics.length != supa.val.generics.length) return false;
     for (let i = 0; i < sub.val.generics.length; i++) {
-      if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader)) {
+      if (!typeApplicableStateful(sub.val.generics[i], supa.val.generics[i], genericMap, fnHeader, false)) {
         return false;
       }
     }
@@ -464,13 +464,13 @@ function typeApplicableStateful(
   }
 
   if (sub.tag == 'fn' && supa.tag == 'fn') {
-    if (!typeApplicableStateful(sub.returnType, supa.returnType, genericMap, fnHeader)) {
+    if (!typeApplicableStateful(sub.returnType, supa.returnType, genericMap, fnHeader, false)) {
       return false;
     }
     if (sub.paramTypes.length != supa.paramTypes.length) return false;
 
     for (let i = 0; i < sub.paramTypes.length; i++) {
-      if (!typeApplicableStateful(sub.paramTypes[i], supa.paramTypes[i], genericMap, fnHeader)) {
+      if (!typeApplicableStateful(sub.paramTypes[i], supa.paramTypes[i], genericMap, fnHeader, false)) {
         return false;
       }
     }
@@ -1018,6 +1018,12 @@ function resolveFnOrDecl(
   return null;
 }
 
+interface ImplResult {
+  paramPrios: number[],
+  retPrio: number,
+  fnResult: FnResult
+}
+
 // given the concrete types, of the trait, return the implementation
 // that is needed
 function resolveImpl(
@@ -1035,8 +1041,7 @@ function resolveImpl(
   }
 
   let wrongTypeFns: Fn[] = []; 
-  let possibleFns: FnResult[] = [];
-  let nonGenericPossibleFns: FnResult[] = [];
+  let possibleImpl: ImplResult[] = [];
   fnLoop: for (let fn of lookupFns) {
     if (fn.mode != 'impl' && fn.mode != 'declImpl') continue;
     if (fn.paramTypes.length != paramTypes.length) continue;
@@ -1058,7 +1063,7 @@ function resolveImpl(
 
     let fnType: Type = { tag: 'fn', returnType: fn.returnType, paramTypes: fn.paramTypes };
     let resolvedType: Type = applyGenericMap(fnType, genericMap);
-    let possibleFn: FnResult = {
+    let fnResult: FnResult = {
       fnReference: fn,
       name: fn.name,
       unit: fn.unit,
@@ -1068,57 +1073,99 @@ function resolveImpl(
       isGeneric: genericMap.size != 0
     };
 
-    let isGeneric = false;
+    let paramPrios: number[] = [];
     for (let i = 0; i < fnType.paramTypes.length; i++) {
-      if (isTraitGeneric(fnType.paramTypes[i])) {
-        isGeneric = true;
+      let prio = implGenericPriority(fnType.paramTypes[i]);
+      paramPrios.push(prio);
+    }
+    let retPrio = implGenericPriority(fnType.returnType);
+    possibleImpl.push({
+      fnResult,
+      paramPrios,
+      retPrio
+    });
+  }
+
+  if (possibleImpl.length == 0) {
+    if (wrongTypeFns.length > 0) {
+      if (position != null) logError(position, 'impl is wrong type');
+      return null
+    }
+    if (wrongTypeFns.length == 0) {
+      if (position != null) logError(position, 'unknown impl ' + name);
+      return null;
+    }
+  }
+
+  // determine which impl is greater than all the others
+  // greater is defined as having 1 parameter > than the others
+  // while the others are >=
+  // if none are greater then it is ambiguous
+  let greatestImpl = possibleImpl[0];
+  for (let i = 1; i < possibleImpl.length; i++) {
+    let isGreater: boolean = false;
+    let isEqual: boolean = true;
+    for (let j = 0; j < greatestImpl.paramPrios.length; j++) {
+      if (possibleImpl[i].paramPrios[j] > greatestImpl.paramPrios[j]) {
+        isGreater = true;
+        isEqual = false;
         break;
       }
     }
-    if (isTraitGeneric(fnType.returnType)) isGeneric = true;
 
-    if (isGeneric) {
-      possibleFns.push(possibleFn);
+    for (let j = 0; j < greatestImpl.paramPrios.length; j++) {
+      if (possibleImpl[i].paramPrios[j] < greatestImpl.paramPrios[j]) {
+        if (isGreater) {
+          if (position != null) logError(position, 'impl is ambiguous');
+          return null
+        }
+        isEqual = false;
+      }
     }
-    else {
-      nonGenericPossibleFns.push(possibleFn);
+
+    if (isEqual) {
+      if (position != null) logError(position, 'impl is ambiguous');
+      return null
     }
+
+    if (isGreater) greatestImpl = possibleImpl[i];
   }
 
-  if (nonGenericPossibleFns.length == 1) return nonGenericPossibleFns[0];
-  if (nonGenericPossibleFns.length > 1) {
-    if (position != null) logError(position, 'impl is ambiguous');
-    return null
-  }
-
-  if (possibleFns.length == 1) return possibleFns[0];
-  if (possibleFns.length > 1) {
-    if (position != null) logError(position, 'impl is ambiguous');
-    return null
-  }
-  if (wrongTypeFns.length > 0) {
-    if (position != null) logError(position, 'impl is wrong type');
-    return null
-  }
-  if (position != null) logError(position, 'unknown impl ' + name);
-  return null;
+  return greatestImpl.fnResult;
 }
 
-function isTraitGeneric(type: Type): boolean {
+function implGenericPriority(type: Type): number {
   if (type.tag == 'link') {
-    return isTraitGeneric(type.val)
+    return implGenericPriority(type.val)
   }
   if (type.tag == 'generic') {
-    return true;
+    return 0;
   }
-  /*
-  if (type.tag == 'struct' 
-    && type.val.template.name == 'TypeUnion' 
-    && type.val.template.unit == 'std/core') {
-    return isTraitGeneric(type.val.generics[0]) || isTraitGeneric(type.val.generics[1]);
+
+  if (type.tag == 'ptr') {
+    return implGenericPriority(type.val) + 2;
   }
-  */
-  return false;
+
+  if (type.tag == 'struct') {
+    if (type.val.template.name == 'TypeUnion' 
+      && type.val.template.unit == 'std/core'
+    ) {
+      let tPrio = implGenericPriority(type.val.generics[0]);
+      let kPrio = implGenericPriority(type.val.generics[1]);
+      return Math.min(tPrio, kPrio) + 1;
+    }
+    else {
+      let min = 0;
+      if (type.val.generics.length > 0) min = implGenericPriority(type.val.generics[0]);
+      for (let i = 1; i < type.val.generics.length; i++) {
+        let inner = implGenericPriority(type.val.generics[i]);
+        if (inner < min) inner = min;
+      }
+      return 2 + min;
+    }
+  }
+
+  return 2;
 }
 
 function lookupFnOrDecl(

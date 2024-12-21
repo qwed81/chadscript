@@ -141,7 +141,7 @@ type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter';
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
   | { tag: 'var', val: string, mode: Mode, unit: string | null, type: Type }
-  | { tag: 'fn', unit: string, name: string, type: Type, mode: Parse.FnMode, isGeneric: boolean }
+  | { tag: 'fn', unit: string, name: string, type: Type, genericMap: Map<string, Type>, fnReference: Fn, mode: Parse.FnMode, isGeneric: boolean }
 
 function analyze(
   units: Parse.ProgramUnit[],
@@ -930,6 +930,8 @@ function ensureFnCallValid(
         name: result.name,
         type: result.resolvedType,
         mode: result.mode,
+        fnReference: result.fnReference,
+        genericMap: result.genericMap,
         isGeneric: result.isGeneric
       },
       position: expr.position
@@ -1628,6 +1630,8 @@ function ensureExprValid(
               name: fn.name,
               type: fn.resolvedType,
               mode: fn.mode,
+              genericMap: fn.genericMap,
+              fnReference: fn.fnReference,
               isGeneric: fn.isGeneric
             },
             type: fn.resolvedType 
