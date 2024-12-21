@@ -392,6 +392,7 @@ function typeApplicableStateful(
   supa: Type,
   genericMap: Map<string, Type>,
   fnHeader: boolean,
+  allowUnion: boolean = true
 ): boolean {
   if (sub.tag == 'link') {
     return typeApplicableStateful(sub.val, supa, genericMap, fnHeader);
@@ -431,7 +432,12 @@ function typeApplicableStateful(
   }
 
   // T -> T|K is valid
-  if (supa.tag == 'struct' && supa.val.template.isEnum && supa.val.template.name == 'TypeUnion' && supa.val.template.unit == 'std/core') {
+  if (allowUnion == true 
+    && supa.tag == 'struct' 
+    && supa.val.template.isEnum 
+    && supa.val.template.name == 'TypeUnion' 
+    && supa.val.template.unit == 'std/core'
+  ) {
     let fields = getFields(supa);
     let firstApplicable = typeApplicableStateful(sub, fields[0].type, genericMap, fnHeader);
     let secondApplicable = typeApplicableStateful(sub, fields[1].type, genericMap, fnHeader);
@@ -475,9 +481,9 @@ function typeApplicableStateful(
   return false;
 }
 
-function typeApplicable(sub: Type, supa: Type, fnHeader: boolean): boolean {
+function typeApplicable(sub: Type, supa: Type, fnHeader: boolean, allowUnion: boolean = true): boolean {
   let genericMap = new Map<string, Type>();
-  return typeApplicableStateful(sub, supa, genericMap, fnHeader);
+  return typeApplicableStateful(sub, supa, genericMap, fnHeader, allowUnion);
 }
 
 function toStr(t: Type | null): string {
@@ -1038,13 +1044,13 @@ function resolveImpl(
     for (let i = 0; i < paramTypes.length; i++) {
       let pType = paramTypes[i];
       if (pType == null) continue;
-      if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true)) {
+      if (!typeApplicableStateful(pType, fn.paramTypes[i], genericMap, true, false)) {
         wrongTypeFns.push(fn);
         continue fnLoop;
       }
     }
     if (retType != null) {
-      if (!typeApplicableStateful(retType, fn.returnType, genericMap, true)) {
+      if (!typeApplicableStateful(retType, fn.returnType, genericMap, true, false)) {
         wrongTypeFns.push(fn);
         continue fnLoop;
       }
@@ -1105,11 +1111,13 @@ function isTraitGeneric(type: Type): boolean {
   if (type.tag == 'generic') {
     return true;
   }
+  /*
   if (type.tag == 'struct' 
     && type.val.template.name == 'TypeUnion' 
     && type.val.template.unit == 'std/core') {
     return isTraitGeneric(type.val.generics[0]) || isTraitGeneric(type.val.generics[1]);
   }
+  */
   return false;
 }
 

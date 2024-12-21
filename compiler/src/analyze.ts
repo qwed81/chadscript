@@ -15,7 +15,7 @@ import * as Enum from './enum';
 export {
   analyze, newScope, ensureExprValid, FnContext, Program, Fn, Inst,
   StructInitField, FnCall, Expr, LeftExpr, Mode, FnImpl, GlobalImpl,
-  MacroArg
+  MacroArg, CondBody
 }
 
 interface FnImpl {
@@ -1462,6 +1462,10 @@ function ensureExprValid(
       return null;
     }
 
+    if (expr.val.length == 0) {
+      return { tag: 'struct_zero', type: expectedReturn };
+    }
+
     if (expectedReturn.tag != 'struct') {
       if (position != null) logError(position, `expected ${toStr(expectedReturn)}`);
       return null;
@@ -1471,10 +1475,6 @@ function ensureExprValid(
     if (retType.tag != 'struct') {
       if (position != null) logError(position, `expected ${toStr(retType)}`);
       return null;
-    }
-
-    if (expr.val.length == 0) {
-      return { tag: 'struct_zero', type: expectedReturn };
     }
 
     let exprFieldTypes = new Map<string, Type>();

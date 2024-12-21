@@ -1,10 +1,10 @@
 import { FnMode } from './parse';
-import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl, MacroArg } from './analyze';
+import { FnImpl, Inst, Expr, LeftExpr, Program as AnalyzeProgram, GlobalImpl, MacroArg, CondBody } from './analyze';
 import { compilerError, Position, logError } from './util';
 import {
   Type, getTypeKey, applyGenericMap, resolveImpl, BOOL, typeApplicable,
   NIL, typeApplicableStateful, RANGE, isBasic, UnitSymbols, INT, FMT, STR,
-  F64, getFields, isGeneric
+  F64, getFields, isGeneric, toStr
 } from './typeload';
 
 export {
@@ -28,6 +28,7 @@ interface FnKey {
 }
 
 interface CurrentField {
+  currentFieldAlias: string,
   currentFieldName: string,
   currentFieldType: Type,
   currentFieldExpr: Expr,
@@ -252,14 +253,34 @@ function resolveInst(
       if (iterType.tag == 'struct') {
         let fields = getFields(iterType);
         for (let i = 0; i < fields.length; i++) {
+          let alias = fields[i].name;
+          if (iterType.tag == 'struct' 
+            && iterType.val.template.name == 'TypeUnion' 
+            && iterType.val.template.unit == 'std/core') {
+            alias = toStr(fields[i].type);
+          }
+
           set.fieldStack.push({
+            currentFieldAlias: alias,
             currentFieldName: fields[i].name,
             currentFieldType: fields[i].type,
             currentFieldExpr: iter,
           })
           genericMap.set('val', fields[i].type);
+
           let body = resolveInstBody(inst.val.body, set, genericMap);
-          output.push(...body);
+          if (iterType.val.template.isEnum && iter.tag == 'left_expr') {
+            let cond: CondBody = {
+              cond: { tag: 'is', left: iter.val, type: BOOL, variant: fields[i].name, variantIndex: i },
+              body
+            };
+
+            let ifStmt: Inst = { tag: 'if', val: cond, position: inst.position };
+            output.push(ifStmt);
+          }
+          else {
+            output.push(...body);
+          }
           set.fieldStack.pop();
         }
       }
@@ -552,7 +573,7 @@ function resolveExpr(
 
       if (left.tag == 'left_expr' && left.val.tag == 'var' && left.val.mode == 'field_iter') {
         if (name == 'name') {
-          return { tag: 'str_const', val: field.currentFieldName, type: STR };
+          return { tag: 'str_const', val: field.currentFieldAlias, type: STR };
         }
         else if (name == 'val') {
           return {

@@ -224,11 +224,12 @@ function replaceAll(s: string, find: string, replace: string) {
 }
 
 // TODO
-function codeGenType(type: Type): string {
+function codeGenType(type: Type, decl: boolean = false): string {
   if (type.tag == 'struct' && isBasic(type)) {
     let name = type.val.template.name;
     if (name == 'int') return 'int32_t';
-    else if (name == 'nil') return 'void';
+    else if (name == 'nil' && !decl) return 'void';
+    else if (name == 'nil' && decl) return 'uint8_t';
     else if (name == 'i64') return 'int64_t';
     else if (name == 'i16') return 'int16_t';
     else if (name == 'i8') return 'int8_t';
@@ -299,7 +300,7 @@ function codeGenFnHeader(fn: Fn): string {
   let paramStr = '';
 
   for (let i = 0; i < fn.paramNames.length; i++) {
-    paramStr += `${codeGenType(fn.paramTypes[i])} _${fn.paramNames[i]}`;
+    paramStr += `${codeGenType(fn.paramTypes[i], true)} _${fn.paramNames[i]}`;
     if (i != fn.paramNames.length - 1) {
       paramStr += ', ';
     }
@@ -340,7 +341,7 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
   let inst: Inst = insts[instIndex];
 
   if (inst.tag == 'declare') {
-    let type = codeGenType(inst.val.type);
+    let type = codeGenType(inst.val.type, true);
     let rightExpr = codeGenExpr(inst.val.expr, ctx, inst.position);
     let name = `_${inst.val.name}`;
     statements.push(...rightExpr.statements);
@@ -903,13 +904,16 @@ function codeGenStructDef(struct: Type): string {
   let fields = getFields(struct);
   for (let i = 0; i < fields.length; i++) {
     let fieldType = fields[i].type;
+
+    /*
     if (fieldType.tag == 'struct' 
       && fieldType.val.template.name == 'nil'
       && fieldType.val.template.unit == 'std/core') {
       continue; 
     } 
+    */
 
-    structStr += '\n  ' + codeGenType(fields[i].type);
+    structStr += '\n  ' + codeGenType(fields[i].type, true);
     structStr += ' _' + fields[i].name + ';';
   }
   if (struct.val.template.isEnum) {
