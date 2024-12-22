@@ -380,6 +380,16 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
     return NIL;
   }
 
+  if (type.endsWith('*const')) {
+    let chadType = parseCType(type.slice(0, type.length - 5), unit, typeMap);
+    if (chadType.tag != 'ptr') {
+      compilerError('should always be pointer')
+      return undefined!;
+    }
+    chadType.const = true;
+    return chadType;
+  }
+
   if (type.startsWith('const')) {
     let chadType = parseCType(type.slice(6), unit, typeMap);
     if (chadType.tag == 'ptr') chadType.const = false;

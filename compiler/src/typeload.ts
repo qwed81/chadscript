@@ -5,7 +5,7 @@ export {
   UnitSymbols, loadUnits, resolveType, Type, Field, Struct,
   NIL, BOOL, resolveFnOrDecl, Fn, FnResult, ERR,
   CHAR, INT, I64, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
-  AMBIG_INT, AMBIG_FLOAT,
+  AMBIG_INT, AMBIG_FLOAT, AMBIG_NIL,
   typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
   typeApplicableStateful, getTypeKey, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
@@ -42,6 +42,7 @@ type Type = { tag: 'generic', val: string }
   | { tag: 'struct', val: Struct }
   | { tag: 'ambig_int' }
   | { tag: 'ambig_float' }
+  | { tag: 'ambig_nil' }
   | { tag: 'fn', returnType: Type, paramTypes: Type[] }
 
 interface Fn {
@@ -73,6 +74,7 @@ interface UnitSymbols {
 
 const AMBIG_INT: Type = { tag: 'ambig_int' }
 const AMBIG_FLOAT: Type = { tag: 'ambig_float' }
+const AMBIG_NIL: Type = { tag: 'ambig_nil' }
 
 const NIL: Type = basic('nil');
 const BOOL: Type = basic('bool');
@@ -202,6 +204,7 @@ function getTypeKey(t: Type): string {
   if (t.tag == 'link') return '&' + getTypeKey(t.val);
   if (t.tag == 'ambig_int') return 'int';
   if (t.tag == 'ambig_float') return 'f64';
+  if (t.tag == 'ambig_nil') return 'nil'
 
   if (t.tag == 'struct') {
     let generics: string = '[';
@@ -283,7 +286,7 @@ function createVec(t1: Type): Type {
         name: 'Vec',
         unit: 'std/core',
         modifier: 'pub',
-        isEnum: true,
+        isEnum: false,
         fields: [
           { name: 'base', type: { tag: 'ptr', val: t1, const: false }, modifier: 'get' },
           { name: 'len', type: INT, modifier: 'get' },
@@ -339,6 +342,12 @@ function typeEq(t1: Type, t2: Type): boolean {
   }
   if (t2.tag == 'link') {
     return typeEq(t1, t2.val);
+  }
+
+  if (t1.tag == 'ambig_nil') {
+    if (t2.tag == 'ptr') return true;
+    if (t2.tag == 'struct' && t2.val.template.name == 'nil' && t2.val.template.unit == 'std/core') return true;
+    return false;
   }
 
   if (t1.tag == 'ambig_int') {
@@ -403,6 +412,11 @@ function typeApplicableStateful(
 
   if (supa.tag == 'struct' && supa.val.template.name == '...') return true;
 
+  if (sub.tag == 'ambig_nil') {
+    if (supa.tag == 'ptr') return true;
+    if (supa.tag == 'struct' && supa.val.template.name == 'nil' && supa.val.template.unit == 'std/core') return true;
+  }
+
   if (sub.tag == 'ambig_float') {
     if (supa.tag == 'ambig_float') return true;
     if (supa.tag == 'struct' && (supa.val.template.name == 'f32' || supa.val.template.name == 'f64') && supa.val.template.unit == 'std/core') return true;
@@ -447,8 +461,8 @@ function typeApplicableStateful(
   if (sub.tag != supa.tag) return false;
 
   if (isBasic(sub) && isBasic(supa)) return (sub as any).val.template.name == (supa as any).val.template.name;
+
   if (sub.tag == 'ptr' && supa.tag == 'ptr') {
-    if (sub.const == true && supa.const == false) return false;
     return typeApplicableStateful(sub.val, supa.val, genericMap, fnHeader, false);
   }
   if (sub.tag == 'struct' && supa.tag == 'struct') {
@@ -494,6 +508,7 @@ function toStr(t: Type | null): string {
   if (t.tag == 'link') return '&' + toStr(t.val);
   if (t.tag == 'ambig_int') return 'NUMBER';
   if (t.tag == 'ambig_float') return 'FLOAT';
+  if (t.tag == 'ambig_nil') return 'PTR|NIL';
 
   if (t.tag == 'struct') {
     let generics: string = '[';

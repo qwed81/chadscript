@@ -224,7 +224,7 @@ function replaceAll(s: string, find: string, replace: string) {
 }
 
 // TODO
-function codeGenType(type: Type, decl: boolean = false): string {
+function codeGenType(type: Type, decl: boolean = false, includeConst: boolean = false): string {
   if (type.tag == 'struct' && isBasic(type)) {
     let name = type.val.template.name;
     if (name == 'int') return 'int32_t';
@@ -243,8 +243,11 @@ function codeGenType(type: Type, decl: boolean = false): string {
   }
   if (type.tag == 'ambig_int') return 'int32_t';
   if (type.tag == 'ambig_float') return 'double';
+  if (type.tag == 'ambig_nil' && !decl) return 'void';
+  if (type.tag == 'ambig_nil' && decl) return 'uint8_t';
+
   if (type.tag == 'ptr') {
-    return (type.const ? 'const ' : '') + codeGenType(type.val) + '*';
+    return (type.const && includeConst ? 'const ' : '') + codeGenType(type.val) + '*';
   }
   if (type.tag == 'link') {
     return codeGenType(type.val) + '*';
@@ -254,7 +257,7 @@ function codeGenType(type: Type, decl: boolean = false): string {
   if (type.tag == 'struct') {
     let generics: string = '_os_';
     for (let i = 0; i < type.val.generics.length; i++) {
-      generics += replaceAll(codeGenType(type.val.generics[i]), ' ', '_');
+      generics += typeAsName(type.val.generics[i]);
       if (i != type.val.generics.length - 1) {
         generics += '_c_';
       }     
@@ -857,7 +860,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position,
 }
 
 function typeAsName(type: Type): string {
-  return replaceAll(replaceAll(codeGenType(type), ' ', '_'), '*', '_ptr');
+  let name = codeGenType(type, false, false);
+  name = replaceAll(name, ' ', '_')
+  return replaceAll(name, '*', '_ptr');
 }
 
 function normalizeUnitName(name: string): string {
@@ -896,7 +901,7 @@ function codeGenStructDef(struct: Type): string {
 
   let structStr = '';
   structStr += '\n' + codeGenType(struct) + ' {';
-  if (struct.val.template.isEnum) {
+  if (struct.val.template.isEnum == true) {
     structStr += '\n\tint64_t tag;'
     structStr += '\n\tunion {;'
   }

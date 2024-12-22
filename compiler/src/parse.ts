@@ -1795,14 +1795,14 @@ function getLines(data: string, documentName: string): SourceLine[] {
 
       if (cond == false) {
         lineNumber++;
-        while (!lines[lineNumber].trim().startsWith('##') && lineNumber < lines.length) {
+        while (lineNumber < lines.length && !lines[lineNumber].trim().startsWith('##')) {
           lineNumber++;
         }
       }
       else {
         let skipLineNumber = lineNumber;
         skipLineNumber++;
-        while (!lines[skipLineNumber].trim().startsWith('##') && skipLineNumber < lines.length) {
+        while (skipLineNumber < lines.length && !lines[skipLineNumber].trim().startsWith('##')) {
           skipLineNumber++;
         }
         lineSkipSet.add(skipLineNumber);

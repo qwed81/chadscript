@@ -8,7 +8,7 @@ import {
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
   resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields, lookupFnOrDecl,
-  getFoundFns, getExpectedFns, getCurrentFn
+  getFoundFns, getExpectedFns, getCurrentFn, AMBIG_NIL
 } from './typeload'
 import * as Enum from './enum';
 
@@ -1364,7 +1364,7 @@ function ensureExprValid(
         }
 
         if (computedExpr == null) {
-          if (!isBasic(innerExpr.type) && innerExpr.type.tag != 'ambig_int' && innerExpr.type.tag != 'ambig_float') {
+          if (!isBasic(innerExpr.type) && innerExpr.type.tag != 'ambig_int' && innerExpr.type.tag != 'ambig_float' && innerExpr.type.tag != 'ambig_nil') {
             if (position != null) logError(position, 'can not cast');
             return null;
           }
@@ -1566,11 +1566,16 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'nil_const') {
-    if (expectedReturn != null && expectedReturn.tag == 'ptr') {
-      computedExpr = { tag: 'nil_const', type: expectedReturn };
+    if (expectedReturn != null && typeApplicable(AMBIG_NIL, expectedReturn, false)) {
+      if (expectedReturn.tag == 'link') {
+        computedExpr = { tag: 'nil_const', type: expectedReturn.val };
+      }
+      else {
+        computedExpr = { tag: 'nil_const', type: expectedReturn };
+      }
     }
     else {
-      computedExpr = { tag: 'nil_const', type: NIL }
+      computedExpr = { tag: 'nil_const', type: AMBIG_NIL }
     }
   }
 
@@ -1681,6 +1686,13 @@ function ensureExprValid(
     if (computedExpr == null) {
       if (position != null) logError(position, 'ensureExprValid compiler bug');
       return null;
+    }
+
+    if (expectedReturn.tag == 'ptr' && expectedReturn.const == false) {
+      if (computedExpr.type.tag == 'ptr' && computedExpr.type.const == true) {
+        if (position != null) logError(position, 'const pointer to pointer');
+        return null;
+      }
     }
 
     if (!typeApplicable(computedExpr.type, expectedReturn, false)) {

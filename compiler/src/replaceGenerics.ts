@@ -129,23 +129,11 @@ function getFnImpl(
   let fnList: FnImpl[] | undefined = set.fnTemplates.get(reference.name);
   if (fnList == undefined) return null;
 
-  outer: for (let i = 0; i < fnList.length; i++) {
-    if (fnList[i].header.unit != reference.unit) continue;
-    if (fnList[i].header.mode != reference.mode) continue;
-    if (fnList[i].header.paramTypes.length != reference.paramTypes.length) continue;
-
-    for (let j = 0; j < reference.paramTypes.length; j++) {
-      if (!typeEq(reference.paramTypes[j], fnList[i].header.paramTypes[j])) {
-        continue outer;
-      } 
-    }
-
-    if (!typeEq(reference.returnType, fnList[i].header.returnType)) continue;
-    return fnList[i];
+  for (let i = 0; i < fnList.length; i++) {
+    if (fnList[i].header == reference) return fnList[i];
   }
-
-  compilerError('function should always exist')
-  return undefined!;
+  
+  return null;
 }
 
 function addType(set: FnSet, type: Type) {
@@ -375,6 +363,7 @@ function implToExpr(
     let t = paramTypes[i];
     if (t.tag == 'ambig_int') t = INT;
     else if (t.tag == 'ambig_float') t = F64;
+    else if (t.tag == 'ambig_nil') t = NIL;
     newParamTypes.push(t);
   }
 
@@ -780,7 +769,7 @@ function typeTreeRecur(
   if (type.tag != 'struct') {
     return;
   }
-
+  
   let typeKey = getTypeKey(type);
   if (inStack.has(typeKey)) {
     compilerError('recusive struct ' + typeKey);
