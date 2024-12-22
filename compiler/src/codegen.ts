@@ -710,8 +710,9 @@ function codeGenExpr(
     }
   } 
   else if (expr.tag == 'left_expr') {
-    // doesn't need to store var on stack (already stored)
-    return codeGenLeftExpr(expr.val, ctx, position, false);
+    let leftExpr = codeGenLeftExpr(expr.val, ctx, position, false);
+    statements.push(...leftExpr.statements);
+    exprText = leftExpr.output;
   }
   else if (expr.tag == 'ptr') {
     let innerExpr = codeGenLeftExpr(expr.val, ctx, position, false);
@@ -719,10 +720,22 @@ function codeGenExpr(
     exprText = `&(${innerExpr.output})`;
   }
 
-  if (ctx.createStmt && (expr.type.tag != 'struct' || expr.type.val.template.name != 'nil' || expr.type.val.template.unit != 'std/core')) {
-    let exprOnStack = uniqueVarName(ctx, expr.type);
-    statements.push(`${exprOnStack} = ${exprText};`)
-    return { output: exprOnStack, statements };
+  if (expr.tag != 'left_expr') {
+    if (ctx.createStmt && (expr.type.tag != 'struct' || expr.type.val.template.name != 'nil' || expr.type.val.template.unit != 'std/core')) {
+      let exprOnStack = uniqueVarName(ctx, expr.type);
+
+      let cast = '';
+      if (expr.type.tag == 'fn') {
+        cast = '(void*)';
+      }
+
+      statements.push(`${exprOnStack} = ${exprText};`)
+      return { output: cast + exprOnStack, statements };
+    }
+  }
+
+  if (expr.type.tag == 'fn' && expr.tag != 'fn_call') {
+    exprText = '(void*)' + exprText;
   }
 
   return { output: exprText, statements };
@@ -828,12 +841,7 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position,
   } 
   else if (leftExpr.tag == 'fn') {
     if (leftExpr.type.tag != 'fn') return undefined!;
-    if (fnCall) {
-      leftExprText = getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
-    }
-    else {
-      leftExprText = '(void*)' + getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
-    }
+    leftExprText = getFnUniqueId(leftExpr.unit, leftExpr.name, leftExpr.mode, leftExpr.type.paramTypes, leftExpr.type.returnType);
   }
   else {
     if (leftExpr.mode == 'link') {

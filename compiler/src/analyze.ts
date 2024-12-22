@@ -1342,7 +1342,7 @@ function ensureExprValid(
         let innerExpr = ensureExprValid(symbols, expr.val.exprs[0], null, scope, position);
         if (innerExpr == null) return null;
 
-        if (innerExpr.type.tag == 'ptr' && name == 'ptr') {
+        if (name == 'ptr' && (innerExpr.type.tag == 'ptr' || innerExpr.type.tag == 'fn')) {
           if (expectedReturn == null) {
             if (position != null) logError(position, 'pointer must be known');
             return null;

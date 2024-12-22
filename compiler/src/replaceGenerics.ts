@@ -448,6 +448,7 @@ function resolveExpr(
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'cast') {
+      addType(set, expr.type);
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'try') {

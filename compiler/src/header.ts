@@ -449,13 +449,13 @@ function cBasicMapping(type: string): Type | null {
   if (type == 'bool' || type == '_Bool') return BOOL;
   else if (type == 'void') return NIL;
 
-  if (type == 'long long' || type == 'int64_t') return I64;
-  if (type == 'int' || type == 'long'|| type == 'int32_t') return INT;
+  if (type == 'long' || type == 'int64_t') return I64;
+  if (type == 'int' || type == 'int32_t') return INT;
   if (type == 'short' || type == 'int16_t') return I16;
   if (type == 'int8_t') return I8;
 
-  if (type == 'unsigned long long' || type == 'uint64_t') return U64;
-  if (type == 'unsigned long' || type == 'unsigned int' || type == 'uint32_t') return U32
+  if (type == 'unsigned long' || type == 'uint64_t') return U64;
+  if (type == 'unsigned int' || type == 'uint32_t') return U32
   if (type == 'unsigned short' || type == 'uint16_t') return U16;
   if (type == 'unsigned char' || type == 'uint8_t') return U8;
 
