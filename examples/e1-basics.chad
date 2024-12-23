@@ -19,6 +19,7 @@ fn main()
   f64 v9 = 0.5
   bool v10 = true
   char v11 = 'a'
+  nil v12 = nil
   
   # variables must operated on as the same type
   # and can be cast by using the other type's name

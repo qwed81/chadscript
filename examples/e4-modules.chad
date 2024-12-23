@@ -19,7 +19,7 @@ fn main()
   Vec[u8] buf = vec(1024)
 
   # explicitly use the module name
-  u32 amtRead = "e4-ffi.h"::fread(buf.base, 1, u32(buf.len), file)
+  u64 amtRead = "e4-ffi.h"::fread(buf.base, 1, u64(buf.len), file)
   str s = { base = ptr(buf.base), len = int(amtRead) } 
   print(s)
   int closeResult = fclose(file)

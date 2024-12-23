@@ -1,0 +1,21 @@
+use "std/io", "std/serialize"
+
+struct Outer
+  int x
+  int y
+  Inner inner
+
+struct Inner
+  str s
+  Vec[int] v 
+
+fn main() nil|err
+  Outer o = { x = 10, y = 20, inner = { s = "hello", v = [1, 2, 3] } }
+  File myFile = try open("build/outer.json", ReadWrite)
+  defer close(myFile)
+  try writeStr(myFile, json(o))
+
+  print("file written to 'build/outer.json'")
+
+
+

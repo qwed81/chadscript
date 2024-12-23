@@ -1,0 +1,10 @@
+use "std/io"
+
+fn main() nil|err
+  ExecArgs args = {}
+  args.io = { stdout = Pipe, stdin = Close, stderr = Inherit }
+  args.cwd = "../"
+  Process p = try exec("ls", ["-l"], args)
+
+  int exitCode = wait(p)
+  print("exitCode: {exitCode}")

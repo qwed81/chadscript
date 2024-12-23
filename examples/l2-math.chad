@@ -1,0 +1,6 @@
+use "std/math"
+
+fn main()
+  f32 s = 0.5
+  f32 p = acos(s)
+  print(acos(s))

@@ -1,0 +1,16 @@
+fn main(int argc, **char argv) int 
+  ProgramArgs args = init(argc, argv)
+
+  str|nil mode = positional(args)
+  str|nil name = optional(args, "--name", "-n")
+  int|nil count = optional(args, "--count", "-c")
+
+  print("mode: {mode}")
+
+  if mode is str
+    print("mode: {mode}")
+  if name is str
+    print("name: {name}")
+  if count is int
+    print("count: {count}")
+  ret 0
