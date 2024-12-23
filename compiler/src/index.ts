@@ -249,7 +249,7 @@ function compileProgram(args: Args, program: AnalysisResult) {
     let objPath = path.join('build', fileName.slice(0, -2) + '.o');
     let cSrcPath = path.join('build', fileName);
     try {
-      execSync(`clang -c -fPIC ${cSrcPath} -o ${objPath} -I${includePath}`);
+      execSync(`clang -c -fPIC ${cSrcPath} -o ${objPath} -I${includePath} -Wno-incompatible-pointer-types`);
     } catch {}
     objPaths += objPath + ' ';
   }
@@ -261,7 +261,7 @@ function compileProgram(args: Args, program: AnalysisResult) {
 
   let outputPath = args.outputName;
   try {
-    execSync(`clang ${objPaths} ${libPaths} -o ${outputPath} -Wno-parentheses-equality`);
+    execSync(`clang -lm ${objPaths} ${libPaths} -o ${outputPath} -Wno-parentheses-equality`);
   } catch {}
 }
 

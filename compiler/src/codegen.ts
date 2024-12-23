@@ -49,7 +49,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
 
   chadDotC += '\n#include "chad.h"';
 
-  chadDotC += '\nstruct StackFrame { const char* file; int64_t line; } frames[1024 * 1024]; int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
+  chadDotC += '\n__thread struct StackFrame { const char* file; int64_t line; } frames[1024 * 1024]; __thread int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
   chadDotC += '\nvoid chad_callstack_push() { frames[frameIndex] = (struct StackFrame){ .file = lastFile, .line = lastLine }; frameIndex += 1; }';
   chadDotC += '\nvoid chad_callstack_pop() { frameIndex -= 1; }';
 
@@ -61,8 +61,11 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   // forward declare all structs for pointers
   for (let type of prog.orderedTypes) {
     if (type.tag == 'struct' && !type.val.template.unit.endsWith('.h') && !isBasic(type)) {
-      chadDotC += '\n' + codeGenType(type) + ';';
+      chadDotH += '\n' + codeGenType(type) + ';';
     }
+  }
+
+  for (let type of prog.orderedTypes) {
     if (type.tag == 'fn') {
       chadDotH += `\ntypedef ${codeGenType(type.returnType)} (*${codeGenType(type)})(`;
       for (let i = 0; i < type.paramTypes.length; i++) {

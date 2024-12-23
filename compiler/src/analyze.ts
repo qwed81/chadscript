@@ -1551,8 +1551,9 @@ function ensureExprValid(
     computedExpr = { tag: 'char_const', val: expr.val, type: CHAR };
   } 
 
+  let isElipse = expectedReturn != null && expectedReturn.tag == 'struct' && expectedReturn.val.template.name == '...';
   if (expr.tag == 'int_const') {
-    if (expectedReturn != null && typeApplicable(AMBIG_INT, expectedReturn, false)) {
+    if (expectedReturn != null && typeApplicable(AMBIG_INT, expectedReturn, false) && isElipse == false) {
       if (expectedReturn.tag == 'link') {
         computedExpr = { tag: 'int_const', val: expr.val, type: expectedReturn.val };
       }
@@ -1566,7 +1567,7 @@ function ensureExprValid(
   } 
 
   if (expr.tag == 'nil_const') {
-    if (expectedReturn != null && typeApplicable(AMBIG_NIL, expectedReturn, false)) {
+    if (expectedReturn != null && typeApplicable(AMBIG_NIL, expectedReturn, false) && isElipse == false) {
       if (expectedReturn.tag == 'link') {
         computedExpr = { tag: 'nil_const', type: expectedReturn.val };
       }
