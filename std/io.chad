@@ -1,22 +1,63 @@
-use "include/fcntl.h", "include/unistd.h", "include/string.h", "include/errno.h", "include/arpa/inet.h", "include/netinet/in.h" as net
+use "include/fcntl.h", "include/unistd.h", "include/string.h", "include/errno.h"
+use "include/arpa/inet.h", "include/netinet/in.h" as net
+use "include/sys/wait.h"
 
 File stdin = { fd = 0 }
+Vec[u8] stdinBuf = {}
+
 File stdout = { fd = 1 }
 File stderr = { fd = 2 }
 
-fn readAll(S input) str|err
-  Vec[u8] output = try readAll(input)
-  ret { base = ptr(output.base), len = output.len }
+fn input(str output) str|err
+  try writeStr(stdout, output)
+  ret readLine(stdin, stdinBuf)
 
-fn readAll(S input) Vec[u8]|err
-  Vec[u8] buf = vec(1024)
-  Vec[u8] output = []
-  int amtRead = try read(input, buf)
-  extend(output, buf[0:amtRead])
-  while amtRead != 0
-    amtRead = try read(input, buf)
-    extend(output, buf[0:amtRead])
-  ret output
+fn input(str output) int|err
+  try writeStr(stdout, output)
+  str line = try readLine(stdin, stdinBuf)
+
+  int i = 0
+  int retVal = try parse(line, i)
+  if i != line.len - 1
+    print("could not parse")
+  ret retVal
+
+fn input(str output) f64|err
+  try writeStr(stdout, output)
+  str line = try readLine(stdin, stdinBuf)
+
+  int i = 0
+  f64 retVal = try parse(line, i)
+  print(retVal)
+  if i != line.len - 1
+    ret err("could not parse")
+  ret retVal
+
+fn readLine(S input, &Vec[u8] buf) str|err
+  int lastRead = 0
+  while true
+    for i in lastRead:buf.len
+      if buf[i] == u8('\n') 
+        str line = copy({ base = ptr(buf.base), len = i + 1 })
+        int amtLeft = buf.len - (i + 1)
+        for j in 0:amtLeft
+          buf[j] = buf[j + i + 1]
+        for j in amtLeft:buf.len
+          buf[j] = 0
+        buf.len = amtLeft
+
+        ret line
+
+    # if fn gets to here, there is no \n
+    lastRead = buf.len
+    if buf.len == buf.capacity
+      expand(buf, 1024)
+
+    Vec[u8] slice = { len = buf.capacity, capacity = buf.capacity, base = &buf.base[buf.len] }
+    i64 amtRead = try read(input, slice)
+    buf.len += int(amtRead)
+
+  ret err("unreachable")
 
 struct File
   int fd
@@ -42,24 +83,28 @@ fn open(str path, OpenFlags flags) File|err
   if fd < 0; ret errno()
   ret { fd = fd }
 
-decl read(S input, &Vec[u8] buf) int|err
+decl read(S input, &Vec[u8] buf) i64|err
 decl write(S output, Vec[u8] buf) nil|err
 
-impl read(File file, &Vec[u8] buf) int|err 
-  int result = read(file.fd, buf.base, u64(buf.len))
+impl read(File file, &Vec[u8] buf) i64|err 
+  i64 result = read(file.fd, buf.base, u64(buf.len))
   if result < 0; ret errno()
   ret result
 
 impl write(File file, Vec[u8] buf) nil|err
-  int result = write(file.fd, buf.base, u64(buf.len))
+  i64 result = write(file.fd, buf.base, u64(buf.len))
   if result < 0; ret errno()
 
 fn writeStr(File file, str buf) nil|err
-  int result = write(file.fd, ptr(buf.base), u64(buf.len))
+  i64 result = write(file.fd, ptr(buf.base), u64(buf.len))
   if result < 0; ret errno()
 
 fn close(File file) 
   int result = close(file.fd)
+
+fn chdir(str path) nil|err
+  int result = chdir(cstr(path))
+  if result < 0; ret errno()
 
 struct TcpServer
   int fd
@@ -114,26 +159,130 @@ fn connect(str ip, int port) Tcp|err
   if result < 0; ret errno()
 
   *sockaddr addrPtr = ptr(&addr)
-  fd = connect(fd, addrPtr, u32(@sizeOf(sockaddr_in)))
+  result = connect(fd, addrPtr, u32(@sizeOf(sockaddr_in)))
   if result < 0; ret errno()
 
   ret { fd = fd }
 
-impl read(Tcp tcp, &Vec[u8] buf) int|err amtRead
-  int result = read(tcp.fd, buf.base, u64(buf.len))
+impl read(Tcp tcp, &Vec[u8] buf) i64|err amtRead
+  i64 result = read(tcp.fd, buf.base, u64(buf.len))
   if result < 0
     ret errno()
   ret result
 
 impl write(Tcp tcp, Vec[u8] buf) nil|err
-  int result = write(tcp.fd, buf.base, u64(buf.len))
+  i64 result = write(tcp.fd, buf.base, u64(buf.len))
   if result < 0
     ret errno()
 
 fn writeStr(Tcp tcp, str buf) nil|err
-  int result = write(tcp.fd, ptr(buf.base), u64(buf.len))
+  i64 result = write(tcp.fd, ptr(buf.base), u64(buf.len))
   if result < 0
     ret errno()
 
 fn close(Tcp tcp)
   int result = close(tcp.fd)
+
+struct Pipe
+  int readFd
+  int writeFd
+
+fn pipe() Pipe|err
+  Pipe output = {}
+  *int fd = ptr(&output)
+  int result = pipe(fd)
+  if result < 0; ret errno()
+  ret output
+
+impl read(Pipe pipe, &Vec[u8] buf) i64|err
+  i64 result = read(pipe.readFd, buf.base, u64(buf.len))
+  if result < 0; ret errno()
+  ret result
+
+impl write(Pipe pipe, Vec[u8] buf) nil|err
+  i64 result = write(pipe.writeFd, buf.base, u64(buf.len))
+  if result < 0; ret errno()
+
+fn close(Pipe pipe)
+  int result = 0
+  result = close(pipe.readFd)
+  result = close(pipe.writeFd)
+
+enum ProcessIoMode
+  Inherit
+  Pipe
+  Close
+
+struct ProcessIoArgs 
+  ProcessIoMode stdin
+  ProcessIoMode stdout
+  ProcessIoMode stderr
+
+struct ExecArgs
+  str cwd
+  ProcessIoArgs io
+  
+struct Process
+  int pid
+  Pipe stdout
+  Pipe stdin
+  Pipe stderr
+
+fn exec(str procName, Vec[str] args, ExecArgs execArgs) Process|err
+  Pipe childStdinPipe = {}
+  Pipe childStdoutPipe = {}
+  Pipe childStderrPipe = {}
+
+  if execArgs.io.stdin is Pipe; childStdinPipe = try pipe()
+  if execArgs.io.stdout is Pipe; childStdoutPipe = try pipe()
+  if execArgs.io.stderr is Pipe; childStderrPipe = try pipe()
+
+  int pid = fork()
+  if pid < 0; ret errno()
+
+  if pid == 0  # child process
+    int result = 0
+    if execArgs.io.stdin is Close; result = result | close(0)
+    if execArgs.io.stdout is Close; result = result | close(1)
+    if execArgs.io.stderr is Close; result = result | close(2)
+    
+    if execArgs.io.stdin is Pipe
+      result = dup2(childStdinPipe.readFd, 0)
+      result = close(childStdinPipe.writeFd)
+
+    if execArgs.io.stdout is Pipe
+      result = dup2(childStdoutPipe.writeFd, 1)
+      result = close(childStdoutPipe.readFd)
+
+    if execArgs.io.stderr is Pipe
+      result = dup2(childStderrPipe.writeFd, 2)
+      result = close(childStdoutPipe.readFd)
+
+    *char proc = cstr(procName)
+    Vec[*const char] procArgs = [proc]
+    for i in 0:args.len
+      append(procArgs, cstr(args[i]))
+    append(procArgs, nil)
+    nil|err dir = chdir(execArgs.cwd)
+    result = execvp(cstr(procName), ptr(procArgs.base))
+  else # parent process
+    int result = 0
+    if execArgs.io.stdin is Pipe; result = close(childStdinPipe.readFd)
+    if execArgs.io.stdout is Pipe; result = close(childStdoutPipe.writeFd)
+    if execArgs.io.stderr is Pipe; result = close(childStderrPipe.writeFd)
+
+    ret {
+      pid,
+      stdout = childStdoutPipe,
+      stdin = childStdinPipe,
+      stderr = childStderrPipe
+    }
+
+  exit(-1)
+  ret err("unreachable")
+
+fn wait(Process p) int
+  int exitCode = 0
+  int result = wait(&exitCode)
+  ret exitCode
+

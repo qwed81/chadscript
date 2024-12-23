@@ -1,62 +1,130 @@
+use "include/math.h" as math
 
-const num E = 2.71828
-const num PI = 3.14159
+const f64 E = 2.71828
+const f64 PI = 3.14159
 
-struct vec2
-  num x 
-  num y
+fn acos(f64 x) f64
+  ret math::acos(x)
 
-struct complex
-  num real
-  num i
+fn acos(f32 x) f32
+  ret math::acosf(x)
 
-struct vec3
-  num x
-  num y
-  num z
+fn asin(f64 x) f64
+  ret math::asin(x)
 
-struct vec4
-  num x
-  num y
-  num z
-  num w
+fn asin(f32 x) f32
+  ret math::asinf(x)
 
-struct Vec
+fn atan(f64 x) f64
+  ret math::atan(x)
 
-struct Matrix
+fn atan(f32 x) f32
+  ret math::atanf(x)
 
-fn cos(num n) num
-  return 0.0
+fn atan2(f64 y, f64 x) f64
+  ret math::atan2(y, x)
 
-fn sin(num n) num
-  return 0.0
+fn atan2(f32 y, f32 x) f32
+  ret math::atan2f(y, x)
 
-fn tan(num n) num
-  return 0.0
+fn cos(f64 x) f64
+  ret math::cos(x)
 
-fn acos(num n) num
-  return 0.0
+fn cos(f32 x) f32
+  ret math::cosf(x)
 
-fn asin(num n) num
-  return 0.0
+fn cosh(f64 x) f64
+  ret math::cosh(x)
 
-fn atan(num n) num
-  return 0.0
+fn cosh(f32 x) f32
+  ret math::coshf(x)
 
-fn exp(num n) num
-  return 0.0
+fn sin(f64 x) f64
+  ret math::sin(x)
 
-fn pow(num n, num e) num
-  return 0.0
+fn sin(f32 x) f32
+  ret math::sinf(x)
 
-fn ln(num n) num
-  return 0.0
+fn sinh(f64 x) f64
+  ret math::sinh(x)
 
-fn log(num n, num base) num
-  return 0.0
+fn sinh(f32 x) f32
+  ret math::sinhf(x)
 
-fn ceil(num n) num 
-  return 0.0
+fn tan(f64 x) f64
+  ret math::tan(x)
 
-fn floor(num n) num
-  return 0.0
+fn tan(f32 x) f32
+  ret math::tanf(x)
+
+fn tanh(f64 x) f64
+  ret math::tanh(x)
+
+fn tanh(f32 x) f32
+  ret math::tanhf(x)
+
+fn exp(f64 x) f64
+  ret math::exp(x)
+
+fn exp(f32 x) f32
+  ret math::expf(x)
+
+fn frexp(f64 x, &int exponent) f64
+  ret math::frexp(x, &exponent)
+
+fn ldexpr(f64 x, int exponent) f64
+  ret math::ldexp(x, exponent)
+
+fn log(f64 x) f64
+  ret math::log(x)
+
+fn log(f32 x) f32
+  ret math::logf(x)
+
+fn log10(f64 x) f64
+  ret math::log10(x)
+
+fn log10(f32 x) f32
+  ret math::log10f(x)
+
+fn pow(f64 x, f64 y) f64
+  ret math::pow(x, y)
+
+fn pow(f32 x, f32 y) f32
+  ret math::powf(x, y)
+
+fn sqrt(f64 x) f64
+  ret math::sqrt(x)
+
+fn sqrtf(f32 x) f32
+  ret math::sqrtf(x)
+
+fn ceil(f64 x) f64
+  ret math::ceil(x) 
+
+fn ceil(f32 x) f32
+  ret math::ceilf(x) 
+
+fn abs(f64 x) f64
+  ret math::fabs(x)
+
+fn abs(f32 x) f32
+  ret math::fabsf(x)
+
+fn floor(f64 x) f64
+  ret math::floor(x)
+
+fn floor(f32 x) f32
+  ret math::floorf(x)
+
+fn mod(f64 x, f64 y) f64
+  ret math::fmod(x, y)
+
+fn mod(f32 x, f32 y) f32
+  ret math::fmodf(x, y)
+
+fn round(f64 x) f64
+  ret math::round(x)
+
+fn round(f32 x) f32
+  ret math::roundf(x)

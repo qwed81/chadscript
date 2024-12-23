@@ -1,10 +1,28 @@
-use "include/string.h" as memory
+use "include/string.h" as memory, "include/pthread.h"
 
+const u64 MAX_U64 = 18446744073709551615 
+const u32 MAX_U32 = 4294967295 
+const u16 MAX_U16 = 65535
+const u8 MAX_U8 = 255
+
+const i64 MAX_I64 = 9223372036854775807
+const int MAX_INT = 2147483647 
+const i16 MAX_I16 = 32767
+const i8 MAX_I8 = 127
+
+const i64 MIN_I64 = -9223372036854775807
+const int MIN_INT = -2147483648 
+const i16 MIN_I16 = -32768
+const i8 MIN_I8 = -128
+
+# defined by compiler
 struct type
 
+# defined by compiler
 macro alignOf(type t) int
   ret 0
 
+# defined by compiler
 macro sizeOf(type t) int
   ret 0
 
@@ -55,6 +73,10 @@ struct BumpAlloc
 
 local BumpAlloc bp = {}
 
+fn exit(int status)
+  include
+    exit(_status);
+
 fn clear(&BumpAlloc bp)
   bp.curr = bp.base
 
@@ -66,16 +88,16 @@ fn free(&BumpAlloc bp)
 fn memEq(*const T memA, *const T memB, int size) bool
   *u8 u8memA = ptr(memA)
   *u8 u8memB = ptr(memB)
-  ret memory::memcmp(u8memA, u8memB, u32(size)) == 0
+  ret memory::memcmp(u8memA, u8memB, u64(size)) == 0
 
 fn memSet(*T mem, int val, int amt)
   *u8 u8mem = ptr(mem)
-  *u8 _ = memory::memset(u8mem, val, u32(amt))
+  *u8 _ = memory::memset(u8mem, val, u64(amt))
 
 fn memCopy(*T dest, *T src, int size)
   *u8 u8memDest = ptr(dest)
   *u8 u8memSrc = ptr(src)
-  *u8 _ = memory::memcpy(u8memDest, u8memSrc, u32(size))
+  *u8 _ = memory::memcpy(u8memDest, u8memSrc, u64(size))
 
 fn alloc(&BumpAlloc bp, int amt) *T
   int allocSize = amt * @sizeOf(T)
@@ -156,6 +178,14 @@ impl index(&Vec[T] s, Range r) *Vec[T]
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
 
+fn expand(&Vec[T] l, int amt)
+  int newCap = l.capacity + amt
+  *T newAlloc = alloc(newCap)
+  for i in 0:l.len
+    newAlloc[i] = l.base[i]
+  l.capacity = newCap
+  l.base = newAlloc
+
 fn extend(&Vec[T] l, Vec[T] other)
   for i in 0:other.len
     append(l, other[i])
@@ -204,6 +234,14 @@ fn cstr(str s) *char
 
 fn str(*char s) str
   ret { base = s, len = int(memory::strlen(s)) }
+
+fn str(Vec[u8] buf) str
+  ret { base = ptr(buf.base), len = buf.len }
+
+fn copy(str s) str
+  *char newAlloc = alloc(s.len)
+  memCopy(newAlloc, ptr(s.base), s.len)
+  ret { base = newAlloc, len = s.len }
 
 fn lines(str s) Vec[str]
   ret split(s, '\n')
@@ -302,7 +340,7 @@ fn fmt() Fmt
 fn fmt(int size) Fmt
   ret { base = alloc(size), capacity = size, len = size }
 
-fn clone(Fmt buf) Fmt
+fn copy(Fmt buf) Fmt
   *char newBase = alloc(buf.len)
   for i in 0:buf.len
     newBase[i] = buf[i]
@@ -346,7 +384,7 @@ decl impl format(&Fmt fmt, T input)
   for field in input
     usedField = true
     format(fmt, field.name)
-    fmt ++= ": "
+    fmt ++= " = "
     format(fmt, field.val)
     fmt ++= ", "
 
@@ -354,6 +392,15 @@ decl impl format(&Fmt fmt, T input)
     fmt.len -= 2
 
   fmt ++= " \}"
+
+impl format(&Fmt fmt, T|nil s) 
+  if s is nil
+    fmt ++= "nil"
+  else
+    fmt ++= s
+
+impl format(&Fmt fmt, nil s)
+  fmt ++= "nil"
 
 impl format(&Fmt fmt, Fmt s)
   format(fmt, str(s))
@@ -424,7 +471,7 @@ impl format(&Fmt fmt, bool val)
   else
     format(fmt, "false")
 
-impl format(&Fmt fmt, *T p)
+impl format(&Fmt fmt, *const T p)
   format(fmt, u64(p))
 
 impl format(&Fmt f, Vec[T] vec)
@@ -552,7 +599,7 @@ impl format(&Fmt f, Map[K, V] map)
     if map.entries[i].hasValue
       f ++= "("
       f ++= map.entries[i].key
-      f ++= ": "
+      f ++= " = "
       f ++= map.entries[i].val
       f ++= "), "
   f.len -= 2
@@ -574,11 +621,173 @@ fn rand() f64
     _output = ((double)rand() / (double)RAND_MAX);
   ret 0.0
 
-fn input(str output) int|err
-  int val = 0
-  *char newOutput = cstr(output)
-  include
-    printf("%s", _newOutput);
-  include
-    scanf("%ld", &val);
-  ret val
+fn parse(str input, &int i) u64|err
+  int startingI = i
+  while i < input.len
+    if input[i] < '0' || input[i] > '9'; break
+    i += 1
+  
+  if i == startingI; ret err("no value")
+
+  u64 radix = 1
+  u64 prevOutput = 0
+  u64 output = 0
+  for i in rev(startingI:i)
+    output += radix * u64(input[i] - '0')
+    radix = radix * 10
+    if output < prevOutput; ret err("overflow")
+    prevOutput = output
+
+  ret output
+
+fn parse(str input, &int i) u32|err
+  u64 output = try parse(input, i)
+  if output >= u64(MAX_U32); ret err("overflow")
+  ret u32(output)
+
+fn parse(str input, &int i) u16|err
+  u64 output = try parse(input, i)
+  if output >= u64(MAX_U16); ret err("overflow")
+  ret u16(output)
+
+fn parse(str input, &int i) u8|err
+  u64 output = try parse(input, i)
+  if output >= u64(MAX_U8); ret err("overflow")
+  ret u8(output)
+
+fn parse(str input, &int i) i64|err
+  bool negative = false
+  if i < input.len && input[i] == '-'
+    negative = true
+    i += 1
+    
+  int startingI = i
+  while i < input.len
+    if input[i] < '0' || input[i] > '9'; break
+    i += 1
+  
+  if i == startingI; ret err("no value")
+
+  i64 radix = 1
+  i64 prevOutput = 0
+  i64 output = 0
+  for i in rev(startingI:i)
+    output += radix * i64(input[i] - '0')
+    radix = radix * 10
+    if output < prevOutput; ret err("overflow")
+    prevOutput = output
+
+  if negative == true
+    ret output * -1
+  ret output
+
+fn parse(str input, &int i) int|err
+  i64 output = try parse(input, i)
+  if output >= i64(MAX_INT); ret err("overflow")
+  if output <= i64(MIN_INT); ret err("underflow")
+  ret int(output)
+
+fn parse(str input, &int i) i16|err
+  i64 output = try parse(input, i)
+  if output >= i64(MAX_I16); ret err("overflow")
+  if output <= i64(MIN_I16); ret err("underflow")
+  ret i16(output)
+
+fn parse(str input, &int i) i8|err
+  i64 output = try parse(input, i)
+  if output >= i64(MAX_I8); ret err("overflow")
+  if output <= i64(MIN_I8); ret err("underflow")
+  ret i8(output)
+
+fn parse(str input, &int i) f64|err
+  i64 first = try parse(input, i)
+  if i >= input.len || input[i] != '.'; ret f64(first)
+  i += 1 # discard '.'
+
+  int saveI = i
+
+  f64 divBy = 1
+  u64 second = try parse(input, i)
+  for j in 0:(i - saveI)
+    divBy = divBy * 10
+  
+  ret f64(first) + f64(second) / divBy
+
+fn parse(str input, &int i) f32|err
+  f64 output = try parse(input, i)
+  ret f32(output)
+
+fn parse(str input) bool|err
+  if input == "true"
+    ret true
+  elif input == "false"
+    ret false
+  ret err("unknown value")
+
+struct Thread
+  pthread_t id
+
+pri struct ThreadStartArgs[T]
+  T args
+  fn(T) start
+  BumpAlloc bp
+
+fn spawnThread(fn(T) start, T args) Thread|err
+  pthread_t id = {}
+
+  BumpAlloc newBp = {}
+  *ThreadStartArgs[T] argsLoc = malloc(1)
+  # realloc(args, newBp)
+
+  argsLoc[0] = {
+    args, start, bp = newBp
+  }
+
+  fn(*ThreadStartArgs[T]) => *u8 ts = threadStart # to keep generics 
+  int result = pthread_create(&id, nil, ptr(ts), ptr(argsLoc))
+  if result < 0; ret err("could not create thread")
+  ret { id }
+
+pri fn threadStart(*ThreadStartArgs[T] args) *u8
+  bp = args[0].bp
+  *u8 startLoc = ptr(args[0].start)
+  args[0].start(args[0].args)
+  ret nil
+
+fn join(Thread thread)
+  *u8 retVal = nil
+  int result = pthread_join(thread.id, &retVal)
+
+struct ProgramArgs
+  Vec[str] argv
+  int position
+
+fn init(int argc, **char argv) ProgramArgs
+  Vec[str] args = []
+  for i in 0:argc
+    append(args, str(argv[i]))
+  ret { argv = args, position = 1 }
+
+fn optional(&ProgramArgs args, str name, str shortName) int|nil
+  str|nil o = optional(args, name, shortName)
+  if o is nil; ret nil
+  int|err i = parse(o, 0)
+  if i is err; ret nil
+  ret i
+
+fn optional(&ProgramArgs args, str name, str shortName) str|nil
+  for i in 0:args.argv.len - 1
+    if args.argv[i] == name || args.argv[i] == shortName
+      if i == args.argv.len - 1; ret nil
+      ret args.argv[i + 1]
+
+fn optional(&ProgramArgs args, str name, str shortName) bool
+  str|nil o = optional(args, name, shortName)
+  ret !(o is nil)
+
+fn positional(&ProgramArgs args) str|nil
+  while args.position < args.argv.len && startsWith(args.argv[args.position], "-")
+    args.position += 2
+  if args.position >= args.argv.len; ret nil
+  ret args.argv[args.position]
+  

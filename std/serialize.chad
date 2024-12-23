@@ -1,0 +1,194 @@
+decl impl formatJson(&Fmt f, T val)
+  f ++= '{'
+  for field in val
+    f ++= "\"{field.name}\": "
+    formatJson(f, field.val)
+    f ++= ", "
+  f.len -= 2
+  f ++= '}'
+
+fn json(T val) str
+  Fmt f = {}
+  formatJson(f, val)
+  ret str(f)
+
+impl formatJson(&Fmt f, u64 val)
+  f ++= val
+
+impl formatJson(&Fmt f, u32 val)
+  f ++= val
+
+impl formatJson(&Fmt f, u16 val)
+  f ++= val
+
+impl formatJson(&Fmt f, u8 val)
+  f ++= val
+
+impl formatJson(&Fmt f, i64 val)
+  f ++= val
+
+impl formatJson(&Fmt f, int val)
+  f ++= val
+
+impl formatJson(&Fmt f, i16 val)
+  f ++= val
+
+impl formatJson(&Fmt f, i8 val)
+  f ++= val
+
+impl formatJson(&Fmt f, f64 val)
+  f ++= val
+
+impl formatJson(&Fmt f, f32 val)
+  f ++= val
+
+impl formatJson(&Fmt f, bool val)
+  f ++= val
+
+impl formatJson(&Fmt f, char val)
+  f ++= '"'
+  f ++= val
+  f ++= '"'
+
+impl formatJson(&Fmt f, str val)
+  f ++= '"'
+  f ++= val
+  f ++= '"'
+
+impl formatJson(&Fmt f, Fmt val)
+  formatJson(f, str(val))
+
+impl formatJson(&Fmt f, *const T val)
+  formatJson(f, val[0])
+
+impl formatJson(&Fmt f, Vec[T] val)
+  f ++= '['
+  for i in 0:val.len
+    formatJson(f, val[i])
+    f ++= ", "
+
+  f.len -= 2
+  f ++= ']'
+
+pri fn skipWhiteSpace(str s, &int i)
+  while i < s.len && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n')
+    i += 1
+
+decl impl parseJson(str json, &T output, &int i) nil|err
+  if json.len < 2; ret err("malformed json")
+  if json[0] != '{' || json[json.len - 1] != '}'; ret err("malformed json")
+
+  i += 1
+  while i < json.len && i != '}'
+    if json[i] != '"'; ret err("expected field name")
+    i += 1 # discard first "
+    int nameStart = i
+    while i < json.len && json[i] != '"'
+      i += 1
+    
+    if i >= json.len; ret err("malformed json")
+
+    str name = json[nameStart:i]
+    i += 1 # discard second "
+    skipWhiteSpace(json, i)
+
+    if i >= json.len; ret err ("malformed json")
+
+    if json[i] != ':'; ret err("expected value") 
+    i += 1 # discard ':'
+    skipWhiteSpace(json, i)
+
+    bool invalidField = true
+    for field in output
+      if field.name == name
+        try parseJson(json, field.val, i)
+        invalidField = false
+
+    if invalidField
+      ret err("field {name} does not exist in type")
+
+    if i >= json.len
+      ret err("malformed json")
+    elif json[i] == ','
+      i += 1 # discard ','
+    elif json[i] == '}'
+      break
+    else
+      ret err("malformed json")
+
+    skipWhiteSpace(json, i)
+
+impl parseJson(str json, &u64 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &u32 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &u16 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &u8 output, int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &i64 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &int output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &i16 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &i8 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &f64 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &f32 output, &int i) nil|err
+  output = try parse(json, i)
+
+impl parseJson(str json, &Vec[T] output, &int i) nil|err
+  if i >= json.len || json[i] != '['; ret err("no array")
+  i += 1 # discard first [
+  skipWhiteSpace(json, i)
+
+  output = []
+  while i < json.len && json[i] != ']'
+    append(output, {})
+    try parseJson(json, output[output.len - 1], i)
+
+    skipWhiteSpace(json, i)
+    if i >= json.len
+      ret err("malformed json")
+    if json[i] == ','
+      i += 1
+      skipWhiteSpace(json, i)
+    if json[i] == ']'
+      i += 1 # discard ]
+      break
+
+impl parseJson(str json, &str output, &int i) nil|err
+  if i >= json.len || json[i] != '"'; ret err("no string")
+  i += 1 # discard first "
+
+  Fmt buildOutput = {}
+  int startingI = i
+  while i < json.len && json[i] != '"'
+    if json[i] == '\\'
+      if i >= json.len; ret err("no escape character")
+      elif json[i + 1] == '"'; buildOutput ++= '"'
+      elif json[i + 1] == '\\'; buildOutput ++= '\\'
+      elif json[i + 1] == '/'; buildOutput ++= '/'
+      elif json[i + 1] == 'b'; buildOutput ++= '\b'
+      elif json[i + 1] == 'f'; buildOutput ++= '\f'
+      elif json[i + 1] == 'n'; buildOutput ++= '\n'
+      elif json[i + 1] == 'r'; buildOutput ++= '\r'
+      elif json[i + 1] == 't'; buildOutput ++= '\t'
+      elif json[i + 1] == 'u'; ret err("unicode can not be parsed")
+    else
+      buildOutput ++= json[i]
+    i += 1
+
+  output = str(buildOutput)
+  i += 1 # discard last " 
