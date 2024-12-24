@@ -95,6 +95,8 @@ type Type = { tag: 'basic', val: string, unitMode: 'as' | 'unit' | 'none', unit:
   | { tag: 'type_union', val0: Type, val1: Type }
   | { tag: 'fn', val: FnType }
   | { tag: 'link', val: Type }
+  | { tag: 'const', val: string } // type as 0 ect
+  | { tag: 'int', val: string } // type as int N
 
 type FnMode = 'fn' | 'decl' | 'impl' | 'macro' | 'declImpl'
 
@@ -118,9 +120,11 @@ interface Var {
   recursive: boolean
 }
 
+type HeaderGeneric = { tag: 'generic', name: string } | { tag: 'int', name: string };
+
 interface StructHeader {
   name: string,
-  generics: string[]
+  generics: HeaderGeneric[]
   pub: boolean
   isEnum: boolean
 }
@@ -609,10 +613,23 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
     return null;
   }
 
-  let generics = [];
+  let generics: HeaderGeneric[] = [];
   if (header.tokens.length > 3 && header.tokens[2].val == '[' && header.tokens[header.tokens.length - 1].val == ']') {
     let genericTokens = balancedSplit(header.tokens.slice(3, -1), ',');
     for (let i = 0; i < genericTokens.length; i++) {
+      if (genericTokens[i].length == 2) {
+        if (genericTokens[i][0].val == 'int' && genericTokens[i][1].val.length == 1) {
+          let letter = genericTokens[i][1].val;
+          if (letter > 'Z' || letter < 'A') {
+            logError(genericTokens[i][0].position, 'generics must be captial letter');
+            return null;
+          }
+
+          generics.push({ tag: 'int', name: genericTokens[i][1].val });
+          continue;
+        }
+      }
+
       if (genericTokens[i][0].val.length != 1 || genericTokens[i][0].val.length != 1) {
         logError(genericTokens[i][0].position, 'generics must be 1 letter long');
         return null;
@@ -623,7 +640,7 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
         logError(genericTokens[i][0].position, 'generics must be captial letter');
         return null;
       }
-      generics.push(letter);
+      generics.push({ tag: 'generic', name: genericTokens[i][0].val });
     }
   }
 
@@ -704,6 +721,22 @@ function tryParseType(tokens: Token[]): Type | null {
 
   if (tokens.length == 0) {
     return null;
+  }
+
+  if (tokens.length == 2) {
+    if (tokens[0].val == 'int') {
+      let letter = tokens[1].val;
+      if (letter.length == 1 && letter >= 'A' && letter <= 'Z') {
+        return { tag: 'int', val: letter };
+      }
+    }
+  }
+
+  if (tokens.length == 1) {
+    let num = parseInt(tokens[0].val);
+    if (isNaN(num) == false) {
+      return { tag: 'const', val: tokens[0].val }
+    } 
   }
 
   if (tokens[0].val == '&') {

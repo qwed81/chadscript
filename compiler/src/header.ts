@@ -174,13 +174,15 @@ function loadHeaderFile(headerName: string): UnitSymbols | null {
 
       symbols.structs.set(child.name, {
         generics: [],
+        constFields: [],
         template: {
           fields: typeDefType.val.template.fields,
           name: typeDefType.val.template.name,
           unit: typeDefType.val.template.unit,
           isEnum: false,
           modifier: 'pub',
-          generics: []
+          generics: [],
+          constFieldNames: []
         }
       });
     }
@@ -224,13 +226,15 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
       tag: 'struct',
       val: {
         generics: [],
+        constFields: [],
         template: {
           fields: [],
           generics: [],
           name: node.name,
           unit,
           isEnum: false,
-          modifier: 'pub'
+          modifier: 'pub',
+          constFieldNames: []
         }
       }
     }};
@@ -257,13 +261,15 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
     tag: 'struct',
     val: {
       generics: [],
+      constFields: [],
       template: {
         fields,
         generics: [],
         name: node.name,
         unit,
         isEnum: false,
-        modifier: 'pub'
+        modifier: 'pub',
+        constFieldNames: []
       }
     }
   }}
@@ -432,13 +438,15 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
     tag: 'struct',
     val: {
       generics: [],
+      constFields: [],
       template: {
         fields: fields,
         name: type,
         unit,
         isEnum: false,
         modifier: 'pub',
-        generics: []
+        generics: [],
+        constFieldNames: []
       }
     }
   }

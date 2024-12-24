@@ -136,7 +136,7 @@ interface Index {
   verifyFn: Fn | null
 }
 
-type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter'; 
+type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter' | 'generic_const'; 
 
 type LeftExpr = { tag: 'dot', val: DotOp, type: Type }
   | { tag: 'index', val: Index, type: Type }
@@ -181,6 +181,7 @@ function analyzeUnitGlobals(symbols: UnitSymbols, unit: Parse.ProgramUnit): Glob
     returnType: NIL,
     inLoop: false,
     generics: new Set(),
+    genericConsts: new Set(),
     typeScope: [],
     variantScope: []
   };
@@ -205,9 +206,11 @@ function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[]
   let fns: FnImpl[] | null = [];
   for (let fn of unit.fns) {
     let generics: Set<string> = new Set();
+    let consts: Set<string> = new Set();
     for (let i = 0; i < fn.type.paramTypes.length; i++) {
       let paramType = fn.type.paramTypes[i]; 
       addGenerics(paramType, generics);
+      addConsts(paramType, consts)
     }
 
     let returnType = resolveType(symbols, fn.type.returnType, fn.position);
@@ -216,7 +219,7 @@ function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[]
       return null;
     }
 
-    let scope = newScope(returnType, generics);
+    let scope = newScope(returnType, generics, consts);
 
     if (fn.mode == 'macro') continue;
     let validFn = analyzeFn(symbols, fn, scope);
@@ -227,6 +230,20 @@ function analyzeUnitFns(symbols: UnitSymbols, unit: Parse.ProgramUnit): FnImpl[]
   }
 
   return fns;
+}
+
+function addConsts(paramType: Parse.Type, consts: Set<string>) {
+  if (paramType.tag == 'generic') {
+    for (let generic of paramType.val.generics) {
+      if (generic.tag == 'int') consts.add(generic.val);
+    }
+  }
+  if (paramType.tag == 'ptr') addConsts(paramType.val, consts);
+  if (paramType.tag == 'link') addConsts(paramType.val, consts);
+  if (paramType.tag == 'fn') {
+    addConsts(paramType.val.returnType, consts);
+    for (let g of paramType.val.paramTypes) addConsts(g, consts);
+  }
 }
 
 // recursively add all the generics to the set given the parse type
@@ -1715,16 +1732,18 @@ interface Var {
 interface FnContext {
   typeScope: Map<string, Var>[]
   generics: Set<string>, 
+  genericConsts: Set<string>,
   returnType: Type
   inLoop: boolean
   variantScope: Enum.VariantScope 
 };
 
-function newScope(returnType: Type, generics: Set<string>): FnContext {
+function newScope(returnType: Type, generics: Set<string>, genericConsts: Set<string>): FnContext {
   return {
     typeScope: [],
     variantScope: [[]],
     generics,
+    genericConsts,
     returnType: returnType,
     inLoop: false,
   };
@@ -1751,6 +1770,11 @@ function getVar(
   for (let i = scope.typeScope.length - 1; i >= 0; i--) {
     if (scope.typeScope[i].has(name)) return scope.typeScope[i].get(name)!;
   }
+
+  if (scope.genericConsts.has(name)) {
+    return { type: INT, mode: 'generic_const', mut: false, unit: null };
+  }
+
   let global: Global | null = resolveGlobal(symbols, name, position);
   if (global == null) return null;
   return {
