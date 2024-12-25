@@ -32,6 +32,8 @@ struct err
 fn err(str message) err
   ret { message = message }
 
+struct vec[T, int N]
+
 enum TypeUnion[T, K]
   T val0
   K val1
@@ -155,10 +157,24 @@ fn print(T val)
   include
     printf("%s\n", _output);
 
+impl index(&vec[T, int N] s, Range r) *seg[T]
+  assert r.start >= 0 && r.start < N
+  *seg[T] newSeg = alloc(1)
+  newSeg[0] = { base = &s[r.start], len = r.end - r.start }
+  ret newSeg
+
+struct seg[T]
+  get *T base
+  get int len
+
+impl index(&seg[T] s, int index) *T
+  assert index >= 0 && index < s.len
+  ret &s.base[index]
+
 struct Vec[T]
   get *T base
-  get int capacity
   get int len
+  get int capacity
 
 impl realloc(&Vec[T] vec, &BumpAlloc bump)
   *T newPtr = alloc(bump, vec.capacity)
@@ -169,11 +185,11 @@ impl index(&Vec[T] vec, int index) *T
   assert index >= 0 && index < vec.len
   ret &vec.base[index]
 
-impl index(&Vec[T] s, Range r) *Vec[T]
+impl index(&Vec[T] s, Range r) *seg[T]
   assert r.start >= 0 && r.start < s.len
-  *Vec[T] newVec = alloc(1)
-  newVec[0] = { base = &s.base[r.start], len = r.end - r.start, capacity = r.end - r.start }
-  ret newVec
+  *seg[T] newSeg = alloc(1)
+  newSeg[0] = { base = &s.base[r.start], len = r.end - r.start }
+  ret newSeg
 
 fn vec(int amt) Vec[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
@@ -399,6 +415,22 @@ impl format(&Fmt fmt, T|nil s)
   else
     fmt ++= s
 
+impl format(&Fmt fmt, seg[T] s)
+  fmt ++= '['
+  for i in 0:s.len
+    fmt ++= s[i]
+    if i != s.len - 1
+      fmt ++= ", "
+  fmt ++= ']'
+
+impl format(&Fmt fmt, vec[int, int N] v)
+  fmt ++= '['
+  for i in 0:N
+    fmt ++= v[i]
+    if i != N - 1
+      fmt ++= ", "
+  fmt ++= ']'
+
 impl format(&Fmt fmt, nil s)
   fmt ++= "nil"
 
@@ -475,12 +507,7 @@ impl format(&Fmt fmt, *const T p)
   format(fmt, u64(p))
 
 impl format(&Fmt f, Vec[T] vec)
-  f ++= '['
-  for i in 0:vec.len
-    f ++= vec[i]
-    if i != vec.len - 1
-      f ++= ", "
-  f ++= ']'
+  format(f, vec[0:vec.len])
 
 impl format(&Fmt f, char c)
   appendOne(f, c)
