@@ -265,7 +265,7 @@ function resolveInst(
           genericMap.set('val', fields[i].type);
 
           let body = resolveInstBody(inst.val.body, set, genericMap, constMap);
-          if (iterType.val.template.isEnum && iter.tag == 'left_expr') {
+          if (iterType.val.template.structMode == 'enum' && iter.tag == 'left_expr') {
             let cond: CondBody = {
               cond: { tag: 'is', left: iter.val, type: BOOL, variant: fields[i].name, variantIndex: i },
               body

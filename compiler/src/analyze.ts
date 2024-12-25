@@ -1232,7 +1232,7 @@ function ensureExprValid(
     if (exprLeft == null) return null;
 
     // if T|K is a known, should still be able to use 'is'
-    if (exprLeft.type.tag != 'struct' || !exprLeft.type.val.template.isEnum) {
+    if (exprLeft.type.tag != 'struct' || exprLeft.type.val.template.structMode != 'enum') {
       if (position == null) {
         compilerError('can not use is with null position');
         return null;
@@ -1258,7 +1258,7 @@ function ensureExprValid(
       }
     }
 
-    if (exprLeft.type.tag == 'struct' && exprLeft.type.val.template.isEnum && expr.right.tag == 'basic') {
+    if (exprLeft.type.tag == 'struct' && exprLeft.type.val.template.structMode == 'enum' && expr.right.tag == 'basic') {
       let fieldName: string = expr.right.val;
       if (exprLeft.type.val.template.name == 'TypeUnion' && exprLeft.type.val.template.unit == 'std/core') {
         let fields = getFields(exprLeft.type);
@@ -1452,7 +1452,7 @@ function ensureExprValid(
     // check if initialization of enum
     if (expectedReturn != null
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.template.isEnum
+      && expectedReturn.val.template.structMode == 'enum'
       && expr.val.fn.tag == 'var' 
       && expr.val.exprs.length == 1
     ) {
@@ -1592,19 +1592,25 @@ function ensureExprValid(
       exprFieldExprs.set(initField.name, expr);
     }
 
-    if (exprFieldTypes.size != fields.length) {
+    let isUnion = retType.val.template.structMode == 'union';
+    if (isUnion == false && exprFieldTypes.size != fields.length) {
       if (position != null) logError(position, 'missing fields');
       return null;
     }
 
+    if (isUnion == true && exprFieldTypes.size > 1) {
+      if (position != null) logError(position, 'union can only initialize 1 field');
+      return null;
+    }
+
     for (let field of fields) {
-      if (!exprFieldTypes.has(field.name)) {
+      if (isUnion == false && !exprFieldTypes.has(field.name)) {
         if (position != null) logError(position, `required field ${field.name}`);
         return null;
       }
 
-      let exprFieldType = exprFieldTypes.get(field.name)!;
-      if (typeApplicable(exprFieldType, field.type, false) == false) {
+      let exprFieldType = exprFieldTypes.get(field.name);
+      if (exprFieldType != undefined && typeApplicable(exprFieldType, field.type, false) == false) {
         if (position != null) logError(position, `improper type for ${toStr(retType)}.${field.name}`);
         return null;
       }
@@ -1679,7 +1685,7 @@ function ensureExprValid(
     // see if it is constant enum initialization of a void type
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.template.isEnum
+      && expectedReturn.val.template.structMode == 'enum'
       && expr.val.tag == 'var'
     ) {
       let fields = getFields(expectedReturn);

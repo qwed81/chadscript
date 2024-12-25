@@ -179,7 +179,7 @@ function loadHeaderFile(headerName: string): UnitSymbols | null {
           fields: typeDefType.val.template.fields,
           name: typeDefType.val.template.name,
           unit: typeDefType.val.template.unit,
-          isEnum: false,
+          structMode: 'struct',
           modifier: 'pub',
           generics: [],
           constFieldNames: []
@@ -232,7 +232,7 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
           generics: [],
           name: node.name,
           unit,
-          isEnum: false,
+          structMode: 'struct',
           modifier: 'pub',
           constFieldNames: []
         }
@@ -267,7 +267,7 @@ function parseCRecord(node: ASTNode, unit: string, structTypeMap: Map<string, Ty
         generics: [],
         name: node.name,
         unit,
-        isEnum: false,
+        structMode: 'struct',
         modifier: 'pub',
         constFieldNames: []
       }
@@ -443,7 +443,7 @@ function parseCType(type: string, unit: string, typeMap: Map<string, Type>): Typ
         fields: fields,
         name: type,
         unit,
-        isEnum: false,
+        structMode: 'struct',
         modifier: 'pub',
         generics: [],
         constFieldNames: []

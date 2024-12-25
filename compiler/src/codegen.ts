@@ -275,11 +275,15 @@ function codeGenType(type: Type, decl: boolean = false, includeConst: boolean = 
       typeStr = type.val.template.name + generics + '_cs_';
     }
 
+    let structMode = 'struct';
+    if (type.val.template.structMode == 'union') {
+      structMode = 'union';
+    }
     if (!type.val.template.unit.endsWith('.h')) {
-      typeStr = 'struct _' + typeStr;
+      typeStr = structMode + ' _' + typeStr;
     }
     else {
-      typeStr = 'struct ' + typeStr;
+      typeStr = structMode + ' ' + typeStr;
     }
 
     return typeStr;
@@ -954,7 +958,7 @@ function codeGenStructDef(struct: Type): string {
     return structStr + '\n};';
   }
 
-  if (struct.val.template.isEnum == true) {
+  if (struct.val.template.structMode == 'enum') {
     structStr += '\n\tint64_t tag;'
     structStr += '\n\tunion {;'
   }
@@ -964,7 +968,7 @@ function codeGenStructDef(struct: Type): string {
     structStr += '\n  ' + codeGenType(fields[i].type, true);
     structStr += ' _' + fields[i].name + ';';
   }
-  if (struct.val.template.isEnum) {
+  if (struct.val.template.structMode == 'enum') {
     structStr += '\n};'
   }
 

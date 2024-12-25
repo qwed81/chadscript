@@ -41,6 +41,7 @@ export {
   SourceLine, ProgramUnit, GenericType, FnType, Type, Fn, Var, Struct, CondBody,
   ForIn, Declare, Assign, FnCall, Inst, DotOp, LeftExpr, Index, StructInitField,
   BinExpr, Expr, parseDir, parseFile, FieldVisibility, FnMode, GlobalMode, parse,
+  StructMode
 }
 
 interface SourceLine {
@@ -120,13 +121,15 @@ interface Var {
   recursive: boolean
 }
 
+type StructMode = 'struct' | 'enum' | 'union';
+
 type HeaderGeneric = { tag: 'generic', name: string } | { tag: 'int', name: string };
 
 interface StructHeader {
   name: string,
   generics: HeaderGeneric[]
   pub: boolean
-  isEnum: boolean
+  structMode: StructMode
 }
 
 interface Struct {
@@ -299,7 +302,7 @@ function parse(unitText: string, progName: string): ProgramUnit | null {
         start = 1;
       }
 
-      if (line.tokens[start].val == 'struct' || line.tokens[start].val == 'enum') {
+      if (line.tokens[start].val == 'struct' || line.tokens[start].val == 'enum' || line.tokens[start].val == 'union') {
         let struct = parseStruct(newLine, body, pub);
         if (struct == null) {
           return null;
@@ -645,7 +648,13 @@ function parseStruct(header: SourceLine, body: SourceLine[], pub: boolean): Stru
     }
   }
 
-  let structName: StructHeader = { name: header.tokens[1].val, generics, pub, isEnum: header.tokens[0].val == 'enum' };
+  let structMode = header.tokens[0].val; 
+  if (structMode != 'enum' && structMode != 'struct' && structMode != 'union') {
+    logError(header.tokens[0].position, 'unknown struct mode');
+    return null;
+  }
+
+  let structName: StructHeader = { name: header.tokens[1].val, generics, pub, structMode };
   let structFields: Var[] = [];
   for (let line of body) {
     let name = line.tokens[line.tokens.length - 1].val;

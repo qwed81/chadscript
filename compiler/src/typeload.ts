@@ -28,7 +28,7 @@ interface StructTemplate {
   unit: string,
   fields: Field[]
   modifier: Modifier,
-  isEnum: boolean
+  structMode: Parse.StructMode
   generics: string[]
   constFieldNames: string[]
 }
@@ -105,7 +105,7 @@ function basic(name: string): Type {
         name,
         unit: 'std/core',
         modifier: 'pub',
-        isEnum: false,
+        structMode: 'struct',
         fields: [],
         generics: [],
         constFieldNames: []
@@ -122,7 +122,7 @@ function basicStruct(name: string): Struct {
       name,
       unit: 'std/core',
       modifier: 'pub',
-      isEnum: false,
+      structMode: 'struct',
       fields: [],
       generics: [],
       constFieldNames: []
@@ -139,7 +139,7 @@ const STR: Type = {
       name: 'str',
       unit: 'std/core',
       modifier: 'pub',
-      isEnum: false,
+      structMode: 'struct',
       fields: [
         { name: 'base', type: { tag: 'ptr', val: CHAR, const: true }, modifier: 'get' },
         { name: 'len', type: INT, modifier: 'get' }
@@ -159,7 +159,7 @@ const ERR: Type = {
       name: 'err',
       unit: 'std/core',
       modifier: 'pub',
-      isEnum: false,
+      structMode: 'struct',
       fields: [
         { name: 'message', type: STR, modifier: 'get' }
       ], 
@@ -178,7 +178,7 @@ const FMT: Type = {
       name: 'Fmt',
       unit: 'std/core',
       modifier: 'pub',
-      isEnum: false,
+      structMode: 'struct',
       fields: [],
       generics: [],
       constFieldNames: []
@@ -195,7 +195,7 @@ const RANGE: Type = {
       name: 'Range',
       unit: 'std/core',
       modifier: 'pub',
-      isEnum: false,
+      structMode: 'struct',
       fields: [
         { name: 'start', type: INT, modifier: 'pub' },
         { name: 'end', type: INT, modifier: 'pub' },
@@ -301,7 +301,7 @@ function createTypeUnion(t1: Type, t2: Type): Type {
         name: 'TypeUnion',
         unit: 'std/core',
         modifier: 'pub',
-        isEnum: true,
+        structMode: 'enum',
         fields: [
           { name: 'val0', type: t1, modifier: 'pub' },
           { name: 'val1', type: t2, modifier: 'pub' }
@@ -323,7 +323,7 @@ function createSizedVec(t1: Type, size: number): Type {
         name: 'vec',
         unit: 'std/core',
         modifier: 'pub',
-        isEnum: false,
+        structMode: 'struct',
         fields: [],
         generics: ['T']
       },
@@ -342,7 +342,7 @@ function createVec(t1: Type): Type {
         name: 'Vec',
         unit: 'std/core',
         modifier: 'pub',
-        isEnum: false,
+        structMode: 'struct',
         fields: [
           { name: 'base', type: { tag: 'ptr', val: t1, const: false }, modifier: 'get' },
           { name: 'len', type: INT, modifier: 'get' },
@@ -512,7 +512,6 @@ function typeApplicableStateful(
   // T -> T|K is valid
   if (allowUnion == true 
     && supa.tag == 'struct' 
-    && supa.val.template.isEnum 
     && supa.val.template.name == 'TypeUnion' 
     && supa.val.template.unit == 'std/core'
   ) {
@@ -836,7 +835,7 @@ function loadStructs(units: Parse.ProgramUnit[], to: UnitSymbols[]) {
           name: struct.header.name,
           unit: unit.fullName,
           modifier: modifier,
-          isEnum: struct.header.isEnum,
+          structMode: struct.header.structMode,
           fields: [],
           generics: [],
           constFieldNames: []
@@ -1495,7 +1494,7 @@ function analyzeUnitDataTypes(symbols: UnitSymbols, unit: Parse.ProgramUnit): bo
       invalidDataType = true;
     }
 
-    if (struct.header.isEnum) {
+    if (struct.header.structMode == 'enum') {
       for (let i = 0; i < struct.fields.length; i++) {
         if (struct.fields[i].visibility == 'get' ||struct.fields[i].visibility == null) {
           logError(struct.fields[i].position, 'enum fields can not have visibility modifier');

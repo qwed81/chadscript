@@ -173,7 +173,7 @@ function getVariantPossibilities(scope: VariantScope, leftExpr: LeftExpr): strin
     }
   }
 
-  if (leftExpr.type.tag == 'struct' && leftExpr.type.val.template.isEnum) {
+  if (leftExpr.type.tag == 'struct' && leftExpr.type.val.template.structMode == 'enum') {
     return getFields(leftExpr.type).map(x => x.name);
   } else {
     return [];
@@ -223,7 +223,7 @@ function getInverseExprSet(expr: Expr): PossibleVariants {
     return intersectingUnion(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.isEnum) {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.structMode == 'enum') {
       let key = expr.left;
       let newSet: PossibleVariants = [];
       let possible = getFields(expr.left.type).map(x => x.name);
@@ -258,7 +258,7 @@ function getExprSet(expr: Expr): PossibleVariants {
     return unionsIntersection(left, right);
   }
   else if (expr.tag == 'is') {
-    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.isEnum) {
+    if (expr.left.type.tag == 'struct' && expr.left.type.val.template.structMode == 'enum') {
       let key = expr.left;
       let newSet: PossibleVariants = [];
       let possible = getFields(expr.left.type).map(x => x.name);
@@ -322,7 +322,7 @@ function applyInverseCond(
 
 function recursiveAddExpr(scope: VariantScope, leftExpr: LeftExpr, expr: Expr) {
   let set = scope[scope.length - 1];
-  if (expr.tag == 'enum_init' && expr.type.tag == 'struct' && expr.type.val.template.isEnum) {
+  if (expr.tag == 'enum_init' && expr.type.tag == 'struct' && expr.type.val.template.structMode == 'enum') {
     let possible = getFields(expr.type).map(x => x.name);
     add(set, leftExpr, [expr.fieldName], possible);
     if (expr.fieldExpr != null) {
