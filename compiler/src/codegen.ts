@@ -261,10 +261,13 @@ function codeGenType(type: Type, decl: boolean = false, includeConst: boolean = 
     let generics: string = '_os_';
     for (let i = 0; i < type.val.generics.length; i++) {
       generics += typeAsName(type.val.generics[i]);
-      if (i != type.val.generics.length - 1) {
-        generics += '_c_';
-      }     
+      generics += '_c_';
     }
+    for (let i = 0; i < type.val.constFields.length; i++) {
+      generics += type.val.constFields[i];
+      generics += '_c_';
+    }
+
     if (type.val.generics.length == 0) {
       typeStr = type.val.template.name;
     }
@@ -611,25 +614,40 @@ function codeGenExpr(
       return undefined!;
     }
 
-    let ptrType = getFields(expr.type)[0].type;
-    if (ptrType.tag != 'ptr') {
-      compilerError('expected ptr field');
-      return undefined!;
+    if (expr.type.val.template.name == 'vec') {
+      exprText = `(${ codeGenType(expr.type) }){`;
+      for (let i = 0; i < expr.val.length; i++) {
+        let innerExpr = codeGenExpr(expr.val[i], ctx, position);
+        statements.push(...innerExpr.statements);
+        exprText += innerExpr.output;
+        if (i < expr.val.length - 1) {
+          exprText += ', ';
+        }
+      }
+      exprText += '}';
+    }
+    else {
+      let ptrType = getFields(expr.type)[0].type;
+      if (ptrType.tag != 'ptr') {
+        compilerError('expected ptr field');
+        return undefined!;
+      }
+
+      let type = codeGenType(ptrType.val);
+      let ptr = uniqueVarName(ctx, null);
+      let typedPtr = uniqueVarName(ctx, ptrType);
+      let allocName = getFnUniqueId('std/core', 'alloc', 'fn', [INT], ptrType);
+
+      statements.push(`void *${ptr} = ${allocName}(${expr.val.length});`);
+      statements.push(`${typedPtr} = (${type}*)(${ptr});`);
+      for (let i = 0; i < expr.val.length; i++) {
+        let innerExpr = codeGenExpr(expr.val[i], ctx, position);
+        statements.push(...innerExpr.statements);
+        statements.push(`${typedPtr}[${i}] = ${innerExpr.output};`);
+      }
+      exprText = `(${ codeGenType(expr.type) }){ ._base = ${typedPtr}, ._len = ${expr.val.length}, ._capacity = ${expr.val.length} }`;
     }
 
-    let type = codeGenType(ptrType.val);
-    let ptr = uniqueVarName(ctx, null);
-    let typedPtr = uniqueVarName(ctx, ptrType);
-    let allocName = getFnUniqueId('std/core', 'alloc', 'fn', [INT], ptrType);
-
-    statements.push(`void *${ptr} = ${allocName}(${expr.val.length});`);
-    statements.push(`${typedPtr} = (${type}*)(${ptr});`);
-    for (let i = 0; i < expr.val.length; i++) {
-      let innerExpr = codeGenExpr(expr.val[i], ctx, position);
-      statements.push(...innerExpr.statements);
-      statements.push(`${typedPtr}[${i}] = ${innerExpr.output};`);
-    }
-    exprText = `(${ codeGenType(expr.type) }){ ._base = ${typedPtr}, ._len = ${expr.val.length}, ._capacity = ${expr.val.length} }`;
   }
   else if (expr.tag == 'fmt_str') {
     let fmtName = uniqueVarName(ctx, FMT);
@@ -718,6 +736,8 @@ function codeGenExpr(
     exprText = leftExpr.output;
   }
   else if (expr.tag == 'ptr') {
+
+
     let innerExpr = codeGenLeftExpr(expr.val, ctx, position, false);
     statements.push(...innerExpr.statements);
     exprText = `&(${innerExpr.output})`;
@@ -840,7 +860,19 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position,
     let innerName = codeGenExpr(leftExpr.val.index, ctx, position);
     statements.push(...leftName.statements);
     statements.push(...innerName.statements);
-    leftExprText = `${leftName.output}[${innerName.output}]`;
+
+    if (leftExpr.val.var.type.tag == 'struct'
+      && leftExpr.val.var.type.val.template.name == 'vec'
+      && leftExpr.val.var.type.val.template.unit == 'std/core'
+    ) {
+
+      let guard = `if (${innerName.output} < 0 || ${innerName.output} >= ${leftExpr.val.var.type.val.constFields[0]}) chad_panic("${position.document}", ${position.line}, "out of bounds");`;
+      statements.push(guard);
+      leftExprText = `${leftName.output}.val0[${innerName.output}]`;
+    }
+    else {
+      leftExprText = `${leftName.output}[${innerName.output}]`;
+    }
   } 
   else if (leftExpr.tag == 'fn') {
     if (leftExpr.type.tag != 'fn') return undefined!;
@@ -912,6 +944,16 @@ function codeGenStructDef(struct: Type): string {
 
   let structStr = '';
   structStr += '\n' + codeGenType(struct) + ' {';
+  if (struct.val.template.unit == 'std/core'
+    && struct.val.template.name == 'vec') {
+
+    let genericType = struct.val.generics[0];
+    let n = parseInt(struct.val.constFields[0]);
+    structStr += codeGenType(genericType) + ` val0[${n}];`;
+
+    return structStr + '\n};';
+  }
+
   if (struct.val.template.isEnum == true) {
     structStr += '\n\tint64_t tag;'
     structStr += '\n\tunion {;'
@@ -919,16 +961,6 @@ function codeGenStructDef(struct: Type): string {
 
   let fields = getFields(struct);
   for (let i = 0; i < fields.length; i++) {
-    let fieldType = fields[i].type;
-
-    /*
-    if (fieldType.tag == 'struct' 
-      && fieldType.val.template.name == 'nil'
-      && fieldType.val.template.unit == 'std/core') {
-      continue; 
-    } 
-    */
-
     structStr += '\n  ' + codeGenType(fields[i].type, true);
     structStr += ' _' + fields[i].name + ';';
   }

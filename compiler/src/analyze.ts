@@ -8,7 +8,7 @@ import {
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
   resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields, lookupFnOrDecl,
-  getFoundFns, getExpectedFns, getCurrentFn, AMBIG_NIL
+  getFoundFns, getExpectedFns, getCurrentFn, AMBIG_NIL, createSizedVec
 } from './typeload'
 import * as Enum from './enum';
 
@@ -778,6 +778,13 @@ function ensureLeftExprValid(
     if (left.type.tag == 'ptr') {
       computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null }, type: left.type.val };
     }
+    else if (left.type.tag == 'struct' 
+      && left.type.val.template.name == 'vec'
+      && left.type.val.template.unit == 'std/core'
+      && typeApplicable(index.type, INT, false)
+    ) {
+      computedExpr = { tag: 'index', val: { var: left, index, const: false, verifyFn: null }, type: left.type.val.generics[0] };
+    }
     else {
       let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
       if (trait == null || trait.resolvedType.tag != 'fn') return null;
@@ -1431,16 +1438,27 @@ function ensureExprValid(
 
   if (expr.tag == 'list_init') {
     let exprType: Type | null = null;
+    let sizedVec = false;
+    let expectedSize = -1;
+
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
-      && expectedReturn.val.template.name == 'Vec'
+      && (expectedReturn.val.template.name == 'Vec' || expectedReturn.val.template.name == 'vec')
       && expectedReturn.val.template.unit == 'std/core') {
-      let ptrType = getFields(expectedReturn)[0].type;
+      let ptrType = { tag: 'ptr', val: expectedReturn.val.generics[0] };
       if (ptrType.tag != 'ptr') {
         compilerError('expected ptr field');
         return null;
       }
       exprType = ptrType.val;
+      if (expectedReturn.val.template.name == 'vec') {
+        sizedVec = true;
+        if (expectedReturn.val.constFields[0] == 'ANY') {
+          if (position != null) logError(position, 'can not initialize unsized vec');
+          return null;
+        }
+        expectedSize = parseInt(expectedReturn.val.constFields[0]);
+      } 
     }
     else { 
       if (expr.val.length < 1) {
@@ -1472,7 +1490,15 @@ function ensureExprValid(
       return null;
     }
 
-    computedExpr = { tag: 'list_init', val: newExprs, type: createVec(exprType) };
+    if (sizedVec == true) {
+      if (newExprs.length != expectedSize) {
+        if (position != null) logError(position, `expected vec of size ${expectedSize}`);
+      }
+      computedExpr = { tag: 'list_init', val: newExprs, type: createSizedVec(exprType, expectedSize) };
+    }
+    else {
+      computedExpr = { tag: 'list_init', val: newExprs, type: createVec(exprType) };
+    }
   }
 
   if (expr.tag == 'struct_init') {

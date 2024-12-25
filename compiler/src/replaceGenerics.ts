@@ -168,10 +168,12 @@ function monomorphizeFn(
   let paramTypes: Type[] = [];
   for (let param of genericFn.header.paramTypes) {
     let newParam = applyGenericMap(param, genericMap);
+    newParam = applyConstMap(newParam, constMap);
     addType(set, newParam);
     paramTypes.push(newParam);
   }
   let returnType = applyGenericMap(genericFn.header.returnType, genericMap);
+  returnType = applyConstMap(returnType, constMap);
   addType(set, returnType);
 
   set.inAssign.push(false);
@@ -316,6 +318,7 @@ function resolveInst(
   }
   else if (inst.tag == 'declare') {
     let type = applyGenericMap(inst.val.type, genericMap);
+    type = applyConstMap(type, constMap);
     addType(set, type);
     let expr = resolveExpr(inst.val.expr, set, genericMap, constMap, inst.position);
     if (expr == null) return null;
@@ -345,7 +348,9 @@ function resolveInst(
   else if (inst.tag == 'include') {
     let newTypes: Type[] = [];
     for (let type of inst.val.types) {
-      newTypes.push(applyGenericMap(type, genericMap));
+      let newType = applyGenericMap(type, genericMap);
+      newType = applyConstMap(newType, constMap);
+      newTypes.push(newType);
     }
     return [{ tag: 'include', val: { lines: inst.val.lines, types: newTypes }, position: inst.position }];
   }
@@ -449,6 +454,8 @@ function resolveExpr(
   else if (expr.tag == 'not' || expr.tag == 'try' || expr.tag == 'assert' || expr.tag == 'cast') {
     let inner = resolveExpr(expr.val, set, genericMap, constMap, position);
     let type = applyGenericMap(expr.type, genericMap);
+    type = applyConstMap(type, constMap);
+
     if (inner == null) return null;
     if (expr.tag == 'not') {
       return { tag: expr.tag, val: inner, type };
@@ -472,6 +479,7 @@ function resolveExpr(
     for (let arg of expr.val.args) {
       if (arg.tag == 'type') {
         let t = applyGenericMap(arg.val, genericMap);
+        t = applyConstMap(t, constMap);
         args.push({ tag: 'type', val: t });
       }
       else if (arg.tag == 'expr') {
@@ -482,6 +490,7 @@ function resolveExpr(
     }
 
     let returnType = applyGenericMap(expr.type, genericMap);
+    returnType = applyConstMap(returnType, constMap);
     return { tag: 'macro_call', val: { name: expr.val.name, args }, type: returnType };
   }
   else if (expr.tag == 'fn_call') {
@@ -510,6 +519,7 @@ function resolveExpr(
     }
 
     let returnType = applyGenericMap(expr.type, genericMap);
+    returnType = applyConstMap(returnType, constMap);
     return { tag: 'fn_call', val: { fn, exprs, position: expr.val.position }, type: returnType };
   }
   else if (expr.tag == 'list_init') {
@@ -526,6 +536,8 @@ function resolveExpr(
     }
 
     let type = applyGenericMap(expr.type, genericMap);
+    type = applyConstMap(type, constMap);
+
     // list init needs alloc to be available
     let allocRef: Fn = set.fnTemplates.get('alloc')!.find(x => x.header.paramTypes.length == 1 && x.header.unit == 'std/core')!.header;
     let allocMap = new Map();
@@ -533,7 +545,7 @@ function resolveExpr(
     allocMap.set('T', type);
     let allocExpr: LeftExpr = {
       tag: 'fn',
-      type: { tag: 'fn', paramTypes: [INT], returnType: getFields(expr.type)[0].type },
+      type: { tag: 'fn', paramTypes: [INT], returnType: { tag: 'ptr', val: expr.type.val.generics[0], const: false } },
       name: 'alloc',
       unit: 'std/core',
       mode: 'fn',
@@ -560,14 +572,17 @@ function resolveExpr(
     }
 
     let type = applyGenericMap(expr.type, genericMap);
+    type = applyConstMap(type, constMap);
     return { tag: 'struct_init', val: inits, type: type }
   }
   else if (expr.tag == 'struct_zero') {
     let type = applyGenericMap(expr.type, genericMap);
+    type = applyConstMap(type, constMap);
     return { tag: 'struct_zero', type };
   }
   else if (expr.tag == 'enum_init') {
     let type = applyGenericMap(expr.type, genericMap);
+    type = applyConstMap(type, constMap);
     if (expr.fieldExpr != null) {
       let fieldExpr = resolveExpr(expr.fieldExpr, set, genericMap, constMap, position);
       return { tag: 'enum_init', fieldName: expr.fieldName, variantIndex: expr.variantIndex, fieldExpr, type };
@@ -700,6 +715,7 @@ function resolveLeftExpr(
     let resolvedLeft = resolveExpr(leftExpr.val.left, set, genericMap, constMap, position);
     if (resolvedLeft == null) return null;
     let type = applyGenericMap(leftExpr.type, genericMap);
+    type = applyConstMap(type, constMap);
     return { tag: 'dot', val: { left: resolvedLeft, varName: leftExpr.val.varName }, type };
   }
   else if (leftExpr.tag == 'index') {
@@ -707,9 +723,21 @@ function resolveLeftExpr(
     let v = resolveExpr(leftExpr.val.var, set, genericMap, constMap, position);
     if (index == null || v == null) return null;
 
-    if (leftExpr.val.var.type.tag == 'ptr') {
+    let leftType = leftExpr.val.var.type;
+    if (leftType.tag == 'ptr') {
       let type = applyGenericMap(leftExpr.type, genericMap);
-      return { tag: 'index', val: { var: v, index, const: leftExpr.val.var.type.const, verifyFn: null }, type };
+      type = applyConstMap(type, constMap);
+      return { tag: 'index', val: { var: v, index, const: leftType.const, verifyFn: null }, type };
+    }
+
+    if (leftType.tag == 'struct'
+      && leftType.val.template.name == 'vec'
+      && leftType.val.template.unit == 'std/core'
+      && typeApplicable(index.type, INT, false)
+    ) {
+      let type = applyGenericMap(leftExpr.type, genericMap);
+      type = applyConstMap(type, constMap);
+      return { tag: 'index', val: { var: v, index, const: false, verifyFn: null }, type };
     }
 
     let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index], position);
@@ -753,6 +781,7 @@ function resolveLeftExpr(
   }
   else if (leftExpr.tag == 'var') {
     let type = applyGenericMap(leftExpr.type, genericMap);
+    type = applyConstMap(type, constMap);
     return { tag: 'var', val: leftExpr.val, mode: leftExpr.mode, type, unit: leftExpr.unit };
   }
 

@@ -11,7 +11,7 @@ export {
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
   resolveMacro, isGeneric, getFields, lookupFnOrDecl, getFoundFns, getExpectedFns, getCurrentFn,
-  applyConstMap
+  applyConstMap, createSizedVec
 }
 
 type Modifier = 'pri' | 'pub';
@@ -241,10 +241,13 @@ function getTypeKey(t: Type): string {
     let generics: string = '[';
     for (let i = 0; i < t.val.generics.length; i++) {
       generics += getTypeKey(t.val.generics[i]);
-      if (i != t.val.generics.length - 1) {
-        generics += ', ';
-      }     
+      generics += ', ';
     }
+    for (let i = 0; i < t.val.constFields.length; i++) {
+      generics += t.val.constFields[i];
+      generics += ', ';
+    }
+
     if (t.val.generics.length == 0) {
       return t.val.template.name;
     }
@@ -306,6 +309,25 @@ function createTypeUnion(t1: Type, t2: Type): Type {
         generics: ['T', 'K'],
         constFieldNames: []
       }
+    }
+  };
+}
+
+function createSizedVec(t1: Type, size: number): Type {
+  return {
+    tag: 'struct',
+    val: {
+      generics: [t1],
+      template: {
+        constFieldNames: ['N'],
+        name: 'vec',
+        unit: 'std/core',
+        modifier: 'pub',
+        isEnum: false,
+        fields: [],
+        generics: ['T']
+      },
+      constFields: [(size + '')]
     }
   };
 }
