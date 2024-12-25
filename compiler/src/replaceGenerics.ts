@@ -599,6 +599,14 @@ function resolveExpr(
     if (expr.val.tag == 'dot') {
       let left = expr.val.val.left;
       let name = expr.val.val.varName;
+
+      if (left.type.tag == 'struct' 
+        && left.type.val.template.name == 'vec' 
+        && left.type.val.template.unit == 'std/core'
+      ) {
+        return { tag: 'int_const', val: left.type.val.constFields[0], type: INT };
+      }
+
       let field = set.fieldStack[set.fieldStack.length - 1];
 
       if (left.tag == 'left_expr' && left.val.tag == 'var' && left.val.mode == 'field_iter') {

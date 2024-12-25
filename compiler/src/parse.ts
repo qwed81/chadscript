@@ -224,6 +224,7 @@ interface BinExpr {
 
 type Expr = { tag: 'bin', val: BinExpr, position: Position }
   | { tag: 'is', val: LeftExpr, right: Type, position: Position }
+  | { tag: 'range', left: Expr | null, right: Expr | null, position: Position }
   | { tag: 'not', val: Expr, position: Position }
   | { tag: 'try', val: Expr, position: Position }
   | { tag: 'resolve', val: Expr , position: Position }
@@ -1448,6 +1449,22 @@ function tryParseExpr(tokens: Token[], position: Position): Expr | null {
       }
 
       let splits = balancedSplitTwoBackwards(tokens, props[0]);
+      if (props[0] == ':' && splits.length == 1) {
+        if (splits[0][0].val == ':') {
+          if (splits[0].length == 1) {
+            return { tag: 'range', left: null, right: null, position };
+          }
+          let right = tryParseExpr(tokens.slice(1), position);
+          if (right == null) return null;
+          return { tag: 'range', left: null, right, position };
+        }
+        if (splits[0][splits[0].length - 1].val == ':') {
+          let left = tryParseExpr(tokens.slice(0, -1), position);
+          if (left == null) return null;
+          return { tag: 'range', left, right: null, position };
+        }
+      }
+
       if (splits.length != 2) continue;
 
       let binOp = tryParseBinOp(splits[0], splits[1], props[0], position);
@@ -1607,6 +1624,22 @@ function tryParseBinOp(leftTokens: Token[], rightTokens: Token[], op: string, po
       return null;
     }
     return { tag: 'is', val: left, right, position };
+  }
+
+  if (op == ':') {
+    let right: Expr | null = null;
+    let left: Expr | null = null;
+    if (leftTokens.length != 0) {
+      left = tryParseExpr(leftTokens, position);
+      if (left == null) return null;
+    }
+
+    if (rightTokens.length != 0) {
+      right = tryParseExpr(rightTokens, position);
+      if (right == null) return null;
+    }
+
+    return { tag: 'range', left, right, position }
   }
 
   let left = tryParseExpr(leftTokens, positionRange(leftTokens));

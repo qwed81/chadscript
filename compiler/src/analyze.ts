@@ -759,6 +759,13 @@ function ensureLeftExprValid(
       return null;
     }
 
+    if (leftType.val.template.name == 'vec' 
+      && leftType.val.template.unit == 'std/core'
+      && leftExpr.val.varName == 'len'
+    ) {
+      computedExpr = { tag: 'dot', val: { left, varName: leftExpr.val.varName }, type: INT }
+    }
+
     let fields = getFields(leftType);
     for (let i = 0; i < fields.length; i++) {
       if (fields[i].name != leftExpr.val.varName) continue;
@@ -773,8 +780,42 @@ function ensureLeftExprValid(
   else if (leftExpr.tag == 'index') {
     let left = ensureExprValid(symbols, leftExpr.val.var, null, scope, position);
     if (left == null) return null;
-    let index = ensureExprValid(symbols, leftExpr.val.index, null, scope, position);
+
+    let parseIndex: Parse.Expr = leftExpr.val.index;
+    if (leftExpr.val.index.tag == 'range') {
+      let pos = leftExpr.val.index.position;
+      let rangeExpr: Parse.Expr = {
+        tag: 'range',
+        left: leftExpr.val.index.left,
+        right: leftExpr.val.index.right,
+        position: leftExpr.val.index.position,
+      };
+
+      if (rangeExpr.left == null) {
+        rangeExpr.left = { tag: 'int_const', val: '0', position: pos };
+      }
+
+      if (rangeExpr.right == null) {
+        rangeExpr.right =  { 
+          tag: 'left_expr',
+          val: {
+            tag: 'dot',
+            val: {
+              left: leftExpr.val.var,
+              varName: 'len'
+            },
+          },
+          position: pos
+        };
+      }
+
+      parseIndex = rangeExpr;
+    }
+
+    let index = ensureExprValid(symbols, parseIndex, null, scope, position);
     if (index == null) return null;
+
+
     if (left.type.tag == 'ptr') {
       computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null }, type: left.type.val };
     }
@@ -972,23 +1013,7 @@ function ensureBinOpValid(
 ): Expr | null {
 
   let computedExpr: Expr | null = null; 
-  if (expr.op == ':') {
-    let leftTuple = ensureExprValid(symbols, expr.left, INT, scope, position);
-    let rightTuple = ensureExprValid(symbols, expr.right, INT, scope, position);
-    if (leftTuple == null || rightTuple == null) return null;
-
-    let rangeInitExpr: Expr = {
-      tag: 'struct_init',
-      val: [
-        { name: 'start', expr: leftTuple },
-        { name: 'end', expr: rightTuple },
-        { name: 'output', expr: { tag: 'int_const', val: '0', type: INT } }
-      ],
-      type: RANGE
-    };
-    computedExpr = rangeInitExpr;
-  }
-  else if (expr.op == '&&') {
+  if (expr.op == '&&') {
     let exprLeft = ensureExprValid(symbols, expr.left, BOOL, scope, position);
     if (exprLeft == null) return null;
 
@@ -1178,6 +1203,28 @@ function ensureExprValid(
       val: inner,
       type: { tag: 'ptr', val: inner.type, const: isConst(symbols, inner, scope) }
     };
+  }
+
+  if (expr.tag == 'range') {
+    if (expr.left == null || expr.right == null) {
+      if (position != null) logError(position, 'range must contain left and right');
+      return null;
+    }
+
+    let leftTuple = ensureExprValid(symbols, expr.left, INT, scope, position);
+    let rightTuple = ensureExprValid(symbols, expr.right, INT, scope, position);
+    if (leftTuple == null || rightTuple == null) return null;
+
+    let rangeInitExpr: Expr = {
+      tag: 'struct_init',
+      val: [
+        { name: 'start', expr: leftTuple },
+        { name: 'end', expr: rightTuple },
+        { name: 'output', expr: { tag: 'int_const', val: '0', type: INT } }
+      ],
+      type: RANGE
+    };
+    computedExpr = rangeInitExpr;
   }
 
   if (expr.tag == 'is') {
