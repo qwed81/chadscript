@@ -6,12 +6,12 @@ export {
   NIL, BOOL, resolveFnOrDecl, Fn, FnResult, ERR,
   CHAR, INT, I64, I16, I8, U64, U32, U16, U8, F64, F32, STR, FMT, RANGE,
   AMBIG_INT, AMBIG_FLOAT, AMBIG_NIL,
-  typeApplicable, toStr, basic, isBasic, getFieldIndex, createVec, applyGenericMap,
+  typeApplicable, toStr, basic, isBasic, getFieldIndex, createArr, applyGenericMap,
   typeApplicableStateful, getTypeKey, createTypeUnion, resolveImpl, refType,
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
   resolveMacro, isGeneric, getFields, lookupFnOrDecl, getFoundFns, getExpectedFns, getCurrentFn,
-  applyConstMap, createSizedVec
+  applyConstMap, createVec
 }
 
 type Modifier = 'pri' | 'pub';
@@ -313,7 +313,7 @@ function createTypeUnion(t1: Type, t2: Type): Type {
   };
 }
 
-function createSizedVec(t1: Type, size: number): Type {
+function createVec(t1: Type, size: number): Type {
   return {
     tag: 'struct',
     val: {
@@ -332,14 +332,14 @@ function createSizedVec(t1: Type, size: number): Type {
   };
 }
 
-function createVec(t1: Type): Type {
+function createArr(t1: Type): Type {
   return {
     tag: 'struct',
     val: {
       generics: [t1],
       template: {
         constFieldNames: [],
-        name: 'Vec',
+        name: 'Arr',
         unit: 'std/core',
         modifier: 'pub',
         structMode: 'struct',

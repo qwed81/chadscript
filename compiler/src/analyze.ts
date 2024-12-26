@@ -3,12 +3,12 @@ import { logError, logMultiError, compilerError, Position } from './util'
 import {
   Type, Fn, UnitSymbols, resolveType, typeApplicable,
   NIL, INT, BOOL, resolveFnOrDecl, FnResult, toStr,
-  isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createVec,
+  isBasic, basic, getFieldIndex, STR, F32, F64, CHAR, createArr,
   RANGE, resolveImpl, refType, typeEq, createTypeUnion,
   getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromName, getUnitSymbolsFromAs, Global, resolveGlobal,
   resolveMacro, AMBIG_INT, AMBIG_FLOAT, getFields, lookupFnOrDecl,
-  getFoundFns, getExpectedFns, getCurrentFn, AMBIG_NIL, createSizedVec
+  getFoundFns, getExpectedFns, getCurrentFn, AMBIG_NIL, createVec
 } from './typeload'
 import * as Enum from './enum';
 
@@ -1490,7 +1490,7 @@ function ensureExprValid(
 
     if (expectedReturn != null 
       && expectedReturn.tag == 'struct' 
-      && (expectedReturn.val.template.name == 'Vec' || expectedReturn.val.template.name == 'vec')
+      && (expectedReturn.val.template.name == 'Arr' || expectedReturn.val.template.name == 'vec')
       && expectedReturn.val.template.unit == 'std/core') {
       let ptrType = { tag: 'ptr', val: expectedReturn.val.generics[0] };
       if (ptrType.tag != 'ptr') {
@@ -1541,10 +1541,10 @@ function ensureExprValid(
       if (newExprs.length != expectedSize) {
         if (position != null) logError(position, `expected vec of size ${expectedSize}`);
       }
-      computedExpr = { tag: 'list_init', val: newExprs, type: createSizedVec(exprType, expectedSize) };
+      computedExpr = { tag: 'list_init', val: newExprs, type: createVec(exprType, expectedSize) };
     }
     else {
-      computedExpr = { tag: 'list_init', val: newExprs, type: createVec(exprType) };
+      computedExpr = { tag: 'list_init', val: newExprs, type: createArr(exprType) };
     }
   }
 
