@@ -874,6 +874,9 @@ function codeGenLeftExpr(leftExpr: LeftExpr, ctx: FnContext, position: Position,
       statements.push(guard);
       leftExprText = `${leftName.output}.val0[${innerName.output}]`;
     }
+    else if (leftExpr.val.implReturnsPointer == false) {
+      leftExprText = `${leftName.output}`;
+    }
     else {
       leftExprText = `${leftName.output}[${innerName.output}]`;
     }

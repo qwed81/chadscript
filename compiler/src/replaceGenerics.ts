@@ -735,7 +735,7 @@ function resolveLeftExpr(
     if (leftType.tag == 'ptr') {
       let type = applyGenericMap(leftExpr.type, genericMap);
       type = applyConstMap(type, constMap);
-      return { tag: 'index', val: { var: v, index, const: leftType.const, verifyFn: null }, type };
+      return { tag: 'index', val: { var: v, index, const: leftType.const, verifyFn: null, implReturnsPointer: true }, type };
     }
 
     if (leftType.tag == 'struct'
@@ -745,9 +745,10 @@ function resolveLeftExpr(
     ) {
       let type = applyGenericMap(leftExpr.type, genericMap);
       type = applyConstMap(type, constMap);
-      return { tag: 'index', val: { var: v, index, const: false, verifyFn: null }, type };
+      return { tag: 'index', val: { var: v, index, const: false, verifyFn: null, implReturnsPointer: false }, type };
     }
 
+    // inner is the fnCall expr for index
     let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index], position);
     if (inner == null) return null;
     let verify = null;
@@ -770,9 +771,18 @@ function resolveLeftExpr(
       }
     }
 
-    if (inner.type.tag != 'ptr') {
-      compilerError('should always be pointer');
-      return null;
+    if (leftExpr.val.implReturnsPointer == false || inner.type.tag != 'ptr') {
+      return {
+        tag: 'index',
+        val: {
+          var: inner,
+          index: { tag: 'int_const', val: '0', type: INT },
+          const: leftExpr.val.const,
+          verifyFn: verify,
+          implReturnsPointer: false
+        },
+        type: inner.type
+      }
     }
 
     return {
@@ -781,7 +791,8 @@ function resolveLeftExpr(
         var: inner,
         index: { tag: 'int_const', val: '0', type: INT },
         const: leftExpr.val.const,
-        verifyFn: verify 
+        verifyFn: verify,
+        implReturnsPointer: true
       },
       type: inner.type.val
     }

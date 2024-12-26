@@ -133,6 +133,7 @@ interface Index {
   var: Expr
   index: Expr
   const: boolean
+  implReturnsPointer: boolean
   verifyFn: Fn | null
 }
 
@@ -548,7 +549,7 @@ function analyzeInst(
   } 
 
   if (inst.tag == 'expr') {
-    if (inst.val.tag == 'assert' && inst.val.val.tag != 'fn_call') {
+    if (inst.val.tag == 'assert') {
       let exprTuple = ensureExprValid(symbols, inst.val.val, BOOL, scope, inst.position);
       if (exprTuple == null) return null;
 
@@ -556,7 +557,7 @@ function analyzeInst(
       let expr: Expr = { tag: 'assert', val: exprTuple, type: NIL };
       return { tag: 'expr', val: expr, position: inst.position }
     }
-    else if (inst.val.tag == 'assert' || inst.val.tag == 'try' || inst.val.tag == 'fn_call') {
+    else if (inst.val.tag == 'try' || inst.val.tag == 'fn_call') {
       let exprTuple = ensureExprValid(symbols, inst.val, NIL, scope, inst.position);
       if (exprTuple == null) return null;
       return { tag: 'expr', val: exprTuple, position: inst.position }
@@ -817,14 +818,14 @@ function ensureLeftExprValid(
 
 
     if (left.type.tag == 'ptr') {
-      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null }, type: left.type.val };
+      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null, implReturnsPointer: false }, type: left.type.val };
     }
     else if (left.type.tag == 'struct' 
       && left.type.val.template.name == 'vec'
       && left.type.val.template.unit == 'std/core'
       && typeApplicable(index.type, INT, false)
     ) {
-      computedExpr = { tag: 'index', val: { var: left, index, const: false, verifyFn: null }, type: left.type.val.generics[0] };
+      computedExpr = { tag: 'index', val: { var: left, index, const: false, verifyFn: null, implReturnsPointer: false }, type: left.type.val.generics[0] };
     }
     else {
       let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
@@ -832,12 +833,12 @@ function ensureLeftExprValid(
 
       let retType = trait.resolvedType.returnType;
       if (retType.tag != 'ptr') {
-        if (position != null) logError(position, 'index should return a pointer');
-        return null;
-      };
-
-      let varConst = left.tag == 'left_expr' && isConst(symbols, left.val, scope);
-      computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst, verifyFn: null }, type: retType.val };
+        computedExpr = { tag: 'index', val: { var: left, index, const: true, verifyFn: null, implReturnsPointer: false }, type: retType };
+      }
+      else {
+        let varConst = left.tag == 'left_expr' && isConst(symbols, left.val, scope);
+        computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst, verifyFn: null, implReturnsPointer: true }, type: retType.val };
+      }
     }
   }
   else if (leftExpr.tag == 'var') {
@@ -1218,9 +1219,8 @@ function ensureExprValid(
     let rangeInitExpr: Expr = {
       tag: 'struct_init',
       val: [
-        { name: 'start', expr: leftTuple },
+        { name: 'start', expr: { tag: 'bin', val: { op: '-', left: leftTuple, right: { tag: 'int_const', val: '1', type: INT } }, type: INT } },
         { name: 'end', expr: rightTuple },
-        { name: 'output', expr: { tag: 'int_const', val: '0', type: INT } }
       ],
       type: RANGE
     };
