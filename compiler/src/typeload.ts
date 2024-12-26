@@ -1544,6 +1544,10 @@ function verifyDataType(
   if (type.tag == 'generic') {
     let dataType = resolveType(symbols, type, position);
     for (let g of type.val.generics) {
+      if (g.tag == 'const') {
+        continue;
+      }
+
       if (verifyDataType(symbols, g, position, validGenerics, allowRef) == false) {
         logError(position, 'unknown datatype');
         return false;
