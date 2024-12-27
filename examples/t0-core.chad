@@ -1,0 +1,158 @@
+fn main()
+  testStrings()
+  testFormat()
+  testArray()
+  testMap()
+  testParse()
+  testCompare()
+  testThread()
+  testArgs()
+  
+fn testStrings()
+  assert "hello".len == 5
+  assert "hello"[0:2] == "he"
+
+  int i = 0
+  for letter in iter("hello")
+    i += 1
+  assert i == 5
+
+  assert isAlphaNum("hello")
+  assert !isAlphaNum(":")
+
+  str s0 = "hello"
+  str s1 = clone(s0)
+  assert s0 == s1 && s0.base != s1.base
+
+  str s2 = "hello\nworld\n" 
+  assert arr(lines(s2)) == ["hello", "world"]
+
+  str s3 = "hello world\n:)"
+  assert arr(split(s3)) == ["hello", "world", ":)"]
+
+  str s4 = "\n  hello world \t "
+  assert trim(s4) == "hello world"
+
+  str s5 = "my long string"
+  assert contains(s5, "long string")
+
+  str s6 = "hello world"
+  assert startsWith(s6, "hello") && endsWith(s6, "world")
+
+  str s7 = "my super long string"
+  assert indexOf(s7, "super") == 3
+  assert indexOf(s7, 's') == 3 
+  assert indexOf(s7, ":") == -1
+  assert lastIndexOf(s7, "super") == 3 
+  assert lastIndexOf(s7, 's') == 14
+  assert lastIndexOf(s7, ':') == -1
+
+  assert "abc" < "bcd"
+
+fn testFormat()
+  Fmt f = {}
+  f ++= "hello world"
+  assert f.len == 11
+  Fmt f2 = clone(f)
+  assert f.base != f2.base
+
+fn testArray()
+  vec[int, 4] v = [1, 2, 3, 4]
+  seg[int] s = v[0:]
+  assert s == [1, 2, 3, 4][:]
+
+  Arr[int] a = clone(s)
+  Arr[int] a0 = clone(a)
+  assert a[:] == s
+  assert a == a0 && a.base != a0.base
+
+  Arr[str] testArr = ["hello", "world"]
+  remove(testArr, 0)
+  append(testArr, "!!")
+  extend(testArr, testArr)
+  assert testArr == ["world", "!!", "world", "!!"]
+
+  seg[int] s0 = [1, 1, 1, 1][:]
+  for val in iter(s0); assert val == 1
+
+fn testParse()
+  str inputText = "1101 -20.05 345"
+  int i = 0
+  u32|err a = parse(inputText, i)
+  assert a is u32 && a == 1101
+  i += 1
+
+  f32|err b = parse(inputText, i)
+  assert b is f32 && b == -20.05
+  i += 1
+  
+  i64|err c = parse(inputText, i)
+  assert c is i64 && c == 345
+
+fn testMap()
+  Map[str, int] myMap = {}
+  assert myMap["not_added"] == 0
+  assert myMap.len == 0
+  assert has(myMap, "not_added") == false
+
+  myMap["added"] = 100
+  assert has(myMap, "added")
+  assert myMap.len == 1
+  myMap["added"] += 1
+  assert myMap["added"] == 101
+  assert myMap.len == 1
+
+  myMap["new_add"] += 1
+  assert myMap["new_add"] == 1
+  assert myMap.len == 2
+
+fn testCompare()
+  u32 a = 30
+  u32 b = 80
+  assert min(a, b) == 30
+  assert min(3, 3, 4, 1) == 1
+  assert max(3, 3, 4, 1) == 4
+
+fn testThread()
+  int result = 0
+  ThreadArgs args = { n = 100, result = &result }
+  Thread|err t0 = startThread(threadFn, args)
+  assert t0 is Thread
+  join(t0)
+
+  assert result == 100
+
+struct ThreadArgs
+  int n
+  *int result
+
+fn threadFn(ThreadArgs args)
+  int result = 0
+  for i in 0:args.n
+    result += 1
+  args.result[0] = result
+
+fn testArgs()
+  Arr[*const char] testArr = [
+    cstr("chad"),
+    cstr("lsp"),
+    cstr("-s"),
+    cstr("25"),
+    cstr("--long"),
+    cstr("long"),
+    cstr("--flag")
+  ]
+
+  **const char cliArgs = testArr.base
+  ProgramArgs args = programArgs(testArr.len, cliArgs)
+
+  str|nil mode = positional(args)
+  assert mode is str && mode == "lsp"
+
+  int|nil s = optional(args, "-s", "--short")
+  assert s is int && s == 25
+
+  str|nil l = optional(args, "-l", "--long")
+  assert l is str && l == "long"
+
+  assert flag(args, "-f", "--flag")
