@@ -61,7 +61,7 @@ impl formatJson(&Fmt f, Fmt val)
 impl formatJson(&Fmt f, *const T val)
   formatJson(f, val[0])
 
-impl formatJson(&Fmt f, Vec[T] val)
+impl formatJson(&Fmt f, Arr[T] val)
   f ++= '['
   for i in 0:val.len
     formatJson(f, val[i])
@@ -148,7 +148,7 @@ impl parseJson(str json, &f64 output, &int i) nil|err
 impl parseJson(str json, &f32 output, &int i) nil|err
   output = try parse(json, i)
 
-impl parseJson(str json, &Vec[T] output, &int i) nil|err
+impl parseJson(str json, &Arr[T] output, &int i) nil|err
   if i >= json.len || json[i] != '['; ret err("no array")
   i += 1 # discard first [
   skipWhiteSpace(json, i)

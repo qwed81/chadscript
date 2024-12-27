@@ -7,7 +7,7 @@ struct Outer
 
 struct Inner
   str s
-  Vec[int] v 
+  Arr[int] v 
 
 fn main() nil|err
   Outer o = { x = 10, y = 20, inner = { s = "hello", v = [1, 2, 3] } }

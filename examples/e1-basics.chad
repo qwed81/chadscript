@@ -65,7 +65,7 @@ fn main()
 
   # The core library provides common structures
   # that are used in almost every program
-  Vec[int] v = [1, 2, 3, 4]
+  Arr[int] v = [1, 2, 3, 4]
   assert v[2] == 3
 
   # Note {} is 0 initialized. Think of it as default value,

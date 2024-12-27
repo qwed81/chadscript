@@ -16,7 +16,7 @@ fn main()
   if file == nil
     print("could not open file")
 
-  Vec[u8] buf = vec(1024)
+  Arr[u8] buf = arr(1024)
 
   # explicitly use the module name
   u64 amtRead = "e4-ffi.h"::fread(buf.base, 1, u64(buf.len), file)

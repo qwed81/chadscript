@@ -3,7 +3,7 @@ use "include/arpa/inet.h", "include/netinet/in.h" as net
 use "include/sys/wait.h"
 
 File stdin = { fd = 0 }
-Vec[u8] stdinBuf = {}
+Arr[u8] stdinBuf = {}
 
 File stdout = { fd = 1 }
 File stderr = { fd = 2 }
@@ -33,12 +33,12 @@ fn input(str output) f64|err
     ret err("could not parse")
   ret retVal
 
-fn readLine(S input, &Vec[u8] buf) str|err
+fn readLine(S input, &Arr[u8] buf) str|err
   int lastRead = 0
   while true
     for i in lastRead:buf.len
       if buf[i] == u8('\n') 
-        str line = copy({ base = ptr(buf.base), len = i + 1 })
+        str line = clone({ base = ptr(buf.base), len = i + 1 })
         int amtLeft = buf.len - (i + 1)
         for j in 0:amtLeft
           buf[j] = buf[j + i + 1]
@@ -51,9 +51,9 @@ fn readLine(S input, &Vec[u8] buf) str|err
     # if fn gets to here, there is no \n
     lastRead = buf.len
     if buf.len == buf.capacity
-      expand(buf, 1024)
+      # expand(buf, 1024)
 
-    Vec[u8] slice = { len = buf.capacity, capacity = buf.capacity, base = &buf.base[buf.len] }
+    Arr[u8] slice = { len = buf.capacity, capacity = buf.capacity, base = &buf.base[buf.len] }
     i64 amtRead = try read(input, slice)
     buf.len += int(amtRead)
 
@@ -83,15 +83,15 @@ fn open(str path, OpenFlags flags) File|err
   if fd < 0; ret errno()
   ret { fd = fd }
 
-decl read(S input, &Vec[u8] buf) i64|err
-decl write(S output, Vec[u8] buf) nil|err
+decl read(S input, &Arr[u8] buf) i64|err
+decl write(S output, Arr[u8] buf) nil|err
 
-impl read(File file, &Vec[u8] buf) i64|err 
+impl read(File file, &Arr[u8] buf) i64|err 
   i64 result = read(file.fd, buf.base, u64(buf.len))
   if result < 0; ret errno()
   ret result
 
-impl write(File file, Vec[u8] buf) nil|err
+impl write(File file, Arr[u8] buf) nil|err
   i64 result = write(file.fd, buf.base, u64(buf.len))
   if result < 0; ret errno()
 
@@ -164,13 +164,13 @@ fn connect(str ip, int port) Tcp|err
 
   ret { fd = fd }
 
-impl read(Tcp tcp, &Vec[u8] buf) i64|err amtRead
+impl read(Tcp tcp, &Arr[u8] buf) i64|err amtRead
   i64 result = read(tcp.fd, buf.base, u64(buf.len))
   if result < 0
     ret errno()
   ret result
 
-impl write(Tcp tcp, Vec[u8] buf) nil|err
+impl write(Tcp tcp, Arr[u8] buf) nil|err
   i64 result = write(tcp.fd, buf.base, u64(buf.len))
   if result < 0
     ret errno()
@@ -194,12 +194,12 @@ fn pipe() Pipe|err
   if result < 0; ret errno()
   ret output
 
-impl read(Pipe pipe, &Vec[u8] buf) i64|err
+impl read(Pipe pipe, &Arr[u8] buf) i64|err
   i64 result = read(pipe.readFd, buf.base, u64(buf.len))
   if result < 0; ret errno()
   ret result
 
-impl write(Pipe pipe, Vec[u8] buf) nil|err
+impl write(Pipe pipe, Arr[u8] buf) nil|err
   i64 result = write(pipe.writeFd, buf.base, u64(buf.len))
   if result < 0; ret errno()
 
@@ -228,7 +228,7 @@ struct Process
   Pipe stdin
   Pipe stderr
 
-fn exec(str procName, Vec[str] args, ExecArgs execArgs) Process|err
+fn exec(str procName, Arr[str] args, ExecArgs execArgs) Process|err
   Pipe childStdinPipe = {}
   Pipe childStdoutPipe = {}
   Pipe childStderrPipe = {}
@@ -259,7 +259,7 @@ fn exec(str procName, Vec[str] args, ExecArgs execArgs) Process|err
       result = close(childStdoutPipe.readFd)
 
     *char proc = cstr(procName)
-    Vec[*const char] procArgs = [proc]
+    Arr[*const char] procArgs = [proc]
     for i in 0:args.len
       append(procArgs, cstr(args[i]))
     append(procArgs, nil)

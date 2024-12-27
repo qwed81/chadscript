@@ -1,5 +1,5 @@
 fn main(int argc, **char argv) int 
-  ProgramArgs args = init(argc, argv)
+  ProgramArgs args = programArgs(argc, argv)
 
   str|nil mode = positional(args)
   str|nil name = optional(args, "--name", "-n")

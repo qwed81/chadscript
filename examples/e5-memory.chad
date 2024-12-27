@@ -19,7 +19,7 @@ fn main()
   # of the algorithm
   *int prevAlloc = nil
   for i in 0:200
-    Vec[int] v = vec(1024)
+    Arr[int] v = arr(1024)
     prevAlloc = v.base
     prevAlloc[10] = 10
 
@@ -42,7 +42,7 @@ fn restoreState()
   # perform some randome algorithm
 
 struct MyDataStruct
-  Vec[int] vec
+  Arr[int] arr
 
 # sometimes an algorithm produces a data structures and a ton of garbage
 # you can reallocate the data structure merging all the alloctions in to
@@ -52,11 +52,11 @@ fn extendLifetime()
   BumpAlloc holdBp = bp
   bp = {}
   for i in 0:100
-    Vec[int] _ = vec(1024) # allocate some garbage
-  MyDataStruct data = { vec = [1, 2, 3, 4] } # create the data structure 
-  print("data.vec.base before realloc: {data.vec.base}")
+    Arr[int] _ = arr(1024) # allocate some garbage
+  MyDataStruct data = { arr = [1, 2, 3, 4] } # create the data structure 
+  print("data.arr.base before realloc: {data.arr.base}")
   realloc(data, holdBp) # default impl reallocs all fields
-  print("data.vec.base after realloc: {data.vec.base}")
+  print("data.arr.base after realloc: {data.arr.base}")
   free(bp)
   bp = holdBp
   # here data is still valid and all the garbage is gone

@@ -3,9 +3,9 @@ struct ThreadArgs
   int n
 
 fn main() nil|err
-  Thread t1 = try spawnThread(secondFn, { n = 10, threadNum = 1 })
-  Thread t2 = try spawnThread(secondFn, { n = 10, threadNum = 2 })
-  Thread t3 = try spawnThread(secondFn, { n = 10, threadNum = 3 })
+  Thread t1 = try startThread(secondFn, { n = 10, threadNum = 1 })
+  Thread t2 = try startThread(secondFn, { n = 10, threadNum = 2 })
+  Thread t3 = try startThread(secondFn, { n = 10, threadNum = 3 })
   for i in 0:10
     print("thread0: {i}")
   join(t1)

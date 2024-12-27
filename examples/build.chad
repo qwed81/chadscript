@@ -20,3 +20,5 @@ fn main()
   chad(["l2-math.chad", "-o", "build/math"])
   chad(["l3-thread.chad", "-o", "build/thread"])
   chad(["l4-process.chad", "-o", "build/process"])
+
+  chad(["t0-core.chad", "-o", "build/core"])
