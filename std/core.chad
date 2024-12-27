@@ -41,17 +41,15 @@ enum TypeUnion[T, K]
 struct Range
   int start
   int end
-  int output
 
 impl next(&Range r) *int
-  r.output = r.start
+  r.start += 1
   if r.start == r.end
     ret nil
-  r.start += 1
-  ret &r.output
+  ret &r.start
 
 fn rev(Range r) RevRange
-  ret { start = r.end - 1, end = r.start - 1, output = r.end - 1 }
+  ret { start = r.end - 1, end = r.start, output = r.end - 1 }
 
 struct RevRange
   int start
@@ -96,7 +94,7 @@ fn memSet(*T mem, int val, int amt)
   *u8 u8mem = ptr(mem)
   *u8 _ = memory::memset(u8mem, val, u64(amt))
 
-fn memCopy(*T dest, *T src, int size)
+fn memCopy(*T dest, *const T src, int size)
   *u8 u8memDest = ptr(dest)
   *u8 u8memSrc = ptr(src)
   *u8 _ = memory::memcpy(u8memDest, u8memSrc, u64(size))
@@ -135,78 +133,197 @@ fn free(*T mem)
   include
     free(_mem);
 
-fn min(int a, int b) int
-  if b < a
-    ret b
-  ret a
-
-fn max(int a, int b) int
-  if b > a
-    ret b
-  ret a
-
-fn abs(f32 a) f32
-  if a < 0.0
-    ret a * f32(-1)
-  ret a
-
 fn print(T val)
-  Fmt f = fmt()
-  format(f, val)
-  *char output = cstr({ base = f.base, len = f.len })
+  Fmt fmt = {}
+  format(fmt, val)
+  *char output = cstr({ base = fmt.base, len = fmt.len })
   include
     printf("%s\n", _output);
 
-impl index(&vec[T, int N] s, Range r) *seg[T]
-  assert r.start >= 0 && r.start < N
-  *seg[T] newSeg = alloc(1)
-  newSeg[0] = { base = &s[r.start], len = r.end - r.start }
-  ret newSeg
+fn print(T val0, X val1)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2, Z val3)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  fmt ++= ' '
+  fmt ++= val3
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2, Z val3, A val4)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  fmt ++= ' '
+  fmt ++= val3
+  fmt ++= ' '
+  fmt ++= val4
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2, Z val3, A val4, B val5)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  fmt ++= ' '
+  fmt ++= val3
+  fmt ++= ' '
+  fmt ++= val4
+  fmt ++= ' '
+  fmt ++= val5
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2, Z val3, A val4, B val5, C val6)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  fmt ++= ' '
+  fmt ++= val3
+  fmt ++= ' '
+  fmt ++= val4
+  fmt ++= ' '
+  fmt ++= val5
+  fmt ++= ' '
+  fmt ++= val6
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+fn print(T val0, X val1, Y val2, Z val3, A val4, B val5, C val6, D val7)
+  Fmt fmt = {}
+  fmt ++= val0
+  fmt ++= ' '
+  fmt ++= val1
+  fmt ++= ' '
+  fmt ++= val2
+  fmt ++= ' '
+  fmt ++= val3
+  fmt ++= ' '
+  fmt ++= val4
+  fmt ++= ' '
+  fmt ++= val5
+  fmt ++= ' '
+  fmt ++= val6
+  fmt ++= ' '
+  fmt ++= val7
+  *char output = cstr({ base = fmt.base, len = fmt.len })
+  include
+    printf("%s\n", _output);
+
+impl index(&vec[T, int N] s, Range r) seg[T]
+  int start = r.start + 1
+  assert start >= 0 && start <= r.end && r.end <= N
+  ret { base = &s[start], len = r.end - start }
 
 struct seg[T]
   get *T base
   get int len
 
+struct SegIter[T]
+  seg[T] s
+  int i
+
+fn iter(seg[T] s) SegIter[T]
+  ret { s = s, i = -1 }
+
+impl next(&SegIter[T] iter) *T
+  iter.i += 1
+  if iter.i == iter.s.len; ret nil
+  ret &iter.s.base[iter.i]
+
+fn clone(seg[T] s) Arr[T]
+  Arr[T] output = arr(s.len)
+  memCopy(output.base, s.base, s.len * @sizeOf(T))
+  ret output
+
+impl eq(seg[T] s0, seg[T] s1) bool
+  if s0.len != s1.len; ret false
+  for i in 0:s0.len
+    if s0[i] != s1[i]; ret false
+  ret true
+
 impl index(&seg[T] s, int index) *T
   assert index >= 0 && index < s.len
   ret &s.base[index]
 
-struct Vec[T]
+impl index(&seg[T] s, Range r) seg[T]
+  int start = r.start + 1
+  assert start >= 0 && start <= r.end && r.end <= s.len
+  ret { base = &s[start], len = r.end - start }
+
+struct Arr[T]
   get *T base
   get int len
   get int capacity
 
-impl realloc(&Vec[T] vec, &BumpAlloc bump)
-  *T newPtr = alloc(bump, vec.capacity)
-  memCopy(newPtr, vec.base, vec.len)
-  vec.base = newPtr
+fn clone(Arr[T] a) Arr[T]
+  Arr[T] output = arr(a.len)
+  memCopy(output.base, a.base, a.len * @sizeOf(T))
+  ret output
 
-impl index(&Vec[T] vec, int index) *T
-  assert index >= 0 && index < vec.len
-  ret &vec.base[index]
+impl realloc(&Arr[T] arr, &BumpAlloc bump)
+  *T newPtr = alloc(bump, arr.capacity)
+  memCopy(newPtr, arr.base, arr.len)
+  arr.base = newPtr
 
-impl index(&Vec[T] s, Range r) *seg[T]
-  assert r.start >= 0 && r.start < s.len
-  *seg[T] newSeg = alloc(1)
-  newSeg[0] = { base = &s.base[r.start], len = r.end - r.start }
-  ret newSeg
+impl eq(Arr[T] a0, Arr[T] a1) bool
+  if a0.len != a1.len; ret false
+  for i in 0:a0.len
+    if a0[i] != a1[i]; ret false
+  ret true
 
-fn vec(int amt) Vec[T]
+impl index(&Arr[T] arr, int index) *T
+  assert index >= 0 && index < arr.len
+  ret &arr.base[index]
+
+impl index(&Arr[T] s, Range r) seg[T]
+  int start = r.start + 1
+  assert start >= 0 && start <= r.end && r.end <= s.len
+  ret { base = &s.base[start], len = r.end - start }
+
+fn arr(int amt) Arr[T]
   ret { base = alloc(amt), capacity = amt, len = amt }
 
-fn expand(&Vec[T] l, int amt)
-  int newCap = l.capacity + amt
-  *T newAlloc = alloc(newCap)
-  for i in 0:l.len
-    newAlloc[i] = l.base[i]
-  l.capacity = newCap
-  l.base = newAlloc
-
-fn extend(&Vec[T] l, Vec[T] other)
+fn extend(&Arr[T] l, Arr[T] other)
   for i in 0:other.len
     append(l, other[i])
 
-fn append(&Vec[T] l, T val)
+fn append(&Arr[T] l, T val)
   if l.len == l.capacity
     *T newAlloc = alloc(max(l.capacity * 2, 4))
 
@@ -218,7 +335,7 @@ fn append(&Vec[T] l, T val)
   l.base[l.len] = val
   l.len += 1
 
-fn remove(&Vec[T] l, int index)
+fn remove(&Arr[T] l, int index)
   assert index < l.len && index >= 0
   for i in index:l.len - 1
     l.base[i] = l.base[i + 1] 
@@ -232,53 +349,82 @@ impl index(&str s, int index) *const char
   assert index >= 0 && index < s.len
   ret &s.base[index]
 
-impl index(&str s, Range r) *str
-  assert r.start >= 0 && r.start < s.len
-  *str newStr = alloc(1)
-  newStr[0] = { base = &s.base[r.start], len = r.end - r.start }
-  ret newStr
+impl index(&str s, Range r) str
+  int start = r.start + 1
+  assert start >= 0 && start <= r.end && r.end <= s.len
+  ret { base = &s.base[start], len = r.end - start }
+
+struct StrIter
+  str s
+  int i
+
+fn iter(str s) StrIter 
+  ret { s = s, i = -1 }
+
+impl next(&StrIter iter) *const char
+  iter.i += 1
+  if iter.i == iter.s.len; ret nil
+  ret &iter.s.base[iter.i]
 
 fn str(str s) str
   ret s
 
 fn cstr(str s) *char
   *char cstr = alloc(s.len + 1)
-  for i in 0:s.len
-    cstr[i] = s[i]
-  cstr[s.len] = '\0'
+  memCopy(cstr, s.base, s.len)
   ret cstr
 
 fn str(*char s) str
   ret { base = s, len = int(memory::strlen(s)) }
 
-fn str(Vec[u8] buf) str
+fn str(Arr[u8] buf) str
   ret { base = ptr(buf.base), len = buf.len }
 
-fn copy(str s) str
+fn isAlphaNum(str s) bool
+  for i in 0:s.len
+    bool isAlpha = (s.base[i] >= 'A' && s.base[i] <= 'Z') || (s.base[i] >= 'a' && s.base[i] <= 'z')
+    bool isNum = s.base[i] >= '0' && s.base[i] <= '9'
+    if !isAlpha && !isNum; ret false
+  ret true
+
+fn clone(str s) str
   *char newAlloc = alloc(s.len)
   memCopy(newAlloc, ptr(s.base), s.len)
   ret { base = newAlloc, len = s.len }
 
-fn lines(str s) Vec[str]
+fn arr(SplitIter iter) Arr[str]
+  Arr[str] output = []
+  for s in iter
+    append(output, s)
+  ret output
+
+struct SplitIter
+  str s
+  int i
+  char delim
+  bool whiteSpace
+
+impl next(&SplitIter iter) *const str
+  iter.i += 1
+  if iter.i >= iter.s.len; ret nil
+
+  int startI = iter.i
+  while iter.i < iter.s.len
+    if iter.s[iter.i] == iter.delim; break
+    if iter.whiteSpace
+      if iter.s[iter.i] == ' ' || iter.s[iter.i] == '\n' || iter.s[iter.i] == '\t'; break
+    iter.i += 1
+
+  ret &iter.s[startI:iter.i]
+
+fn lines(str s) SplitIter
   ret split(s, '\n')
 
-fn split(str s) Vec[str]
-  ret split(s, ' ')
+fn split(str s) SplitIter
+  ret { s, delim = ' ', i = -1, whiteSpace = true }
 
-fn split(str s, char c) Vec[str]
-  Vec[str] output = []
-
-  int end = 0
-  int start = 0
-  while true
-    if end >= s.len; break
-    if s[end] == c
-      append(output, s[start:end])
-      start = end + 1
-    end += 1
-
-  if start < s.len; append(output, s[start:s.len])
-  ret output
+fn split(str s, char delim) SplitIter
+  ret { s, delim, i = -1, whiteSpace = false }
 
 fn trim(str s) str
   int start = 0
@@ -287,13 +433,13 @@ fn trim(str s) str
   int end = s.len - 1
   while end >= 0 && (s[end] == ' ' || s[end] == '\n' || s[end] == '\t')
     end -= 1
-  ret s[start:end]
+  ret s[start:end + 1]
 
 fn contains(str s, str inner) bool
   for i in 0:(s.len - inner.len + 1)
     bool contained = true
     for j in 0:inner.len
-      if s[i] != inner[j]
+      if s[i + j] != inner[j]
         contained = false
         break
     if contained; ret true
@@ -311,35 +457,45 @@ fn endsWith(str s, str end) bool
     if s[s.len - end.len + i] != end[i]; ret false
   ret true
 
-fn indexOf(str s, str inner) int|nil
+fn indexOf(str s, str inner) int
   for i in 0:(s.len - inner.len + 1)
     bool contained = true
     for j in 0:inner.len
-      if s[i] != inner[j]
+      if s[i + j] != inner[j]
         contained = false
         break
     if contained; ret i
-  ret nil
+  ret -1
 
-fn indexOf(str s, char inner) int|nil
+fn indexOf(str s, char inner) int
   for i in 0:s.len
     if s[i] == inner; ret i
-  ret nil
+  ret -1
 
-fn lastIndexOf(str s, str inner) int|nil
+fn lastIndexOf(str s, str inner) int
   for i in rev(0:(s.len - inner.len + 1))
     bool contained = true
     for j in 0:inner.len
-      if s[i] != inner[j]
+      if s[i + j] != inner[j]
         contained = false
         break
     if contained; ret i
-  ret nil
+  ret -1
 
-fn lastIndexOf(str s, char inner) int|nil
+fn lastIndexOf(str s, char inner) int
   for i in rev(0:s.len)
     if s[i] == inner; ret i
-  ret nil
+  ret -1
+
+impl eq(str a, str b) bool
+  if a.len != b.len; ret false
+  ret memEq(a.base, b.base, a.len)
+
+impl cmp(str a, str b) int
+  for i in 0:min(a.len, b.len)
+    if a[i] < b[i]; ret -1
+    if b[i] < a[i]; ret 1
+  ret 0
 
 struct Fmt
   get *char base
@@ -356,23 +512,10 @@ fn fmt() Fmt
 fn fmt(int size) Fmt
   ret { base = alloc(size), capacity = size, len = size }
 
-fn copy(Fmt buf) Fmt
+fn clone(Fmt buf) Fmt
   *char newBase = alloc(buf.len)
-  for i in 0:buf.len
-    newBase[i] = buf[i]
+  memCopy(newBase, buf.base, buf.len)
   ret { base = newBase, capacity = buf.len, len = buf.len }
-
-fn fromUtf8(Vec[u8] bytes) Fmt
-  Fmt buf = fmt(bytes.len)
-  for i in 0:bytes.len
-    buf[i] = char(bytes[i])
-  ret buf
-
-fn toUtf8(Fmt buf) Vec[u8]
-  Vec[u8] bytes = vec(buf.len)
-  for i in 0:buf.len
-    bytes[i] = u8(buf[i])
-  ret bytes
 
 fn fmt(str start) Fmt
   Fmt buf = fmt()
@@ -506,8 +649,8 @@ impl format(&Fmt fmt, bool val)
 impl format(&Fmt fmt, *const T p)
   format(fmt, u64(p))
 
-impl format(&Fmt f, Vec[T] vec)
-  format(f, vec[0:vec.len])
+impl format(&Fmt f, Arr[T] arr)
+  format(f, arr[:])
 
 impl format(&Fmt f, char c)
   appendOne(f, c)
@@ -515,56 +658,45 @@ impl format(&Fmt f, char c)
 decl impl eq(T a, T b) bool
   ret memEq(&a, &b, @sizeOf(T))
 
-impl eq(str a, str b) bool
-  if a.len != b.len; ret false
-  ret memEq(a.base, b.base, a.len)
+impl eq(f64 a, f64 b) bool
+  ret a == b
 
-impl eq(Vec[T] a, Vec[T] b) bool
-  if a.len != b.len; ret false
-  for i in 0:a.len
-    if !eq(a[i], b[i]); ret false
-  ret true
+impl eq(f32 a, f32 b) bool
+  ret a == b
 
-decl impl hash(K key, &u32 hashState)
-  for field in key; hash(field.val, hashState)
+decl hash(K key, &u32 hashState)
 
 impl hash(u64 key, &u32 hashState) 
-  hashState += u32((key & 32) ^ (key >> 32) ^ 29843006)
+  hashState += u32((key & 32) ^ (key >> 32))
 
 impl hash(u32 key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(u16 key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(u8 key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(i64 key, &u32 hashState)
-  hashState += u32((key & 32) ^ (key >> 32) ^ 29843006)
+  hashState += u32((key & 32) ^ (key >> 32))
 
 impl hash(int key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(i16 key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(i8 key, &u32 hashState)
-  hashState += u32(key ^ 29843006)
+  hashState += u32(key)
 
 impl hash(char key, &u32 hashState)
-  hashState += u32(u32(key) ^ 29843006)
+  hashState += u32(key)
 
 impl hash(bool key, &u32 hashState)
   hashState += u32(key)
 
-impl hash(f64 key, &u32 hashState)
-  hashState += u32(u64(key) ^ 29843006)
-
-impl hash(f32 key, &u32 hashState)
-  hashState += u32(u32(key) ^ 29843006)
-
-impl hash(Vec[T] key, &u32 hashState)
+impl hash(Arr[T] key, &u32 hashState)
   for i in 0:key.len
     hash(key[i], hashState)
 
@@ -596,7 +728,7 @@ fn lookupMapEntry(*MapEntry[K, V] entries, int capacity, K key) *MapEntry[K, V]
 
 impl index(&Map[K, V] map, K key) *V
   if map.len * 5 >= map.capacity * 4
-    int newCapacity = max(8, map.capacity * 2)
+    int newCapacity = max(map.capacity * 2, 8)
     *MapEntry[K, V] newEntries = alloc(newCapacity) 
     for i in 0:map.capacity
       if map.entries[i].hasValue
@@ -605,20 +737,15 @@ impl index(&Map[K, V] map, K key) *V
     map.capacity = newCapacity
 
   *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
-  if !entry[0].hasValue
-    map.len += 1
-
   entry[0].key = key
-  entry[0].hasValue = true
   ret &entry[0].val
 
-##
 impl verifyIndex(&Map[K, V] map, *V value)
   *MapEntry[K, V] entry = ptr(value)
   if !entry[0].hasValue
     entry[0].hasValue = true
+    entry[0].val = value[0]
     map.len += 1
-##
 
 impl format(&Fmt f, Map[K, V] map)
   f ++= '['
@@ -629,12 +756,13 @@ impl format(&Fmt f, Map[K, V] map)
       f ++= " = "
       f ++= map.entries[i].val
       f ++= "), "
-  f.len -= 2
+  if map.len > 0; f.len -= 2
   f ++= ']'
 
-fn contains(Map[K, V] map, K key) bool
+fn has(Map[K, V] map, K key) bool
+  if map.len == 0; ret false
   *MapEntry[K, V] entry = lookupMapEntry(map.entries, map.capacity, key)
-  ret entry == nil || !entry[0].hasValue
+  ret entry[0].hasValue
 
 fn rand(int start, int end) int
   int output = 0
@@ -738,6 +866,7 @@ fn parse(str input, &int i) f64|err
   for j in 0:(i - saveI)
     divBy = divBy * 10
   
+  if first < 0; ret f64(first) - f64(second) / divBy
   ret f64(first) + f64(second) / divBy
 
 fn parse(str input, &int i) f32|err
@@ -759,12 +888,12 @@ pri struct ThreadStartArgs[T]
   fn(T) start
   BumpAlloc bp
 
-fn spawnThread(fn(T) start, T args) Thread|err
+fn startThread(fn(T) start, T args) Thread|err
   pthread_t id = {}
 
   BumpAlloc newBp = {}
   *ThreadStartArgs[T] argsLoc = malloc(1)
-  # realloc(args, newBp)
+  realloc(args, newBp)
 
   argsLoc[0] = {
     args, start, bp = newBp
@@ -786,11 +915,11 @@ fn join(Thread thread)
   int result = pthread_join(thread.id, &retVal)
 
 struct ProgramArgs
-  Vec[str] argv
+  Arr[str] argv
   int position
 
-fn init(int argc, **char argv) ProgramArgs
-  Vec[str] args = []
+fn programArgs(int argc, **char argv) ProgramArgs
+  Arr[str] args = []
   for i in 0:argc
     append(args, str(argv[i]))
   ret { argv = args, position = 1 }
@@ -803,18 +932,118 @@ fn optional(&ProgramArgs args, str name, str shortName) int|nil
   ret i
 
 fn optional(&ProgramArgs args, str name, str shortName) str|nil
-  for i in 0:args.argv.len - 1
+  for i in 1:args.argv.len - 1
     if args.argv[i] == name || args.argv[i] == shortName
       if i == args.argv.len - 1; ret nil
       ret args.argv[i + 1]
 
-fn optional(&ProgramArgs args, str name, str shortName) bool
-  str|nil o = optional(args, name, shortName)
-  ret !(o is nil)
+fn flag(&ProgramArgs args, str name, str shortName) bool
+  for i in 1:args.argv.len 
+    if args.argv[i] == name || args.argv[i] == shortName
+      ret true
+  ret false
 
 fn positional(&ProgramArgs args) str|nil
   while args.position < args.argv.len && startsWith(args.argv[args.position], "-")
     args.position += 2
   if args.position >= args.argv.len; ret nil
   ret args.argv[args.position]
-  
+
+decl cmp(T a, T b) int
+
+impl cmp(i64 a, i64 b) int
+  ret int(a - b)
+
+impl cmp(int a, int b) int
+  ret a - b
+
+impl cmp(i16 a, i16 b) int
+  ret int(a - b)
+
+impl cmp(i8 a, i8 b) int
+  ret int(a - b)
+
+impl cmp(u64 a, u64 b) int
+  if a < b; ret -1
+  elif a == b; ret 0
+  else a > b; ret 1
+
+impl cmp(u32 a, u32 b) int
+  if a < b; ret -1
+  elif a == b; ret 0
+  else a > b; ret 1
+
+impl cmp(u16 a, u16 b) int
+  if a < b; ret -1
+  elif a == b; ret 0
+  else a > b; ret 1
+
+impl cmp(u8 a, u8 b) int
+  if a < b; ret -1
+  elif a == b; ret 0
+  else a > b; ret 1
+
+impl cmp(f64 a, f64 b) int
+  ret int(a - b)
+
+impl cmp(f32 a, f32 b) int
+  ret int(a - b)
+
+fn min(T a, T b) T
+  if b < a; ret b
+  ret a
+
+fn min(T a, T b, T c) T
+  T min = a
+  if b < min; min = b 
+  if c < min; min = c 
+  ret min
+
+fn min(T a, T b, T c, T d) T
+  T min = a
+  if b < min; min = b 
+  if c < min; min = c 
+  if d < min; min = d 
+  ret min
+
+fn max(T a, T b) T
+  if b > a; ret b
+  ret a
+
+fn max(T a, T b, T c) T
+  T max = a
+  if b > max; max = b 
+  if c > max; max = c 
+  ret max
+
+fn max(T a, T b, T c, T d) T
+  T max = a
+  if b > max; max = b 
+  if c > max; max = c 
+  if d > max; max = d 
+  ret max
+
+fn abs(i64 a) i64
+  if a < 0; ret a * -1
+  ret a
+
+fn abs(int a) int
+  if a < 0; ret a * -1
+  ret a
+
+fn abs(i16 a) i16
+  if a < 0; ret a * -1
+  ret a
+
+fn abs(i8 a) i8
+  if a < 0; ret a * -1
+  ret a
+
+fn abs(f32 a) f32
+  if a < 0; ret a * -1
+  ret a
+
+fn abs(f64 a) f64
+  if a < 0; ret a * -1
+  ret a
+
