@@ -56,6 +56,7 @@ interface ForIn {
   iter: Expr
   body: Inst[]
   nextFn: Fn | null
+  nextFnType: Type | null
 }
 
 interface Include {
@@ -492,6 +493,7 @@ function analyzeInst(
 
     let iterType: Type = NIL;
     let nextFn: Fn | null = null;
+    let nextFnType: Type | null = null;
     if (inst.val.varName != 'field') {
       let fnResult = resolveImpl(symbols, 'next', [refType(iterExpr.type)], null, inst.position);
       if (fnResult == null || fnResult.resolvedType.tag != 'fn') {
@@ -505,6 +507,7 @@ function analyzeInst(
       }
       iterType = returnType.val;
       nextFn = fnResult.fnReference;
+      nextFnType = fnResult.resolvedType;
     }
 
     scope.inLoop = true;
@@ -520,7 +523,8 @@ function analyzeInst(
         varName: inst.val.varName,
         iter: iterExpr,
         body: body,
-        nextFn
+        nextFn,
+        nextFnType
       },
       position: inst.position
     };
@@ -1081,10 +1085,14 @@ function ensureBinOpValid(
       computedExpr = { tag: 'bin', type: outputType, val: { left, op, right } };
     }
     else if (left.type.tag == 'ambig_float' || left.type.tag == 'ambig_int') {
-      if (typeApplicable(left.type, right.type, false)) leftType = rightType;
+      left = ensureExprValid(symbols, expr.left, right.type, scope, position);
+      if (left == null) { compilerError('should always resolve expr'); return undefined! };
+      leftType = left.type;
     }
     else if (right.type.tag == 'ambig_float' || right.type.tag == 'ambig_int') {
-      if (typeApplicable(right.type, left.type, false)) rightType = leftType;
+      right = ensureExprValid(symbols, expr.right, left.type, scope, position);
+      if (right == null) { compilerError('should always resolve expr'); return undefined! };
+      rightType = right.type;
     }
 
     if (computedExpr == null) {
@@ -1106,7 +1114,7 @@ function ensureBinOpValid(
           }
         }
 
-        let outputType: Type = left.type;
+        let outputType: Type = leftType;
         if (op == '<' || op == '>' || op == '<=' || op == '>=' || op == '==' || op == '!=') {
           outputType = BOOL;
         }
@@ -1117,21 +1125,31 @@ function ensureBinOpValid(
       }
       else {
         let trait: FnResult | null = null;
+        let retType: Type = BOOL;
         if (op == '+' || op == '-' || op == '*' || op == '/') {
-          trait = resolveImpl(symbols, 'math', [left.type, right.type], expectedReturn, position);
+          trait = resolveImpl(symbols, 'math', [leftType, rightType], expectedReturn, position);
+          if (trait == null || trait.resolvedType.tag != 'fn') return null;
+          retType = trait.resolvedType.returnType;
         }
         else if (op == '<' || op == '>' || op == '<=' || op == '>=') {
-          trait = resolveImpl(symbols, 'cmp', [left.type, right.type], BOOL, position);
+          /*
+          trait = resolveImpl(symbols, 'cmp', [left.type, right.type], INT, position);
+          if (trait == null || trait.resolvedType.tag != 'fn') return null;
+          */
+          retType = BOOL;
         }
         else if (op == '==' || op == '!=') {
-          trait = resolveImpl(symbols, 'eq', [left.type, right.type], BOOL, position);
+          trait = resolveImpl(symbols, 'eq', [leftType, rightType], BOOL, position);
+          if (trait == null || trait.resolvedType.tag != 'fn') return null;
+          retType = BOOL;
         }
         else if (op == '|' || op == '&' || op == '^') {
-          trait = resolveImpl(symbols, 'bitwise', [left.type, right.type], expectedReturn, position);
+          trait = resolveImpl(symbols, 'bitwise', [leftType, rightType], expectedReturn, position);
+          if (trait == null || trait.resolvedType.tag != 'fn') return null;
+          retType = trait.resolvedType.returnType;
         }
 
-        if (trait == null || trait.resolvedType.tag != 'fn') return null;
-        computedExpr = { tag: 'bin', type: trait.resolvedType.returnType, val: { left, op, right } };
+        computedExpr = { tag: 'bin', type: retType, val: { left, op, right } };
       }
 
     }
@@ -1677,7 +1695,17 @@ function ensureExprValid(
   }
 
   if (expr.tag == 'num_const') {
-    computedExpr = { tag: 'num_const', val: expr.val, type: AMBIG_FLOAT };
+    if (expectedReturn != null && typeApplicable(AMBIG_FLOAT, expectedReturn, false) && isElipse == false) {
+      if (expectedReturn.tag == 'link') {
+        computedExpr = { tag: 'num_const', val: expr.val, type: expectedReturn.val };
+      }
+      else {
+        computedExpr = { tag: 'num_const', val: expr.val, type: expectedReturn };
+      }
+    }
+    else {
+      computedExpr = { tag: 'num_const', val: expr.val, type: AMBIG_FLOAT }
+    }
   }
 
   if (expr.tag == 'left_expr') {

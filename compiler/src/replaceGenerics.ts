@@ -285,7 +285,7 @@ function resolveInst(
 
     let body = resolveInstBody(inst.val.body, set, genericMap, constMap);
     let nf = inst.val.nextFn!;
-    let type: Type = { tag: 'fn', paramTypes: nf.paramTypes, returnType: nf.returnType };
+    let nfType = inst.val.nextFnType!;
 
     let nextFn: LeftExpr = {
       tag: 'fn',
@@ -295,12 +295,14 @@ function resolveInst(
       fnReference: nf,
       isGeneric: true,
       genericMap: new Map(),
-      type
+      type: nfType
     };
-    addType(set, RANGE); 
-    resolveLeftExpr(nextFn, set, genericMap, constMap, inst.position);
 
-    return [{ tag: 'for_in', val: { varName: inst.val.varName, body, iter, nextFn: inst.val.nextFn }, position: inst.position }];
+    addType(set, RANGE); 
+    let resolvedFn = resolveLeftExpr(nextFn, set, genericMap, constMap, inst.position);
+    if (resolvedFn == null) return null;
+
+    return [{ tag: 'for_in', val: { varName: inst.val.varName, body, iter, nextFn: inst.val.nextFn, nextFnType: nfType }, position: inst.position }];
   }
   else if (inst.tag == 'return') {
     if (inst.val != null) {
@@ -431,17 +433,25 @@ function resolveExpr(
     let right = resolveExpr(expr.val.right, set, genericMap, constMap, position);
     if (left == null || right == null) return null;
 
-    if ((expr.val.op == '==' || expr.val.op == '!=') && expr.val.left.type.tag == 'ptr') {
+    let op = expr.val.op;
+    if ((op == '==' || op == '!=') && expr.val.left.type.tag == 'ptr') {
       if (expr.val.right.tag == 'nil_const') {
         return { tag: 'bin', val: { op: expr.val.op, left, right }, type: BOOL };
       }
     }
 
-    if ((expr.val.op == '==' || expr.val.op == '!=') && !isBasic(expr.val.left.type) && expr.val.left.type.tag != 'ambig_int' && expr.val.left.type.tag != 'ambig_float') {
+    if ((op == '==' || op == '!=') && !isBasic(expr.val.left.type) && expr.val.left.type.tag != 'ambig_int' && expr.val.left.type.tag != 'ambig_float') {
       let impl = implToExpr(set, 'eq', [left.type, right.type], BOOL, genericMap, [left, right], position);
       if (impl == null) return null;
       if (expr.val.op == '!=') return { tag: 'not', val: impl, type: BOOL };
       return impl;
+    }
+
+    if ((op == '>=' || op == '<=' || op == '>' || op == '<') && !isBasic(expr.val.left.type) && expr.val.left.type.tag != 'ambig_int' && expr.val.left.type.tag != 'ambig_float') {
+      let impl = implToExpr(set, 'cmp', [left.type, right.type], INT, genericMap, [left, right], position);
+      if (impl == null) return null;
+
+      return { tag: 'bin', val: { op, left: impl, right: { tag: 'int_const', val: '0', type: INT }}, type: BOOL };
     }
 
     return { tag: 'bin', val: { op: expr.val.op, left, right }, type: expr.type };

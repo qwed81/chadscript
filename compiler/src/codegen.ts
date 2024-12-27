@@ -1,6 +1,6 @@
 import { FnMode } from './parse';
 import { Position, compilerError, logError, logMultiError, NULL_POS } from './util';
-import { Type, toStr, isBasic, createTypeUnion, ERR, CHAR, NIL, STR, FMT, INT, typeEq, typeApplicable, getFields } from './typeload';
+import { Type, toStr, isBasic, createTypeUnion, ERR, CHAR, NIL, STR, FMT, INT, typeEq, typeApplicable, getFields, isFloat } from './typeload';
 import { Inst, LeftExpr, Expr, StructInitField, FnCall, Fn, FnImpl, GlobalImpl } from './analyze';
 import { Program } from './replaceGenerics';
 
@@ -48,14 +48,15 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   }
 
   chadDotC += '\n#include "chad.h"';
+  chadDotC += '\ndouble fabs(double); float fabsf(float);';
 
   chadDotC += '\n__thread struct StackFrame { const char* file; int64_t line; } frames[1024 * 1024]; __thread int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
   chadDotC += '\nvoid chad_callstack_push() { frames[frameIndex] = (struct StackFrame){ .file = lastFile, .line = lastLine }; frameIndex += 1; }';
   chadDotC += '\nvoid chad_callstack_pop() { frameIndex -= 1; }';
 
   chadDotC += '\nvoid chad_panic(const char* file, int64_t line, const char* message) {'
-  chadDotC += '\nfprintf(stderr, "%s in \'%s.chad\' line %ld", message, file, line); for (int i = frameIndex - 1; i > 0; i--) {'
-  chadDotC += 'fprintf(stderr, "\\nin \'%s.chad\' line %ld", frames[i].file, frames[i].line); } exit(-1); }'
+  chadDotC += '\nfprintf(stderr, "%s in \'%s.chad\' line %ld\\n", message, file, line); for (int i = frameIndex - 1; i > 0; i--) {'
+  chadDotC += 'fprintf(stderr, "in \'%s.chad\' line %ld\\n", frames[i].file, frames[i].line); } exit(-1); }'
 
 
   // forward declare all structs for pointers
@@ -303,8 +304,8 @@ function codeGenType(type: Type, decl: boolean = false, includeConst: boolean = 
     return s;
   }
 
-  compilerError('codegen type fallthrough ' + JSON.stringify(type));
-  return '';
+  // compilerError('codegen type fallthrough ' + JSON.stringify(type));
+  return 'T';
 }
 
 function codeGenFnHeader(fn: Fn): string {
@@ -473,9 +474,15 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
     let iterExpr = codeGenExpr(inst.val.iter, ctx, inst.position);
     statements.push(...iterExpr.statements);
 
-    let itemType = inst.val.nextFn!.returnType;
+    let nextFnType = inst.val.nextFnType!;
+    if (nextFnType.tag != 'fn') {
+      compilerError('expected fn');
+      return undefined!;
+    }
+
+    let itemType = nextFnType.returnType;
     let itemTypeStr = codeGenType(itemType);
-    let paramTypes = inst.val.nextFn!.paramTypes;
+    let paramTypes = nextFnType.paramTypes;
 
     if (inst.val.nextFn == null) { compilerError('nextFn should not be null'); return undefined!; };
     let nextFnName = getFnUniqueId(inst.val.nextFn.unit, inst.val.nextFn.name, inst.val.nextFn.mode, paramTypes, itemType);
@@ -547,6 +554,18 @@ function codeGenExpr(
       statements.push(...exprB.statements);
       statements.push('}')
       exprText = `(${exprA.output}) ${ expr.val.op } (${exprB.output})`;
+    }
+    else if (expr.val.op == '==' && isFloat(expr.val.left.type) && isFloat(expr.val.right.type)) {
+      let exprA = codeGenExpr(expr.val.left, ctx, position);
+      let exprB = codeGenExpr(expr.val.right, ctx, position) 
+      statements.push(...exprA.statements);
+      statements.push(...exprB.statements);
+      if (expr.val.left.type.tag == 'struct' && expr.val.left.type.val.template.name == 'f64') {
+        exprText = `fabs(${exprA.output} - ${exprB.output}) > ${2.22e-16}`;
+      }
+      else {
+        exprText = `fabsf(${exprA.output} - ${exprB.output}) > ${1.19e-07}f`;
+      }
     }
     else {
       let left = codeGenExpr(expr.val.left, ctx, position);

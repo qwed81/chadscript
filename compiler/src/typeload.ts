@@ -11,7 +11,7 @@ export {
   typeEq, getIsolatedUnitSymbolsFromName, getIsolatedUnitSymbolsFromAs,
   getUnitSymbolsFromAs, getUnitSymbolsFromName, Global, resolveGlobal,
   resolveMacro, isGeneric, getFields, lookupFnOrDecl, getFoundFns, getExpectedFns, getCurrentFn,
-  applyConstMap, createVec
+  applyConstMap, createVec, isFloat
 }
 
 type Modifier = 'pri' | 'pub';
@@ -94,6 +94,15 @@ const U64: Type =  basic('u64');
 const U32: Type =  basic('u32');
 const U16: Type =  basic('u16');
 const U8: Type =  basic('u8');
+
+function isFloat(type: Type): boolean {
+  if (type.tag == 'ambig_float') return true;
+  if (type.tag == 'struct' 
+    && (type.val.template.name == 'f32' || type.val.template.name == 'f64')
+    && type.val.template.unit == 'std/core'
+  ) return true;
+  return false;
+}
 
 function basic(name: string): Type {
   return { 
