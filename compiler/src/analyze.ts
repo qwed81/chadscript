@@ -136,6 +136,7 @@ interface Index {
   const: boolean
   implReturnsPointer: boolean
   verifyFn: Fn | null
+  verifyFnType: Type | null
 }
 
 type Mode = 'C' | 'global' | 'none' | 'iter' | 'link' | 'field_iter' | 'generic_const'; 
@@ -822,14 +823,14 @@ function ensureLeftExprValid(
 
 
     if (left.type.tag == 'ptr') {
-      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null, implReturnsPointer: false }, type: left.type.val };
+      computedExpr = { tag: 'index', val: { var: left, index, const: left.type.const, verifyFn: null, verifyFnType: null, implReturnsPointer: false }, type: left.type.val };
     }
     else if (left.type.tag == 'struct' 
       && left.type.val.template.name == 'vec'
       && left.type.val.template.unit == 'std/core'
       && typeApplicable(index.type, INT, false)
     ) {
-      computedExpr = { tag: 'index', val: { var: left, index, const: false, verifyFn: null, implReturnsPointer: false }, type: left.type.val.generics[0] };
+      computedExpr = { tag: 'index', val: { var: left, index, const: false, verifyFn: null, verifyFnType: null, implReturnsPointer: false }, type: left.type.val.generics[0] };
     }
     else {
       let trait = resolveImpl(symbols, 'index', [refType(left.type), index.type], null, position);
@@ -837,11 +838,11 @@ function ensureLeftExprValid(
 
       let retType = trait.resolvedType.returnType;
       if (retType.tag != 'ptr') {
-        computedExpr = { tag: 'index', val: { var: left, index, const: true, verifyFn: null, implReturnsPointer: false }, type: retType };
+        computedExpr = { tag: 'index', val: { var: left, index, const: true, verifyFn: null, verifyFnType: null, implReturnsPointer: false }, type: retType };
       }
       else {
         let varConst = left.tag == 'left_expr' && isConst(symbols, left.val, scope);
-        computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst, verifyFn: null, implReturnsPointer: true }, type: retType.val };
+        computedExpr = { tag: 'index', val: { var: left, index, const: retType.const || varConst, verifyFn: null, verifyFnType: null, implReturnsPointer: true }, type: retType.val };
       }
     }
   }

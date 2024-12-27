@@ -304,6 +304,7 @@ function codeGenType(type: Type, decl: boolean = false, includeConst: boolean = 
     return s;
   }
 
+  throw new Error(":(");
   // compilerError('codegen type fallthrough ' + JSON.stringify(type));
   return 'T';
 }
@@ -379,7 +380,9 @@ function codeGenInst(insts: Inst[], instIndex: number, indent: number, ctx: FnCo
       statements.push(`${ptrName}[0] ${inst.val.op} ${rightExpr.output};`);
 
       let verifyFn = inst.val.to.val.verifyFn;
-      let verifyFnName = getFnUniqueId(verifyFn.unit, verifyFn.name, verifyFn.mode, [indexFnType.paramTypes[0], indexFnType.returnType], NIL);
+      let verifyFnType = inst.val.to.val.verifyFnType!;
+      if (verifyFnType.tag != 'fn') { compilerError('should be fn'); return undefined!; }
+      let verifyFnName = getFnUniqueId(verifyFn.unit, verifyFn.name, verifyFn.mode, verifyFnType.paramTypes, verifyFnType.returnType);
       
       let expr = codeGenExpr(fnCall.val.exprs[0], ctx, inst.position);
       statements.push(...expr.statements);

@@ -471,7 +471,7 @@ function resolveExpr(
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'cast') {
-      addType(set, expr.type);
+      addType(set, type);
       return { tag: expr.tag, val: inner, type };
     }
     else if (expr.tag == 'try') {
@@ -745,7 +745,7 @@ function resolveLeftExpr(
     if (leftType.tag == 'ptr') {
       let type = applyGenericMap(leftExpr.type, genericMap);
       type = applyConstMap(type, constMap);
-      return { tag: 'index', val: { var: v, index, const: leftType.const, verifyFn: null, implReturnsPointer: true }, type };
+      return { tag: 'index', val: { var: v, index, const: leftType.const, verifyFn: null, verifyFnType: null, implReturnsPointer: true }, type };
     }
 
     if (leftType.tag == 'struct'
@@ -755,21 +755,22 @@ function resolveLeftExpr(
     ) {
       let type = applyGenericMap(leftExpr.type, genericMap);
       type = applyConstMap(type, constMap);
-      return { tag: 'index', val: { var: v, index, const: false, verifyFn: null, implReturnsPointer: false }, type };
+      return { tag: 'index', val: { var: v, index, const: false, verifyFn: null, verifyFnType: null, implReturnsPointer: false }, type };
     }
 
     // inner is the fnCall expr for index
     let inner = implToExpr(set, 'index', [v.type, index.type], null, genericMap, [v, index], position);
     if (inner == null) return null;
-    let verify = null;
+    let verifyFn = null;
+    let verifyFnType: Type | null = null;
     if (set.inAssign[set.inAssign.length - 1] == true && inner.tag == 'fn_call' && inner.val.fn.type.tag == 'fn') {
       let fnType = inner.val.fn.type;
       let verifyImpl = resolveImpl(set.symbols[0], 'verifyIndex', [v.type, fnType.returnType], null, null);
       if (verifyImpl != null) {
-        verify = verifyImpl.fnReference;
+        verifyFn = verifyImpl.fnReference;
         let verifyLeftExpr: LeftExpr = {
           tag: 'fn',
-          isGeneric: false,
+          isGeneric: verifyImpl.isGeneric,
           fnReference: verifyImpl.fnReference,
           genericMap: verifyImpl.genericMap,
           type: verifyImpl.resolvedType,
@@ -777,7 +778,10 @@ function resolveLeftExpr(
           unit: verifyImpl.unit,
           mode: verifyImpl.mode
         };
-        resolveLeftExpr(verifyLeftExpr, set, genericMap, constMap, position);
+        let leftExpr = resolveLeftExpr(verifyLeftExpr, set, verifyImpl.genericMap, constMap, position);
+        if (leftExpr != null) {
+          verifyFnType = leftExpr.type;
+        }
       }
     }
 
@@ -788,7 +792,8 @@ function resolveLeftExpr(
           var: inner,
           index: { tag: 'int_const', val: '0', type: INT },
           const: leftExpr.val.const,
-          verifyFn: verify,
+          verifyFn,
+          verifyFnType,
           implReturnsPointer: false
         },
         type: inner.type
@@ -801,7 +806,8 @@ function resolveLeftExpr(
         var: inner,
         index: { tag: 'int_const', val: '0', type: INT },
         const: leftExpr.val.const,
-        verifyFn: verify,
+        verifyFn,
+        verifyFnType,
         implReturnsPointer: true
       },
       type: inner.type.val
