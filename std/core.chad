@@ -102,7 +102,7 @@ fn memCopy(*T dest, *const T src, int size)
 fn alloc(&BumpAlloc bp, int amt) *T
   int allocSize = amt * @sizeOf(T)
   if bp.base == nil
-    bp.base = malloc(1024 * 1024)
+    bp.base = malloc(1024 * 1024 * 1024)
     bp.curr = bp.base
 
   *T newLoc = ptr(bp.curr)

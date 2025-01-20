@@ -50,7 +50,7 @@ function codegen(prog: Program, progIncludes: Set<string>): OutputFile[] {
   chadDotC += '\n#include "chad.h"';
   chadDotC += '\ndouble fabs(double); float fabsf(float);';
 
-  chadDotC += '\n__thread struct StackFrame { const char* file; int64_t line; } frames[1024 * 1024]; __thread int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
+  chadDotC += '\n__thread struct StackFrame { const char* file; int64_t line; } frames[1024]; __thread int frameIndex = 0; __thread uint64_t lastLine; __thread const char* lastFile;';
   chadDotC += '\nvoid chad_callstack_push() { frames[frameIndex] = (struct StackFrame){ .file = lastFile, .line = lastLine }; frameIndex += 1; }';
   chadDotC += '\nvoid chad_callstack_pop() { frameIndex -= 1; }';
 
